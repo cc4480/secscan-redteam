@@ -70,7 +70,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     },
     {
       name: "recon",
-      role: "Surface mapper. Passive recon first (headers, TLS, DNS, exposed files, tech fingerprinting via seclayer_scan passive tier), then hands attack-surface notes to the exploiter.",
+      role: "Surface mapper. Passive recon first (headers, TLS, DNS, exposed files, tech fingerprinting via mcp__secscan__scan_url passive scans), then hands attack-surface notes to the exploiter.",
       provider: "deepseek",
       model: "deepseek-flash",
       promptFile: "agents/recon.md",
@@ -108,18 +108,20 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       subject: "Verify scope and authorization",
       description:
         "Confirm the engagement scope (target URLs, test window, auth credentials if any) and run " +
-        "the auth gate: DNS TXT ownership proof at _seclayer-challenge.<domain> (or the well-known " +
-        "file). If ownership is unverified, the engagement runs PASSIVE ONLY — no aggressive scans, " +
-        "no crafted payloads. Record the authorization state for the report.",
+        "the auth gate: prove domain ownership with mcp__secscan__start_domain_verification and " +
+        "mcp__secscan__check_domain_verification (or confirm it in mcp__secscan__list_verified_domains). " +
+        "If ownership is unverified, the engagement runs PASSIVE ONLY — no active probing, no crafted " +
+        "payloads. Record the authorization state for the report.",
       assignee: "coordinator",
     },
     {
       id: "recon",
       subject: "Passive reconnaissance and surface mapping",
       description:
-        "Enumerate the attack surface without active probing: run seclayer_scan (standard tier) for " +
-        "the baseline, review headers/TLS/DNS/exposed files, fingerprint the stack, list parameters " +
-        "and auth flows. Deliver an attack-surface brief.",
+        "Enumerate the attack surface without active probing: run mcp__secscan__scan_url for " +
+        "the baseline, poll with mcp__secscan__get_scan_status (wait_seconds), read " +
+        "mcp__secscan__get_report, review headers/TLS/DNS/exposed files, fingerprint the stack, " +
+        "list parameters and auth flows. Deliver an attack-surface brief.",
       assignee: "recon",
       dependencies: ["scope"],
     },
@@ -127,8 +129,9 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       id: "exploit",
       subject: "Dynamic exploitation",
       description:
-        "Reason over the recon brief and scan findings. Form hypotheses, run aggressive-tier scans " +
-        "where authorized, craft context-specific payloads, observe, and pivot. Validate every " +
+        "Reason over the recon brief and scan findings. Form hypotheses, run active tests " +
+        "only where the domain is verified (the server and the auth gate both enforce this), " +
+        "craft context-specific payloads, observe, and pivot. Validate every " +
         "candidate finding with a second, independent observation before reporting it.",
       assignee: "exploiter",
       dependencies: ["recon"],

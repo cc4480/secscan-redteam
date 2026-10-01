@@ -1,78 +1,30 @@
 /**
- * Minimal STRUCTURAL mirror of the DeepSeek Harness host contracts this plugin
- * relies on. These shapes are transcribed from the official cookbook docs
- * (docs/cookbook/adding-a-tool.md, extension-cookbook.md) of
- * deepseek-ai/deepseek-harness — they exist so this package typechecks
- * standalone. When building inside the real harness workspace, delete this
- * file and import the real types:
- *   import type { Context } from '@deepseek-ai/cordis'
- *   import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ * Harness contracts — imported from the REAL packages, not a structural mirror.
+ *
+ * Verified 2026-10-01 against the installed deepseek-harness release
+ * (@deepseek-ai/dsh 0.2.0-rc.2) and its published type packages:
+ *   - Context            from '@deepseek-ai/cordis'
+ *   - PreToolDecision    from '@deepseek-ai/dsh-tools'  ({kind:'allow'} | {kind:'deny',reason} | {kind:'ask',reason?})
+ *   - ToolExecution      from '@deepseek-ai/dsh-tools'  (fields: name, arguments, callId, signal, agent, token, ...)
+ *
+ * These are peerDependencies of this plugin: the harness host provides them
+ * at load time. devDependencies pin the same versions for standalone
+ * typecheck/build.
  */
 
-/** Raw JSON-Schema tool definition — "how MCP-sourced tools arrive" per the cookbook. */
-export interface RawToolDefinition {
-  name: string;
-  description: string;
-  /** JSON Schema for the tool's input. */
-  inputSchema: Record<string, unknown>;
-  annotations?: {
-    readOnlyHint?: boolean;
-    openWorldHint?: boolean;
-    destructiveHint?: boolean;
-  };
-}
+import type { Context } from "@deepseek-ai/cordis";
+import type { PreToolDecision, ToolExecution } from "@deepseek-ai/dsh-tools";
 
-export interface ToolExecutionContext {
-  signal: AbortSignal;
-  agent?: unknown;
-  token: string;
-  callId: string;
-  toolName: string;
-}
-
-export type ToolHandler = (
-  args: Record<string, unknown>,
-  exec: ToolExecutionContext,
-) => Promise<unknown>;
-
-export interface ToolRegistry {
-  /** Registers a raw JSON-Schema tool definition plus its handler. */
-  register(def: RawToolDefinition, handler: ToolHandler): void;
-}
-
-export type PreToolDecision =
-  | { kind: "allow" }
-  | { kind: "deny"; reason: string };
-
-export interface ToolExecution {
-  toolName: string;
-  arguments: Record<string, unknown>;
-}
-
-export interface SystemPromptRegistry {
-  /** Adds a named section to the assembled system prompt. */
-  addSection(id: string, order: number, text: string): void;
-}
+export type { Context, PreToolDecision, ToolExecution };
 
 /**
- * Structural subset of the Cordis Context surface this plugin touches.
- * The real Context is vastly larger; we only declare what we use.
+ * The plugin module contract the harness plugin manager loads:
+ * a name, the services it needs injected, and apply().
+ * (Matches the extension-cookbook examples: `export const name`,
+ * `export const inject`, `export function apply(ctx)`.)
  */
-export interface HarnessContext {
-  tools: ToolRegistry;
-  systemPrompt: SystemPromptRegistry;
-  /** Event bus: ctx.on('tools/pre-execute', handler) for the auth gate. */
-  on(
-    event: "tools/pre-execute",
-    handler: (
-      exec: ToolExecution,
-      next: () => Promise<PreToolDecision>,
-    ) => Promise<PreToolDecision>,
-  ): void;
-}
-
 export interface PluginModule {
   name: string;
-  inject: string[];
-  apply(ctx: HarnessContext, config: Record<string, unknown>): void | Promise<void>;
+  inject?: string[];
+  apply(ctx: Context, config?: Record<string, unknown>): void | Promise<void>;
 }

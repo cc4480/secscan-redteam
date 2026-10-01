@@ -3,8 +3,8 @@
 > Working name: **secscan-redteam** (renameable — see "Naming" below).
 
 AI red-team pentesting, sold as scoped, authorized, paid B2B engagements.
-The system ties the **SecScan scanning engine** (via its real MCP server) to
-the **DeepSeek Harness** ("everything is a plugin"), adds a **multi-LLM
+The system ties the **SecScan scanning engine** (via its live MCP endpoint)
+to the **DeepSeek Harness** ("everything is a plugin"), adds a **multi-LLM
 router**, and runs a four-role agent team whose exploiter **reasons** —
 forming hypotheses from tool output and inventing new tests on the fly,
 instead of marching down a static checklist.
@@ -29,10 +29,10 @@ evidence, and copy-paste fixes.
   │  LLM router  │◄─┤  │  secscan-redteam plugin       │  │
   │              │  │  │                               │  │
   │ deepseek     │  │  │  ┌─────────────────────────┐  │  │
-  │  ├ v4-flash  │  │  │  │ MCP bridge (stdio)      │  │  │
-  │  └ v4-pro    │  │  │  │  seclayer_scan          │──┼──┼──► @seclayer/mcp
-  │              │  │  │  │  seclayer_list_scans    │  │  │    (real tools,
-  │ (anthropic / │  │  │  │  seclayer_get_report    │  │  │     real engine)
+  │  ├ v4-flash  │  │  │  │ SecScan MCP (native)    │  │  │
+  │  └ v4-pro    │  │  │  │  mcp__secscan__*        │──┼──┼──► secscan.us/api/mcp
+  │              │  │  │  │  (dsh-mcp-client,       │  │  │    (Streamable HTTP,
+  │ (anthropic / │  │  │  │   live tools)           │  │  │     live engine)
   │  openai /    │  │  │  └─────────────────────────┘  │  │
   │  google /    │  │  │  ┌─────────────────────────┐  │  │
   │  zhipu/qwen  │  │  │  │ auth gate (pre-execute) │  │  │
@@ -47,12 +47,15 @@ evidence, and copy-paste fixes.
                     └─────────────────────────────────────┘
 ```
 
-- **harness-plugin/** — bridges the three real SecScan MCP tools into the
-  harness tool registry (raw JSON-Schema registration — the documented
-  "how MCP-sourced tools arrive"), installs the auth gate as a
-  `tools/pre-execute` hook, and adds the red-team usage section to the
-  system prompt. Includes the team profile (roles, model assignments, seed
-  tasks) in the dsh-agent-teams shape.
+- **harness-plugin/** — installs the auth gate as a `tools/pre-execute` hook
+  (verified against the real `PreToolDecision`/`ToolExecution` contracts) and
+  adds the red-team usage section to the system prompt via
+  `ctx.systemPrompt.section()`. The SecScan tools themselves come from the
+  harness-NATIVE `@deepseek-ai/dsh-mcp-client` (Streamable HTTP →
+  `https://secscan.us/api/mcp`, declared in `harness-plugin/cordis.patch.yml`);
+  the old stdio `@seclayer/mcp` bridge was removed in v0.2 because its
+  seclayer.io X-API-Key backend no longer serves the API. Includes the team
+  profile (roles, model assignments, seed tasks).
 - **llm-router/** — provider-pluggable unified LLM interface. v0.1: DeepSeek
   only. `deepseek-flash` (fast, tool use) drives recon loops, the
   coordinator, and the reporter; `deepseek-v4-pro` (premium reasoning)
@@ -70,18 +73,20 @@ evidence, and copy-paste fixes.
 
 ## Setup
 
-Prerequisites: Node 20+, a DeepSeek Harness install (`dsh`), a SecScan API
-key, a DeepSeek API key.
+Prerequisites: Node 20+, a DeepSeek Harness install (`dsh`), a SecScan MCP-scope
+token, a DeepSeek API key.
 
 ```bash
 # 1. Install the plugin into a harness profile
 dsh plugin --profile redteam add ./harness-plugin
-# (or apply harness-plugin/cordis.patch.yml to the profile's bundle layer)
+# then merge harness-plugin/cordis.patch.yml into the profile's cordis.patch.yml
+# (adds the dsh-mcp-client entry -> https://secscan.us/api/mcp)
 
 # 2. Keys — environment ONLY, never in code or docs.
 #    Enter both via the Secure Vault; they land in the environment.
-export SECLAYER_API_KEY="..."   # SecScan dashboard → Developer API Keys
-export DEEPSEEK_API_KEY="..."   # DeepSeek platform → API keys
+export SECSCAN_MCP_TOKEN="..."  # secscan.us/settings -> AI editors (MCP scope)
+export DEEPSEEK_API_KEY="..."
+# NOTE: an API-scope (ssk_) token does NOT work for the MCP endpoint; scopes are separate.
 
 # 3. Build & typecheck
 npm install && npm run typecheck
@@ -116,14 +121,16 @@ boundary mechanically, not by policy memo.
   DeepSeek wire client (OpenAI-compatible chat completions + tool-call
   translation). Needs `DEEPSEEK_API_KEY` to run live.
 
-**Wired against documented contracts, not yet executed inside the harness:**
-- `harness-plugin` — written exactly against the official cookbook
-  contracts (`ctx.tools.register` raw JSON-Schema, `ctx.llm.registerAdapter`
-  shape, `tools/pre-execute` hook, `cordis.patch.yml` install). Typechecks
-  standalone against a structural mirror of those contracts. Not yet
-  installed into a live `dsh` profile — that's the first integration step.
-- `mcp-bridge` — spawns the real `@seclayer/mcp` server over stdio and
-  registers its real tools; needs `SECLAYER_API_KEY` + network at runtime.
+**Validated against the live harness (2026-10-01):**
+- `harness-plugin` — verified against the REAL harness contracts (checked into
+  the local deepseek-harness source at release 0.2.0-rc.2): `tools/pre-execute`
+  hook with real `PreToolDecision`/`ToolExecution` types, `ctx.systemPrompt.section()`,
+  `{name, inject, apply}` module shape. Typechecks standalone against the real
+  type packages; installed into the live `redteam` dsh profile 2026-10-01 and
+  load-validated (`--dump-config` resolves both patch entries; apply() + gate
+  logic exercised). The SecScan tools come from the harness-native
+  @deepseek-ai/dsh-mcp-client (Streamable HTTP -> https://secscan.us/api/mcp).
+  Needs SECSCAN_MCP_TOKEN (MCP scope) at runtime to connect.
 
 **Stubbed / planned:**
 - Non-DeepSeek providers (Claude, ChatGPT, Gemini, GLM, Qwen) — interface

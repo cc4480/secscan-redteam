@@ -1,22 +1,36 @@
-# secscan-redteam bundle patch: mounts the red-team plugin into the host
-# composition of a dsh profile. The plugin bridges the real SecScan MCP tools
-# into the shared `tools` registry, installs the auth gate as a pre-execute
-# hook, and adds the red-team usage section to the system prompt.
+# secscan-redteam bundle patch: mounts the red-team composition into the host
+# dsh profile. Two entries:
+#   1. mcp-secscan — the harness-NATIVE MCP client (@deepseek-ai/dsh-mcp-client)
+#      connecting to the live SecScan MCP endpoint over Streamable HTTP.
+#      Tools appear namespaced as mcp__secscan__scan_url, mcp__secscan__get_report, ...
+#   2. secscan-redteam — this plugin: the auth gate (tools/pre-execute hook)
+#      plus the red-team engagement-protocol system-prompt section.
 #
 # Install: `dsh plugin --profile <name> add /path/to/secscan-redteam/harness-plugin`
+# then merge this file's entries into the profile's cordis.patch.yml
 # (or the published package name, once published).
 #
 # Secrets are cordis-native: schemastery Config with env fallbacks.
 # NEVER put a raw key in this file.
 
 - insert:
+    - id: mcp-secscan
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: secscan
+        transport: streamable-http
+        url: https://secscan.us/api/mcp
+        headers:
+          # MCP-scope token — create at https://secscan.us/settings (AI editors).
+          # NOTE: an API-scope (ssk_) token does NOT work here; scopes are separate.
+          Authorization: !!js "'Bearer ' + (process.env.SECSCAN_MCP_TOKEN || '')"
+        # If the token is unset the harness still starts; the mcp__secscan__*
+        # tools simply don't appear (and the auth gate fails closed anyway).
+
+- insert:
     - id: secscan-redteam
       name: '@secscan/redteam-harness-plugin'
       config:
-        # SecScan API key — env only. Generate from the SecScan dashboard's
-        # Developer API Keys panel, then: export SECLAYER_API_KEY=...
-        # (or enter it via the Secure Vault; the harness reads process.env).
-        seclayerApiKey: !!js process.env.SECLAYER_API_KEY
-        # MCP server launch — override only if running a local mcp-server build:
-        # mcpCommand: "node"
-        # mcpArgs: ["/path/to/OPEN_SECLAYER/mcp-server/dist/index.js"]
+        # No plugin config needed. Per-engagement verified domains go in
+        # env SECSCAN_VERIFIED_DOMAINS (comma-separated); the supplementary
+        # DNS TXT proof uses env SECSCAN_ENGAGEMENT_TOKEN.
