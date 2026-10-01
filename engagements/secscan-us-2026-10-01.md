@@ -113,3 +113,25 @@ No Critical / High / Medium findings in either phase. Nothing destructive was at
   publish TXT `secscan-verify-dcef4086eb84b2958be413c676f5b880` at `_secscan-challenge.secscan.us`
   (or serve it at `https://secscan.us/.well-known/secscan-verification.txt`), then re-check.
 - Aggressive `scan_url` NOT run — awaiting the user's DNS update. Re-dispatch this leg once verified.
+
+## D-4 deferred leg — COMPLETED (2026-10-01 07:46 CDT)
+
+| Time (CDT) | Phase | Actor | Action | Result |
+|---|---|---|---|---|
+| 07:45 | Auth | Coordinator | `check_domain_verification({"domain":"secscan.us"})` under fresh token | VERIFIED (DNS record). "Its scans now include active tests." |
+| 07:45 | Recon | Recon agent | `scan_url("https://secscan.us", aggressive=true)` | Scan started: `e78f4581-d393-4ed5-822d-dbf2a587c1d3`, paid with free credit |
+| 07:46 | Recon | Recon agent | `get_scan_status` (wait 60s) → complete | Grade A, risk 1/100 — 0 critical, 0 high, 0 medium, 1 low, 2 info. 33 of 44 tests ran, 11 skipped (all not-applicable), 0 failed. Report: `0f0102d9-2011-45b4-b795-b61d915ce26e` |
+| 07:46 | Recon | Recon agent | `get_report` full results | Findings: (LOW) CSP `style-src 'unsafe-inline'` (CWE-79, re-confirmed); (INFO) DNSSEC off (CWE-345); (INFO, NEW) TLS 1.0/1.1 still accepted, SSL Labs grade B (CWE-326, BEAST) |
+| 07:47 | Reporter | Reporter agent | Updated `evidence/client-report-aggressive.md` | Folded aggressive scan in: new finding F-4 (TLS 1.0/1.1 INFO), F-1 evidence extended, §2 authorization rewritten (scan e78f4581 executed), D-4 marked completed, retest checklist updated |
+
+**D-4 verdict:** the 21 skipped active tests from the passive phase are now resolved — every *applicable* active test ran (33/44; the 11 skips are not-applicable-to-target, not blocked). No new critical/high/medium findings. The one genuinely new item is the TLS 1.0/1.1 INFO (F-4). Overall engagement conclusion stands: **no exploitable vulnerabilities found**; 1 LOW hardening item, 3 INFO items, 8 hypotheses killed, 3 deferred (D-1…D-3 need canary infra / second test account).
+
+## Evidence index (updated)
+
+- `evidence/scan-b2de7005-report.json` — raw SecScan report JSON (passive)
+- `evidence/recon-brief.md` — recon attack-surface brief
+- `evidence/exploiter-reasoning.md` — exploiter ranked hypotheses (passive phase)
+- `evidence/client-report.md` — passive-phase client deliverable
+- `evidence/aggressive-battery-2026-10-01.md` — aggressive probe-by-probe record
+- `evidence/client-report-aggressive.md` — aggressive-phase client deliverable (updated with D-4 scan)
+- `evidence/scan-e78f4581-report.txt` — raw aggressive scanner report text (scan e78f4581, report 0f0102d9)

@@ -1,0 +1,64 @@
+SecScan report for https://secscan.us/ (scanned 2026-10-01T12:46:25.312Z)
+Grade A · risk score 1/100 · 0 critical, 0 high, 0 medium, 1 low, 2 info
+Full report: https://secscan.us/report/0f0102d9-2011-45b4-b795-b61d915ce26e
+
+What this scan tested: 33 of 44 tests ran, 11 skipped, 0 failed.
+Not tested on this scan — a clean result says nothing about these:
+- GitHub source code secrets (passive): no repository was supplied for this scan
+- Supabase RLS (HTTP probes): No Supabase project was found in the page, so there was no database to test.
+- JWT analysis (passive): no JSON Web Token appeared in the page or its response headers
+- Next.js __NEXT_DATA__ secrets (passive): this Next.js page has no __NEXT_DATA__ block (App Router pages do not ship one)
+- BaaS open data (PocketBase, Appwrite) (active): no PocketBase or Appwrite backend is referenced in the page
+- public cloud storage buckets (active): no S3, Google Cloud Storage or Azure Blob bucket is referenced in the page
+- Supabase RLS and Firebase rules (active): no Supabase or Firebase project configuration was found in the page
+- dependency CVEs from an exposed manifest (active): the site does not serve a package.json, so there was no dependency list to check (this is the expected, safe answer)
+- LLM prompt injection (system prompt extraction) (active): no system prompt was found in this site's client-side code to check against
+- race condition (one-time action) (active): not requested for this scan (opt-in only, because it acts on the test account)
+- cross-account access control (IDOR) (active): needs sign-ins for two test accounts on the scan
+
+Summary:
+Security scan of secscan.us identified 3 security findings, none of them critical or high, yielding an overall grade of A with a risk score of 1/100.
+
+Top priorities:
+1. In your CSP, replace style-src 'self' 'unsafe-inline' with a nonce or hash, and remove leftover inline style= attributes.
+2. Optional (no code change): turn on DNSSEC at your registrar for secscan.us — both registrar and DNS provider must support it.
+3. Optional: disable TLS 1.0/1.1 on your host and keep TLS 1.2 and 1.3, then re-run the SSL Labs test to confirm.
+
+Fix prompt (written for this codebase's AI editor — act on it directly):
+I ran an automated security scan on secscan.us and found the following security issues that need to be fixed in my codebase.
+
+### 1. Content-Security-Policy Allows Inline Styles (unsafe-inline in style-src) (LOW)
+My Content-Security-Policy allows 'unsafe-inline' in style-src, which lets injected CSS spoof the page, enable clickjacking-style overlays or leak data through attribute selectors (script execution is already blocked).
+Fix: change the CSP so style-src no longer contains 'unsafe-inline' — replace it with a nonce-based or hash-based source — and remove any remaining inline style= attributes in the code so all styling comes from the compiled Tailwind stylesheet. Current header value: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: blob:; connect-src 'self' https: wss: ws:; worker-src 'self' blob:.
+
+### 2. DNSSEC Not Enabled (INFO)
+Informational, and not a code change: no DNSKEY records were found for secscan.us, so DNS answers could be forged in transit. Only needed if you want this extra layer: enable DNSSEC through your domain registrar, and make sure your DNS hosting provider supports signed zones (this needs coordination between the two).
+
+### 3. TLS Grade Below A (INFO)
+Informational, and not a code change: SSL Labs graded the TLS configuration B because the server still accepts the obsolete TLS 1.0 and TLS 1.1 (which also exposes it to the BEAST attack on TLS 1.0 CBC suites). Fix on your hosting/server settings: disable TLS 1.0 and 1.1, keep TLS 1.2 and 1.3 with forward-secret cipher suites, then re-run the SSL Labs test to confirm.
+
+Please fix all of the above issues in my codebase. For each fix, show me the exact code change.
+
+Findings 1–3 of 3, most severe first:
+
+[LOW] Content-Security-Policy Allows Inline Styles (unsafe-inline in style-src) (CWE-79)
+What: The Content-Security-Policy permits 'unsafe-inline' in style-src. Script execution is properly restricted (script-src has no unsafe-inline). CSS injection cannot execute JavaScript but can enable visual spoofing, clickjacking, and CSS-based data exfiltration via attribute selectors.
+Fix: For the strongest defence, replace style-src 'unsafe-inline' with nonce-based or hash-based directives. For Tailwind CSS builds, all styles compile to an external stylesheet in production — unsafe-inline can usually be removed once any remaining inline style= attributes are eliminated.
+Evidence: GET https://secscan.us/
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: blob:; connect-src 'self' https: wss: ws:; worker-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'
+…
+
+[INFO] DNSSEC Not Enabled (CWE-345)
+What: DNSSEC is not configured for secscan.us. Without DNSSEC, DNS responses can be forged or tampered with in transit (DNS cache poisoning / Kaminsky attack). Attackers can redirect your domain's traffic to malicious servers without users or servers being able to detect it.
+Fix: Enable DNSSEC through your domain registrar. Most major registrars (Cloudflare, AWS Route 53, Google Domains) offer one-click DNSSEC. Your DNS hosting provider must also support signed zones. This requires coordination between your registrar and DNS provider.
+Evidence: No DNSKEY records found for secscan.us (NOERROR (name exists)).
+
+[INFO] TLS Grade Below A (SSL Labs) (CWE-326)
+What: SSL Labs graded this site's TLS configuration B, not A. What held it back: The server still accepts TLS 1.0 and TLS 1.1, which are obsolete. SSL Labs caps the grade while they are enabled. Vulnerable to the BEAST attack (TLS 1.0 CBC suites).
+Fix: Disable TLS 1.0 and 1.1, keep TLS 1.2 and 1.3 with forward-secret cipher suites, and re-run the SSL Labs test to confirm. Mozilla's SSL Configuration Generator gives settings per server.
+Evidence: SSL Labs grade: B
+The server still accepts TLS 1.0 and TLS 1.1, which are obsolete. SSL Labs caps the grade while they are enabled.
+Vulnerable to the BEAST attack (TLS 1.0 CBC suites).
+Full report: https://www.ssllabs.com/ssltest/analyze.html?d=secscan.us
+
+Compliance mapping note: This mapping shows which controls these findings are evidence for. It is not a compliance assessment, an audit, or an attestation. An application scan observes the HTTP surface of a running system at one point in time; SOC 2, PCI DSS and ISO 27001 are largely concerned with policy, process and personnel that no scan can see. A clean scan is not a passed control. Only a licensed CPA firm issues a SOC 2 report, only a QSA validates PCI DSS, and only an accredited certification body certifies ISO 27001.

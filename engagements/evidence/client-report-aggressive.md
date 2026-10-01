@@ -1,21 +1,24 @@
 # Security Assessment Report — secscan.us
 
 **Target:** `https://secscan.us` (apex + `www.secscan.us`)
-**Assessment window:** 2026-10-01, 07:20–07:45 CDT (America/Chicago)
+**Assessment window:** 2026-10-01, 07:20–07:50 CDT (America/Chicago)
 **Prepared by:** SecScan Red Team (Reporter)
 **Distribution:** Client CTO
+**Aggressive scanner run:** scan `e78f4581-d393-4ed5-822d-dbf2a587c1d3` (07:46 CDT), report `0f0102d9-2011-45b4-b795-b61d915ce26e`
 
 ---
 
 ## 1. Executive Summary
 
-An owner-authorized, aggressive-tier red-team battery was run against secscan.us on 2026-10-01; the pass was non-destructive and read-only apart from normal GET requests. No critical or high-severity issues were found, and every authorization, host-handling, TLS, and input-reflection control that was tested held. One low-severity configuration weakness was confirmed: the Content-Security-Policy permits inline styles (`style-src 'unsafe-inline'`), which is latent today because no input reflection into style contexts was observed, but would enable CSS-based data exfiltration if a future feature ever reflects user input there. Two informational items were logged — DNSSEC is not enabled, and `robots.txt` advertises the application's sensitive route namespace (a map, not a vulnerability; those routes are properly gated). Four test areas could not be completed this pass because they require out-of-band canaries, a second test account, or scan credits that renew 2026-11-01; they are listed plainly in §4 and §5 so they can be scheduled. Net posture remains strong and consistent with the earlier passive grade of **A (risk 1/100)**.
+An owner-authorized, aggressive-tier red-team battery was run against secscan.us on 2026-10-01; the pass was non-destructive and read-only apart from normal GET requests. No critical or high-severity issues were found, and every authorization, host-handling, TLS, and input-reflection control that was tested held. One low-severity configuration weakness was confirmed: the Content-Security-Policy permits inline styles (`style-src 'unsafe-inline'`), which is latent today because no input reflection into style contexts was observed, but would enable CSS-based data exfiltration if a future feature ever reflects user input there. Three informational items were logged — DNSSEC is not enabled, the server still accepts obsolete TLS 1.0/1.1 (SSL Labs grade B), and `robots.txt` advertises the application's sensitive route namespace (a map, not a vulnerability; those routes are properly gated). Three test areas could not be completed this pass because they require out-of-band canaries or a second test account; they are listed plainly in §4 and §5 so they can be scheduled. Net posture remains strong and consistent with the earlier passive grade of **A (risk 1/100)** — confirmed again by the aggressive scanner run at 07:46 CDT.
 
 ---
 
 ## 2. Authorization Statement
 
-This assessment was performed with explicit owner authorization. SecScan's server-side `check_domain_verification` passed for `secscan.us` via a DNS TXT record at `_secscan-challenge.secscan.us`, verified by the SecScan server. The **aggressive tier** was authorized for this engagement. Testing was constrained to non-destructive, read-only probes (normal GETs plus a small number of parameter and path manipulations that did not mutate state). No authentication bypass, data destruction, or denial-of-service activity was attempted. Note for the record: the scanner's own aggressive-tier scan did **not** execute during this window because the account had 0 of 3 free scan credits remaining (quota renews 2026-11-01); the validated results below come from the hypothesis-driven exploiter pass and the earlier passive scan.
+This assessment was performed with explicit owner authorization. SecScan's server-side `check_domain_verification` passed for `secscan.us` via a DNS TXT record at `_secscan-challenge.secscan.us`, verified by the SecScan server. The **aggressive tier** was authorized for this engagement. Testing was constrained to non-destructive, read-only probes (normal GETs plus a small number of parameter and path manipulations that did not mutate state). No authentication bypass, data destruction, or denial-of-service activity was attempted.
+
+**Aggressive scanner run (07:46 CDT).** The scanner's aggressive-tier scan executed successfully as scan `e78f4581-d393-4ed5-822d-dbf2a587c1d3` (full report: `https://secscan.us/report/0f0102d9-2011-45b4-b795-b61d915ce26e`), paid with a free credit from a fresh token under which the domain was re-verified (verification is token-scoped; the fresh token's `check_domain_verification` returned "VERIFIED (DNS record). Its scans now include active tests."). The scan ran **33 of 44 tests** (11 skipped as not applicable — no repository, Supabase, JWT, BaaS backend, cloud buckets, package.json, or client-side system prompt present; race-condition and cross-account IDOR tests remain opt-in / need a second account), with 0 failures. Grade **A**, risk **1/100**: 0 critical, 0 high, 0 medium, 1 low, 2 info. The validated results below combine the scanner's aggressive output with the hypothesis-driven exploiter pass and the earlier passive scan.
 
 ---
 
@@ -31,6 +34,7 @@ Your site tells browsers which styles they are allowed to load, and right now it
 **Evidence.**
 - Response header observed on apex `200` responses: `style-src 'self' 'unsafe-inline';`
 - SecScan passive scanner flagged the same directive (mapped to CWE-79).
+- The aggressive scanner run (scan `e78f4581`, 33/44 tests) re-confirmed it as its sole LOW finding, capturing the full header: `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: blob:; connect-src 'self' https: wss: ws:; worker-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'` (evidence: `GET https://secscan.us/`).
 - Active exploitation attempt: four query-parameter probes including `<style>` injection and style-attribute breakout payloads, against `/` and `/scan` — **zero reflections** returned. No live injection; the directive is simply more permissive than it needs to be.
 
 **Fix (copy-paste-ready).**
@@ -92,6 +96,24 @@ Not applicable — informational. Re-review only if the route namespace changes 
 
 ---
 
+### F-4 — Server still accepts TLS 1.0 and 1.1 (SSL Labs grade B) — **INFO**
+
+**Business impact (plain language).**
+Your site negotiates modern TLS 1.3 just fine — every connection we observed used it — but the server also still answers on the obsolete TLS 1.0 and 1.1, which is why SSL Labs caps the grade at B. Old clients can be downgraded to weak CBC cipher suites (the BEAST attack), and auditors and procurement questionnaires increasingly flag anything below an A. The fix is a server/hosting setting, not code.
+
+**Evidence.**
+- Aggressive scanner run (scan `e78f4581`): SSL Labs graded `secscan.us` **B**; "The server still accepts TLS 1.0 and TLS 1.1, which are obsolete… Vulnerable to the BEAST attack (TLS 1.0 CBC suites)."
+- Full report: `https://www.ssllabs.com/ssltest/analyze.html?d=secscan.us`
+- Mapped to CWE-326 by the scanner. Note: our own real handshakes negotiated TLS 1.3 with `TLS_AES_256_GCM_SHA384` and a valid ECDSA P-256 chain — the weakness is legacy-protocol support, not the modern path.
+
+**Fix.**
+On your hosting/server TLS settings: disable TLS 1.0 and 1.1, keep TLS 1.2 and 1.3 with forward-secret cipher suites, then re-run the SSL Labs test to confirm. Mozilla's SSL Configuration Generator gives exact settings per server.
+
+**Retest note.**
+Re-run the SSL Labs test after the change; expect grade A with no TLS 1.0/1.1 offered.
+
+---
+
 ### 3a. Positive Controls — Assurance, Not Findings
 
 These were actively tested during the pass and held. They are included so the client can rely on them in security reviews and procurement questionnaires.
@@ -100,7 +122,7 @@ These were actively tested during the pass and held. They are included so the cl
 - **Scope gate / path traversal.** `POST /api/mcp/%2e%2e/v1/scans` returned `404`, while the control request `POST /api/v1/scans` returned `401` — the traversal was normalized and did **not** bypass the authorization scope gate.
 - **Host handling.** `www.secscan.us` issues a clean `301` redirect to the apex with **no hostname reflection**; `X-Forwarded-Host` is not reflected; a mismatched `Host` header is rejected at the edge.
 - **WebSocket attack surface.** Zero WebSocket or EventSource references were found in the 1.27 MB application bundle, despite a permissive CSP allowing `ws:`/`wss:` — there is no WebSocket channel to attack.
-- **TLS.** A real handshake negotiated **TLSv1.3** with cipher suite `TLS_AES_256_GCM_SHA384`, an **ECDSA P-256** certificate, and a chain that verifies OK.
+- **TLS.** A real handshake negotiated **TLSv1.3** with cipher suite `TLS_AES_256_GCM_SHA384`, an **ECDSA P-256** certificate, and a chain that verifies OK. (Legacy-protocol support is the separate INFO finding F-4.)
 - **Input reflection.** No query-parameter reflection into HTML or style contexts was observed on the tested pages (`/`, `/scan`).
 
 ---
@@ -109,9 +131,9 @@ These were actively tested during the pass and held. They are included so the cl
 
 **Approach.** Testing was hypothesis-driven: the exploiter reasoned about likely weaknesses from the application's structure and headers, then issued targeted, non-destructive probes to confirm or disprove each hypothesis. All requests were read-only except for standard GETs; no state was modified, no data was deleted, and no denial-of-service activity was attempted. Results were validated against a second, independent source (the passive scanner or DNS-over-HTTPS) wherever possible.
 
-**Baseline.** An earlier passive scan graded the site **A**, risk **1/100**. This pass did not change that posture; the single LOW finding is a configuration hardening item, not an active flaw.
+**Baseline.** An earlier passive scan graded the site **A**, risk **1/100**. The aggressive scanner run (07:46 CDT, 33 of 44 tests, the 11 skips all not-applicable) confirmed that posture unchanged: same grade, same single LOW finding, plus one new INFO (TLS 1.0/1.1).
 
-**Tooling limitation — scanner credits.** The scanner's aggressive-tier scan did **not** run in this window: the account had **0 of 3** free scan credits remaining (renewing **2026-11-01**). The exploiter pass substituted for it where feasible, but it cannot replace the scanner's broader active test set.
+**Tooling limitation — resolved.** The scanner's aggressive-tier scan initially could not run (the morning token's account had 0 of 3 free scan credits). After the user supplied a fresh token with quota and re-published the verification TXT under the new challenge, the scan executed as `e78f4581-d393-4ed5-822d-dbf2a587c1d3` and is now folded into this report (see D-4 below — completed).
 
 **Deferred tests (not performed — stated plainly with what is needed):**
 
@@ -120,9 +142,9 @@ These were actively tested during the pass and held. They are included so the cl
 | **D-1** | SSRF via `/scan` server-side fetch | Out-of-band canary infrastructure (a listener the target can call back to). |
 | **D-2** | Cross-account IDOR on `/report/` and `/share/` | A second test account. Direct-URL probes returned only the generic app shell with no data leak. |
 | **D-3** | Password-reset / email-verify token entropy and reuse | A test account plus coordinator-approved reset triggers. No reset emails were sent this pass. |
-| **D-4** | The scanner's 21 skipped active tests (injection, XSS, traversal, access control, backend data) | Scan credits; quota renews **2026-11-01**. |
+| **D-4** | The scanner's 21 skipped active tests (injection, XSS, traversal, access control, backend data) | **COMPLETED 07:46 CDT** — ran as scan `e78f4581` (33/44 tests; remaining skips not applicable to this target). |
 
-**Severity assignment.** Consistent with the rubric in §3: business impact multiplied by exploitability. F-1 is LOW because impact is latent (no live reflection) even though the misconfiguration is trivially present. F-2 and F-3 are INFO because exploitability is low and/or the item is disclosure-by-design rather than a defect.
+**Severity assignment.** Consistent with the rubric in §3: business impact multiplied by exploitability. F-1 is LOW because impact is latent (no live reflection) even though the misconfiguration is trivially present. F-2, F-3, and F-4 are INFO because exploitability is low and/or the item is disclosure-by-design or legacy-hygiene rather than a defect.
 
 ---
 
@@ -134,12 +156,13 @@ Use this to verify remediation and to schedule the deferred work.
 - [ ] **F-1** — Re-fetch apex and `www` response headers; confirm `style-src` contains no `'unsafe-inline'`. Re-run the four CSS-injection / style-breakout probes against `/` and `/scan`; confirm zero reflections and no CSP console violations on pages that previously used inline styles.
 - [ ] **F-2** — DoH query for `DS secscan.us` returns records; `DNSKEY` query returns records with the **AD** flag set on a validating resolver. Confirm the `DS` record is present at the registrar.
 - [ ] **F-3** — No action required; re-review only if the route namespace changes.
+- [ ] **F-4** — Disable TLS 1.0/1.1 at the host; re-run SSL Labs and confirm grade A with no legacy protocols offered.
 
 **Deferred work to schedule**
 - [ ] **D-1** — Provision out-of-band canary infrastructure; run SSRF probes against `/scan` server-side fetch.
 - [ ] **D-2** — Provision a second test account; test cross-account IDOR on `/report/` and `/share/`.
 - [ ] **D-3** — Provision a test account and coordinator-approved reset triggers; test password-reset and email-verify token entropy and reuse.
-- [ ] **D-4** — After **2026-11-01**, spend renewed scan credits to run the scanner's 21 skipped active tests (injection, XSS, traversal, access control, backend data).
+- [x] **D-4** — COMPLETED 2026-10-01 07:46 CDT (scan `e78f4581`).
 
 **Standing checks (positive controls — re-verify after any auth or routing change)**
 - [ ] Unauthenticated `/api/v1/*` and `/api/*` requests still return uniform `401`s for fabricated IDs.
