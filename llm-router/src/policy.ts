@@ -1,12 +1,12 @@
 /**
  * Per-role model policy — the cost/latency brain of the router.
  *
- * v0.1 (DeepSeek ONLY):
- *   coordinator → deepseek / deepseek-v4-flash   (fast orchestration, tool use)
- *   recon       → deepseek / deepseek-v4-flash   (cheap recon loops)
- *   exploiter   → deepseek / deepseek-v4-pro     (premium reasoning: hypotheses,
- *                                                 exploit chains, pivot decisions)
- *   reporter    → deepseek / deepseek-v4-flash   (fast write-up)
+ * v0.1 (DeepSeek ONLY; IDs verified against the live API):
+ *   coordinator → deepseek / deepseek-flash   (fast orchestration, tool use)
+ *   recon       → deepseek / deepseek-flash   (cheap recon loops)
+ *   exploiter   → deepseek / deepseek-v4-pro  (premium reasoning: hypotheses,
+ *                                              exploit chains, pivot decisions)
+ *   reporter    → deepseek / deepseek-flash   (fast write-up)
  *
  * Rationale: recon burns the most tokens on the least thinking (listing
  * endpoints, reading headers, paging scan history) — flash keeps engagements

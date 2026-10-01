@@ -5,9 +5,9 @@
  * (POST {baseUrl}/chat/completions). Tool calls are translated between the
  * router's JSON-Schema form and the OpenAI `tools`/`tool_calls` form.
  *
- * Models (per the v0.1 policy):
- *   - deepseek-v4-flash — fast, cheap, strong tool use.
- *   - deepseek-v4-pro   — premium reasoning.
+ * Models (per the v0.1 policy; IDs verified against the live API):
+ *   - deepseek-flash   — DeepSeek-V4.1-Flash: fast, cheap, strong tool use.
+ *   - deepseek-v4-pro  — DeepSeek-V4-Pro: premium reasoning.
  *
  * Auth: DEEPSEEK_API_KEY env var ONLY. The key is sent as a Bearer token and
  * is never logged, never included in errors, and never written anywhere.
@@ -26,7 +26,7 @@ export const DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 
 export const DEEPSEEK_MODELS = {
-  flash: "deepseek-v4-flash",
+  flash: "deepseek-flash",
   pro: "deepseek-v4-pro",
 } as const;
 

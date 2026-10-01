@@ -54,7 +54,7 @@ evidence, and copy-paste fixes.
   system prompt. Includes the team profile (roles, model assignments, seed
   tasks) in the dsh-agent-teams shape.
 - **llm-router/** — provider-pluggable unified LLM interface. v0.1: DeepSeek
-  only. `deepseek-v4-flash` (fast, tool use) drives recon loops, the
+  only. `deepseek-flash` (fast, tool use) drives recon loops, the
   coordinator, and the reporter; `deepseek-v4-pro` (premium reasoning)
   drives the exploiter's hypothesis work. Adding providers later = one new
   class implementing `LlmProvider` + `registerProvider()`.

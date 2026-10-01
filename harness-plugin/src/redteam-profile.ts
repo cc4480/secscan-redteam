@@ -8,7 +8,7 @@
  * the coordinator + specialists as durable continuable subagents.
  *
  * v0.1 model policy (DeepSeek ONLY):
- *   - deepseek-v4-flash — fast, cheap, strong tool use → recon loops,
+ *   - deepseek-flash — fast, cheap, strong tool use → recon loops,
  *     coordinator orchestration, reporter write-up.
  *   - deepseek-v4-pro   — premium reasoning → exploiter hypothesis formation,
  *     exploit-chain planning, pivot decisions.
@@ -62,7 +62,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "coordinator",
       role: "Engagement lead. Owns the plan, phases, scope discipline, and final assembly. Runs recon → exploitation → reporting in order, re-tasks on surprises.",
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       promptFile: "agents/coordinator.md",
       executionPrompt:
         "You are the engagement lead. Keep phases tight, keep every action inside the authorized scope, " +
@@ -72,7 +72,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "recon",
       role: "Surface mapper. Passive recon first (headers, TLS, DNS, exposed files, tech fingerprinting via seclayer_scan passive tier), then hands attack-surface notes to the exploiter.",
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       promptFile: "agents/recon.md",
       executionPrompt:
         "Map first, touch lightly. Enumerate everything observable without active probing, then write " +
@@ -94,7 +94,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "reporter",
       role: "Client report author. Converts validated findings into a business-readable report: executive summary, per-finding impact + evidence + fix, retest checklist.",
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       promptFile: "agents/reporter.md",
       executionPrompt:
         "Write for the client's CTO, not for hackers. Every finding needs: what it is, why it matters " +
