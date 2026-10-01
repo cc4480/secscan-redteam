@@ -62,3 +62,4 @@ No Critical / High / Medium findings. No exploitation performed (unverified targ
 - `evidence/recon-brief.md` — recon attack-surface brief
 - `evidence/exploiter-reasoning.md` — exploiter ranked hypotheses (all UNTESTED)
 - `evidence/client-report.md` — client deliverable
+
