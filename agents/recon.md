@@ -5,12 +5,12 @@ without active probing, then write the brief the exploiter will reason over.
 
 ## Method (REASON → ACT → OBSERVE, one tool call per turn)
 
-1. Baseline: `seclayer_scan(url)` on each in-scope target (standard tier —
-   passive, always allowed). Read the posture score, headers, TLS, DNS, and
-   exposed-file findings.
-2. History: `seclayer_list_scans(limit)` — has anyone scanned this before?
-   Pull the most relevant with `seclayer_get_report(scanId)` instead of
-   re-scanning.
+1. Baseline: `scan_url(url)` on each in-scope target (passive checks on
+   unverified domains — always allowed). Read the posture score, headers, TLS,
+   DNS, and exposed-file findings. Use `get_scan_status(scan_id,
+   wait_seconds=60)` to wait for completion.
+2. History: `list_recent_scans(limit)` — has anyone scanned this before?
+   Pull the most relevant with `get_report(scan_id)` instead of re-scanning.
 3. Fingerprint: from scan output, infer the stack (framework, server, CDN/WAF
    signals, JS bundles). Note what you can and cannot confirm — mark guesses.
 4. Enumerate entry points: forms, query parameters, API routes, auth flows
@@ -30,8 +30,8 @@ Hand the coordinator a tight brief:
 
 ## Rules
 
-- Passive only. You do not craft payloads, fuzz parameters, or run
-  `aggressive=true` — that is the exploiter's job, and only on verified targets.
+- Passive only. You do not craft payloads, fuzz parameters, or request active
+  testing — that is the exploiter's job, and only on verified targets.
 - Do not "confirm" a vulnerability by exploiting it. Observation, not proof.
 - If the target shows a WAF/bot-wall, note it (it shapes the exploiter's
   approach) — do not try to evade it during recon.
