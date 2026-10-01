@@ -64,8 +64,12 @@ evidence, and copy-paste fixes.
 - **agents/** — role system prompts with ReAct loops. The exploiter prompt
   carries a worked dynamic-testing example (reflected input → CSP-aware
   payload pivot → canary-token proof).
-- **auth-gate/** — DNS TXT ownership verification
-  (`_seclayer-challenge.<domain>`), mirroring SecScan's own gate. Fails
+- **auth-gate/** — server-authoritative domain verification. The gate
+  re-checks the SecScan server's own verified-domain list
+  (`list_verified_domains` over the MCP endpoint) before any aggressive
+  test; ownership is proven via the server's flow
+  (`start_domain_verification` → DNS TXT at
+  `_secscan-challenge.<domain>` → `check_domain_verification`). Fails
   closed; aggressive testing without proof is denied with remediation
   instructions. Legally non-negotiable.
 - **engagements/** — per-client runbook template (scope, authorization,
@@ -95,10 +99,13 @@ npm install && npm run typecheck
 npm test --workspace @secscan/redteam-auth-gate
 ```
 
-Start an engagement: copy `engagements/engagement-template.md`, issue a
-token (`node -e "import('@secscan/redteam-auth-gate').then(m =>
-console.log(m.generateEngagementToken()))"`), have the client publish it as a
-DNS TXT record, set `SECSCAN_ENGAGEMENT_TOKEN`, and let the coordinator run.
+Start an engagement: copy `engagements/engagement-template.md`, then prove
+domain ownership through the SecScan server — call `start_domain_verification`
+for the target domain (the server issues a `secscan-verify-…` challenge),
+publish it as a DNS TXT record at `_secscan-challenge.<domain>`, and confirm
+with `check_domain_verification`. Until the server lists the domain as
+verified, the engagement runs passive-only; the auth gate enforces this
+mechanically by re-checking `list_verified_domains` itself.
 
 ## Engagement model
 
@@ -112,9 +119,10 @@ boundary mechanically, not by policy memo.
 ## What's real vs. stubbed in v0.1
 
 **Real (works today, no keys needed):**
-- `auth-gate` — full DNS TXT verification + pre-execute decision logic,
-  unit-tested (`npm test`), fails closed. The pure decision function is
-  production-grade.
+- `auth-gate` — server-authoritative verification + pre-execute decision
+  logic, unit-tested (`npm test`), fails closed. The gate asks the SecScan
+  server for its verified-domain list before any aggressive test; the pure
+  decision function is production-grade.
 - `agents/` — complete role prompts with ReAct loops and the exploiter's
   worked dynamic-testing example.
 - `llm-router` architecture — provider registry, per-role model policy,
@@ -150,8 +158,10 @@ package names (`@secscan/redteam-*`) and the plugin id in
 
 - API keys via environment / Secure Vault ONLY. The bridge, router, and docs
   never log, print, or persist keys. `.gitignore` blocks `.env` files.
-- Active testing requires proven domain ownership (DNS TXT or well-known
-  file), enforced at the tool layer. Unauthorized pentesting is illegal;
+- Active testing requires proven domain ownership (SecScan server
+  verification: `start_domain_verification` → TXT at
+  `_secscan-challenge.<domain>` → `check_domain_verification`), enforced at
+  the tool layer. Unauthorized pentesting is illegal;
   the gate cannot be overridden in-chat.
 - This repo is PRIVATE. It is the paid product's secret sauce: prompts,
   policy, and engagement machinery.

@@ -1,12 +1,12 @@
 export {
-  TXT_RECORD_PREFIX,
-  WELL_KNOWN_PATH,
-  checkTxtRecord,
+  SERVER_CHALLENGE_PREFIX,
+  SERVER_TOKEN_PREFIX,
   extractDomain,
-  generateEngagementToken,
-  txtRecordName,
-  verifyOwnership,
+  isDomainVerified,
+  parseVerifiedDomains,
+  verificationInstructions,
 } from "./verify.js";
-export type { OwnershipProof } from "./verify.js";
-export { decide, installAuthGate } from "./hook.js";
-export type { GateDecision, PreExecuteEvent } from "./hook.js";
+export { fetchVerifiedDomains, isServerVerified } from "./server.js";
+export type { ServerVerificationConfig } from "./server.js";
+export { decide, isScanTool, targetDomain, wantsActiveTesting } from "./hook.js";
+export type { GateContext, GateDecision, PreExecuteEvent } from "./hook.js";

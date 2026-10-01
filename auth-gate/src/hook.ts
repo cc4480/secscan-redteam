@@ -1,19 +1,23 @@
 /**
- * Harness-side auth gate: a `tools/pre-execute` hook in the documented
- * permission-gate shape (deepseek-harness docs/cookbook/extension-cookbook.md).
+ * Auth-gate decision logic — pure, dependency-free, fully unit-testable.
  *
- * Policy:
- *   - seclayer_list_scans / seclayer_get_report → always allowed (read-only).
- *   - seclayer_scan standard tier (aggressive !== true) → allowed (passive recon).
- *   - seclayer_scan aggressive=true → allowed ONLY when verifyOwnership()
- *     proves the target domain for the current engagement token.
- *   - anything else → allowed (this gate only polices active testing).
+ * Policy (fail-closed):
+ *   - Non-scan tools (reports, verification workflow, everything else) → allow.
+ *   - scan_url WITHOUT an explicit active-testing request → allow (passive recon).
+ *   - scan_url WITH an explicit active-testing request → allow ONLY if the
+ *     target domain is proven:
+ *       1. listed by the SecScan server (primary — injected `isServerVerified`,
+ *          which must itself fail closed), OR
+ *       2. present in the operator-managed `SECSCAN_VERIFIED_DOMAINS` allowlist
+ *          (secondary — set by the operator who verified ownership out-of-band
+ *          via the server's start_domain_verification flow).
+ *     Otherwise → deny, with the server verification flow as remediation.
  *
- * Denials carry the exact remediation (TXT record instructions), so the
- * coordinator can relay them to the operator without guessing.
+ * The gate never issues tokens and performs no DNS of its own. The SecScan
+ * server is the authority; this is the agent-layer backstop.
  */
 
-import { extractDomain, verifyOwnership } from "./verify.js";
+import { verificationInstructions } from "./verify.js";
 
 export interface PreExecuteEvent {
   toolName: string;
@@ -22,41 +26,100 @@ export interface PreExecuteEvent {
 
 export type GateDecision = { kind: "allow" } | { kind: "deny"; reason: string };
 
+export interface GateContext {
+  /** Operator-managed allowlist (SECSCAN_VERIFIED_DOMAINS). Empty = no bypass. */
+  allowlistedDomains: ReadonlySet<string>;
+  /**
+   * Server-side verdict for a domain. MUST fail closed: any error, timeout,
+   * or missing credential returns false. Injected so unit tests need no network.
+   */
+  isServerVerified: (domain: string) => Promise<boolean>;
+}
+
+/** Base tool name, tolerating the harness MCP namespace (mcp__secscan__scan_url). */
+function baseName(toolName: string): string {
+  const parts = toolName.split("__");
+  return parts[parts.length - 1] ?? toolName;
+}
+
+/** True for the scan-dispatching tool, namespaced or not. */
+export function isScanTool(toolName: string): boolean {
+  return baseName(toolName) === "scan_url";
+}
+
+const URL_KEYS = ["url", "target", "target_url", "site", "site_url"];
+
+/** Extract the target domain from tool arguments, or null. */
+export function targetDomain(args: Record<string, unknown>): string | null {
+  for (const key of URL_KEYS) {
+    const v = args[key];
+    if (typeof v === "string" && v.length > 0) {
+      try {
+        return new URL(v).hostname.toLowerCase();
+      } catch {
+        // Not a parseable URL under this key — try the next one.
+      }
+    }
+  }
+  return null;
+}
+
+/** True when the model explicitly asks for active/intrusive testing. */
+export function wantsActiveTesting(args: Record<string, unknown>): boolean {
+  for (const [k, v] of Object.entries(args)) {
+    if (/aggress|active|intrusive/i.test(k) && !!v) return true;
+    if (
+      typeof v === "string" &&
+      /^(aggressive|active|intrusive)([-_ ]?(test|scan|probe|mode|tier)s?)?$/i.test(v.trim())
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Pure decision function — easy to unit test, no harness imports.
- * `engagementToken` is the token issued for this engagement (env
- * SECSCAN_ENGAGEMENT_TOKEN at runtime). Undefined token ⇒ fail closed.
+ * Pure decision function. `ctx.isServerVerified` is the only impure input
+ * and is wrapped defensively: a throw can never become an allow.
  */
 export async function decide(
   event: PreExecuteEvent,
-  engagementToken: string | undefined,
+  ctx: GateContext,
 ): Promise<GateDecision> {
-  const { toolName, arguments: args } = event;
-
-  // Read-only tools never need authorization.
-  if (toolName === "seclayer_list_scans" || toolName === "seclayer_get_report") {
+  // Non-scan tools never need authorization: read-only tools, the domain
+  // verification workflow itself, and everything else pass through.
+  if (!isScanTool(event.toolName)) {
     return { kind: "allow" };
   }
 
-  if (toolName !== "seclayer_scan") {
+  const args = event.arguments ?? {};
+
+  // Passive scans are recon, not attack — always allowed.
+  if (!wantsActiveTesting(args)) {
     return { kind: "allow" };
   }
 
-  // Standard tier is passive recon — always allowed.
-  if (args["aggressive"] !== true) {
+  const domain = targetDomain(args);
+  if (!domain) {
+    return {
+      kind: "deny",
+      reason: "[auth-gate] denied: no parseable target URL in the scan arguments.",
+    };
+  }
+
+  // Proof path 1 (secondary): operator-managed allowlist.
+  if (ctx.allowlistedDomains.has(domain)) {
     return { kind: "allow" };
   }
 
-  const rawUrl = typeof args["url"] === "string" ? args["url"] : "";
-  let domain: string;
+  // Proof path 2 (primary): the SecScan server's own verified-domain list.
+  let verified = false;
   try {
-    domain = extractDomain(rawUrl);
+    verified = await ctx.isServerVerified(domain);
   } catch {
-    return { kind: "deny", reason: `[auth-gate] denied: '${rawUrl}' is not a valid URL.` };
+    verified = false; // fail closed — a throwing checker can never approve
   }
-
-  const proof = await verifyOwnership(rawUrl, engagementToken);
-  if (proof.ok) {
+  if (verified) {
     return { kind: "allow" };
   }
 
@@ -64,30 +127,9 @@ export async function decide(
     kind: "deny",
     reason:
       `[auth-gate] ACTIVE TESTING DENIED for ${domain}.\n` +
-      `No domain-ownership proof found for the current engagement token.\n` +
-      `${proof.instructions ?? ""}\n` +
+      `No domain-ownership proof on file.\n` +
+      `${verificationInstructions(domain)}\n` +
       `This block is intentional and cannot be overridden in-chat: unauthorized ` +
       `active testing is illegal. Passive (standard-tier) scans remain available.`,
   };
-}
-
-/**
- * Installs the gate on a harness context. The context shape is structural
- * (see harness-plugin/src/harness-types.ts) so this package stays
- * dependency-free.
- */
-export function installAuthGate(
-  ctx: {
-    on(
-      event: "tools/pre-execute",
-      handler: (exec: PreExecuteEvent, next: () => Promise<GateDecision>) => Promise<GateDecision>,
-    ): void;
-  },
-  getEngagementToken: () => string | undefined,
-): void {
-  ctx.on("tools/pre-execute", async (exec, next) => {
-    const decision = await decide(exec, getEngagementToken());
-    if (decision.kind === "deny") return decision;
-    return next();
-  });
 }

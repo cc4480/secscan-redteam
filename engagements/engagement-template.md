@@ -14,13 +14,19 @@ paper trail that the test was scoped and authorized.
 
 ## 2. Authorization
 
-- Engagement token issued: `sl-verify-…` (store in `SECSCAN_ENGAGEMENT_TOKEN`)
-- Proof method: DNS TXT at `_seclayer-challenge.<domain>` / well-known file
-- Verified at (timestamp):
-- Verified by:
+Ownership is proven through the SecScan server (it is authoritative):
 
-> Until this section is filled, the engagement runs **passive only**.
-> The auth gate enforces this mechanically.
+1. `start_domain_verification` for each in-scope domain — the server issues
+   a `secscan-verify-…` challenge token.
+2. Publish the token as a DNS TXT record at `_secscan-challenge.<domain>`.
+3. `check_domain_verification` (or `list_verified_domains`) to confirm.
+
+- Verified at (timestamp):
+- Verified by (server check output):
+
+> Until the server lists the domain as verified, the engagement runs
+> **passive only**. The auth gate enforces this mechanically by re-checking
+> the server's verified-domain list before any aggressive test.
 
 ## 3. Rules of engagement (read to the client)
 
