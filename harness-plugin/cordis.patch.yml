@@ -1,0 +1,22 @@
+# secscan-redteam bundle patch: mounts the red-team plugin into the host
+# composition of a dsh profile. The plugin bridges the real SecScan MCP tools
+# into the shared `tools` registry, installs the auth gate as a pre-execute
+# hook, and adds the red-team usage section to the system prompt.
+#
+# Install: `dsh plugin --profile <name> add /path/to/secscan-redteam/harness-plugin`
+# (or the published package name, once published).
+#
+# Secrets are cordis-native: schemastery Config with env fallbacks.
+# NEVER put a raw key in this file.
+
+- insert:
+    - id: secscan-redteam
+      name: '@secscan/redteam-harness-plugin'
+      config:
+        # SecScan API key — env only. Generate from the SecScan dashboard's
+        # Developer API Keys panel, then: export SECLAYER_API_KEY=...
+        # (or enter it via the Secure Vault; the harness reads process.env).
+        seclayerApiKey: !!js process.env.SECLAYER_API_KEY
+        # MCP server launch — override only if running a local mcp-server build:
+        # mcpCommand: "node"
+        # mcpArgs: ["/path/to/OPEN_SECLAYER/mcp-server/dist/index.js"]

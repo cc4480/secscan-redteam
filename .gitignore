@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-test/
+build/
+*.tsbuildinfo
+
+# Secrets — NEVER commit these. Keys live in the environment / Secure Vault only.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Harness / editor state
+.dsh/
+.agent-teams/
+*.log
+.DS_Store
+
+# Test artifacts
+coverage/
