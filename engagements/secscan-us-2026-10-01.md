@@ -103,3 +103,13 @@ No Critical / High / Medium findings in either phase. Nothing destructive was at
   Aggressive `scan_url` skipped for lack of quota; exploiter battery ran as substitute.
 - User corrected the record to `_secscan-challenge.secscan.us`; re-check ~07:20 CDT → VERIFIED.
   Aggressive battery executed 07:20–07:45 (see log above).
+
+## D-4 deferred leg attempt (2026-10-01 ~07:40 CDT) — BLOCKED: verification is token-scoped
+- User supplied a fresh MCP token; `get_account` → 3 of 3 free scans (renew 2026-11-01) — quota available.
+- `check_domain_verification({"domain":"secscan.us"})` → "No verification started for that domain";
+  `list_verified_domains` → none. Verification state is per-token: the new token is a different
+  account/session than the one verified this morning, so the morning's proof does not carry over.
+- `start_domain_verification({"domain":"secscan.us"})` issued a NEW challenge for this token:
+  publish TXT `secscan-verify-dcef4086eb84b2958be413c676f5b880` at `_secscan-challenge.secscan.us`
+  (or serve it at `https://secscan.us/.well-known/secscan-verification.txt`), then re-check.
+- Aggressive `scan_url` NOT run — awaiting the user's DNS update. Re-dispatch this leg once verified.
