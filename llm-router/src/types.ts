@@ -23,6 +23,12 @@ export interface ToolCallRequest {
 export interface ChatResult {
   /** Assistant text (may be empty when the turn is pure tool calls). */
   text: string;
+  /**
+   * The model's thinking trace, when the provider exposes one (Qwen
+   * `reasoning_content`, DeepSeek reasoner). Surfaced separately so the
+   * harness can log it without polluting the visible reply.
+   */
+  reasoning?: string;
   /** Tool calls the model requested this turn. */
   toolCalls: ToolCallRequest[];
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };

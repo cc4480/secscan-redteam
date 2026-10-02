@@ -143,11 +143,15 @@ export interface ResolvedRunnerConfig {
   mcpEndpoint: string;
   mcpToken: string;
   deepseekApiKey: string;
+  /** Alibaba Model Studio key — the exploiter (Qwen) reads it from env. */
+  qwenApiKey: string;
   maxReconTurns: number;
   maxExploitProbes: number;
   maxActions: number;
   maxDurationMs: number;
   probeDelayMs: number;
   engagementsDir: string;
+  /** Persistent vulnerability registry path. Seeded on first run. */
+  registryPath: string;
   dryRunAgents: boolean;
 }

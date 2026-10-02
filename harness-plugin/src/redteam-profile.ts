@@ -7,11 +7,11 @@
  * tasks with dependencies. The harness's team plugin consumes this to spawn
  * the coordinator + specialists as durable continuable subagents.
  *
- * v0.1 model policy (DeepSeek ONLY):
+ * v0.5 model policy (DeepSeek + Qwen):
  *   - deepseek-flash — fast, cheap, strong tool use → recon loops,
  *     coordinator orchestration, reporter write-up.
- *   - deepseek-v4-pro   — premium reasoning → exploiter hypothesis formation,
- *     exploit-chain planning, pivot decisions.
+ *   - qwen3.8-max (Alibaba Model Studio) — flagship reasoning → exploiter
+ *     hypothesis formation, exploit-chain planning, pivot decisions.
  * The router (llm-router/) is provider-pluggable; adding Claude / ChatGPT /
  * Gemini / GLM / Qwen later means registering new provider adapters, not
  * rewriting these roles.
@@ -81,8 +81,8 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "exploiter",
       role: "Reasoning attacker. Takes recon + scan findings, forms hypotheses, crafts context-specific payloads, observes responses, and pivots. The dynamic-testing differentiator lives here.",
-      provider: "deepseek",
-      model: "deepseek-v4-pro",
+      provider: "qwen",
+      model: "qwen3.8-max",
       reasoning_effort: "high",
       promptFile: "agents/exploiter.md",
       executionPrompt:

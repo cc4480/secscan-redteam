@@ -1,10 +1,10 @@
 /**
  * Per-role model policy — the cost/latency brain of the router.
  *
- * v0.1 (DeepSeek ONLY; IDs verified against the live API):
+ * v0.5 (DeepSeek + Qwen; model IDs verified against the live APIs):
  *   coordinator → deepseek / deepseek-flash   (fast orchestration, tool use)
  *   recon       → deepseek / deepseek-flash   (cheap recon loops)
- *   exploiter   → deepseek / deepseek-v4-pro  (premium reasoning: hypotheses,
+ *   exploiter   → qwen / qwen3.8-max          (strongest reasoning: hypotheses,
  *                                              exploit chains, pivot decisions)
  *   reporter    → deepseek / deepseek-flash   (fast write-up)
  *
@@ -17,11 +17,12 @@
 
 import type { AgentRole, RoleRoute } from "./types.js";
 import { DEEPSEEK_MODELS } from "./providers/deepseek.js";
+import { QWEN_MODELS } from "./providers/qwen.js";
 
 export const ROLE_MODEL_POLICY: Record<AgentRole, RoleRoute> = {
   coordinator: { provider: "deepseek", model: DEEPSEEK_MODELS.flash },
   recon: { provider: "deepseek", model: DEEPSEEK_MODELS.flash, reasoningEffort: "low" },
-  exploiter: { provider: "deepseek", model: DEEPSEEK_MODELS.pro, reasoningEffort: "high" },
+  exploiter: { provider: "qwen", model: QWEN_MODELS.reasoning, reasoningEffort: "high" },
   reporter: { provider: "deepseek", model: DEEPSEEK_MODELS.flash },
 };
 

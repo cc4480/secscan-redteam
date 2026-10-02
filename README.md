@@ -69,18 +69,18 @@ evidence, and copy-paste fixes.
   │              │  │  │                               │  │
   │ deepseek     │  │  │  ┌─────────────────────────┐  │  │
   │  ├ v4-flash  │  │  │  │ SecScan MCP (native)    │  │  │
-  │  └ v4-pro    │  │  │  │  mcp__secscan__*        │──┼──┼──► secscan.us/api/mcp
-  │              │  │  │  │  (dsh-mcp-client,       │  │  │    (Streamable HTTP,
+  │  qwen        │  │  │  │  mcp__secscan__*        │──┼──┼──► secscan.us/api/mcp
+  │  └ 3.8-max   │  │  │  │  (dsh-mcp-client,       │  │  │    (Streamable HTTP,
   │ (anthropic / │  │  │  │   live tools)           │  │  │     live engine)
   │  openai /    │  │  │  └─────────────────────────┘  │  │
   │  google /    │  │  │  ┌─────────────────────────┐  │  │
-  │  zhipu/qwen  │  │  │  │ auth gate (pre-execute) │  │  │
+  │  zhipu/kimi  │  │  │  │ auth gate (pre-execute) │  │  │
   │  PLANNED)    │  │  │  │  DNS TXT ownership      │  │  │
   └──────────────┘  │  └─────────────────────────┘  │  │
                     │  ┌─────────────────────────┐  │  │
                     │  │ team: coordinator       │  │  │
                     │  │  ├ recon    (flash)     │  │  │
-                    │  │  ├ exploiter (pro)      │  │  │
+                    │  │  ├ exploiter (qwen)     │  │  │
                     │  │  └ reporter  (flash)     │  │  │
                     │  └─────────────────────────┘  │  │
                     └─────────────────────────────────────┘
@@ -95,11 +95,12 @@ evidence, and copy-paste fixes.
   the old stdio `@seclayer/mcp` bridge was removed in v0.2 because its
   seclayer.io X-API-Key backend no longer serves the API. Includes the team
   profile (roles, model assignments, seed tasks).
-- **llm-router/** — provider-pluggable unified LLM interface. v0.1: DeepSeek
-  only. `deepseek-flash` (fast, tool use) drives recon loops, the
-  coordinator, and the reporter; `deepseek-v4-pro` (premium reasoning)
-  drives the exploiter's hypothesis work. Adding providers later = one new
-  class implementing `LlmProvider` + `registerProvider()`.
+- **llm-router/** — provider-pluggable unified LLM interface. v0.5: DeepSeek
+  + Qwen. `deepseek-flash` (fast, tool use) drives recon loops, the
+  coordinator, and the reporter; `qwen3.8-max` (Alibaba Model Studio,
+  flagship reasoning, thinking on by default) drives the exploiter's
+  hypothesis work. Adding providers later = one new class implementing
+  `LlmProvider` + `registerProvider()`.
 - **agents/** — role system prompts with ReAct loops. The exploiter prompt
   carries a worked dynamic-testing example (reflected input → CSP-aware
   payload pivot → canary-token proof).
@@ -129,8 +130,8 @@ evidence, and copy-paste fixes.
 
 ## Running a live engagement
 
-Keys via environment ONLY (`SECSCAN_MCP_TOKEN`, `DEEPSEEK_API_KEY`;
-`SECSCAN_MCP_URL` and `REDTEAM_HOME` optional):
+Keys via environment ONLY (`SECSCAN_MCP_TOKEN`, `DEEPSEEK_API_KEY`,
+`QWEN_API_KEY`; `SECSCAN_MCP_URL` and `REDTEAM_HOME` optional):
 
 ```bash
 # 1. Authorize the domain first (server flow — do this once per domain):
@@ -157,7 +158,8 @@ nothing aggressive ever runs unverified.
 ## Setup
 
 Prerequisites: Node 20+, a DeepSeek Harness install (`dsh`), a SecScan MCP-scope
-token, a DeepSeek API key.
+token, a DeepSeek API key, and an Alibaba Model Studio API key (Qwen — the
+exploiter's reasoning engine).
 
 ```bash
 # 1. Install the plugin into a harness profile
@@ -166,9 +168,10 @@ dsh plugin --profile redteam add ./harness-plugin
 # (adds the dsh-mcp-client entry -> https://secscan.us/api/mcp)
 
 # 2. Keys — environment ONLY, never in code or docs.
-#    Enter both via the Secure Vault; they land in the environment.
+#    Enter all three via the Secure Vault; they land in the environment.
 export SECSCAN_MCP_TOKEN="..."  # secscan.us/settings -> AI editors (MCP scope)
 export DEEPSEEK_API_KEY="..."
+export QWEN_API_KEY=<redacted>   # Alibaba Model Studio; DASHSCOPE_API_KEY also accepted
 # NOTE: an API-scope (ssk_) token does NOT work for the MCP endpoint; scopes are separate.
 
 # 3. Build & typecheck
@@ -198,6 +201,42 @@ pass after remediation. The Red Team Console's Live tab runs the whole thing:
 engagement form → ownership-verification panel → live event feed →
 phase/ATT&CK timeline → findings as they land → downloadable report.
 
+## What's real in v0.5.0
+
+**Real (works today):** everything in v0.4.0, plus —
+- **Qwen reasoning engine** — the exploiter (the heavy-reasoning black-hat
+  brain) runs on `qwen3.8-max` via Alibaba Model Studio (strongest Qwen
+  reasoning, thinking on by default); coordinator/recon/reporter stay on
+  `deepseek-flash` for cost discipline. The llm-router was built
+  provider-pluggable for exactly this: adding Qwen meant one new provider
+  class + registration + a policy line — no harness changes. Thinking traces
+  surface in the event feed as `[thinking]` blocks. Key via `QWEN_API_KEY`
+  (or `DASHSCOPE_API_KEY`) in the environment / Secure Vault, never in code.
+- **The registry** — the product's compounding attack intelligence:
+  `engagements/registry.json` persists confirmed findings (vuln class,
+  technique, ATT&CK ID, target fingerprint, payload pattern, evidence ref)
+  and killed hypotheses (what was tried + the killing observation, so dead
+  ends are never repeated). The exploiter queries it when forming hypotheses
+  and writes back every verdict live. Seeded with the v0.3.x secscan.us
+  engagement (10 killed, 4 confirmed).
+- **Role fidelity** — each agent embodies its role in its prompt (exploiter
+  thinks black-hat, recon is a patient scout, coordinator is an operation
+  commander, reporter is a merciless auditor); the coordinator enforces
+  role discipline at every handoff.
+- **Technique fusion** — the exploiter's loop has an explicit FUSE step:
+  old primitive + new development = novel probe, not replayed payloads.
+- **Megazord cohesion** — one shared operation state (plan, target map,
+  findings, killed hypotheses, registry hits, battery) appended to every
+  tool observation; coordinator sign-off gates every phase transition
+  (plan→recon→exploit→report); the coordinator can redirect (bounded
+  re-recon when the exploiter hits a wall) or abort on stop conditions.
+- **Dynamic orchestration** — the coordinator decomposes the operation into
+  small discrete tasks, delegates each to a specialist subagent (fresh
+  foundation loop), and re-plans after every observation round: pivot,
+  escalate, go stealthy, back off, or fan out. Red fans out up to 3 parallel
+  tasks; black runs strictly one at a time (stealth).
+- 43 unit tests (runner), 17 (auth-gate). CLI: `start`, `queue`, `watch`.
+
 ## What's real in v0.4.0
 
 **Real (works today):**
@@ -213,7 +252,8 @@ phase/ATT&CK timeline → findings as they land → downloadable report.
   the full three-category battery (logic flaws, functionality abuse,
   validation rigor) with black-mode stealth variants.
 - `llm-router` — provider registry, per-role model policy (flash for
-  coordinator/recon/reporter, v4-pro for the exploiter), DeepSeek wire client.
+  coordinator/recon/reporter, qwen3.8-max for the exploiter), DeepSeek + Qwen
+  wire clients.
 - `harness-plugin` — verified against the real harness contracts; installs
   the auth gate as a `tools/pre-execute` hook.
 - Red Team Console — Live tab wired to the runner (engagement form, red/black
@@ -225,8 +265,8 @@ phase/ATT&CK timeline → findings as they land → downloadable report.
   `engagements/`.
 
 **Stubbed / planned:**
-- Non-DeepSeek providers (Claude, ChatGPT, Gemini, GLM, Qwen) — interface
-  ready, implementations not started.
+- More providers (Claude, ChatGPT, Gemini, GLM, Kimi — the runner-up) —
+  interface ready, implementations not started.
 - Streaming in the router (`complete()` is request/response).
 - OAST infrastructure for SSRF canary callbacks (D-1); second test account
   for cross-account IDOR (D-2).

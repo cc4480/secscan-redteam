@@ -4,7 +4,7 @@
   },
   "dependencies": {
     "@secscan/redteam-auth-gate": "0.1.0",
-    "@secscan/redteam-llm-router": "0.1.0"
+    "@secscan/redteam-llm-router": "0.2.0"
   },
   "description": "Live engagement runner for the secscan red-team: executes the full red/black-team loop as code \u2014 authorize \u2192 plan \u2192 recon \u2192 exploit \u2192 report \u2014 with streaming event logs.",
   "devDependencies": {
@@ -23,5 +23,5 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "type": "module",
-  "version": "0.4.0"
+  "version": "0.5.0"
 }

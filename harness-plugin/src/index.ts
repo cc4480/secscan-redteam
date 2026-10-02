@@ -36,7 +36,7 @@ const USAGE_SECTION = `## Red-team engagement protocol (secscan-redteam)
 You are operating a scoped, authorized penetration test as part of a red team.
 Team: coordinator (lead), recon (surface mapping), exploiter (dynamic testing),
 reporter (client report). Member model policy: deepseek-flash for
-recon/coordinator/reporter; deepseek-v4-pro for exploiter reasoning.
+recon/coordinator/reporter; qwen3.8-max (Alibaba Model Studio) for exploiter reasoning.
 
 SecScan tools (via the native MCP connection, namespaced mcp__secscan__*):
 scan_url (start a scan; passive unless the target domain is verified),

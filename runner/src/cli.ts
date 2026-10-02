@@ -9,7 +9,7 @@
  *   redteam-runner watch [--queue <dir>]   # run queued console jobs
  *
  * Credentials via environment only: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY,
- * SECSCAN_MCP_URL (optional, defaults to https://secscan.us/api/mcp).
+ * QWEN_API_KEY (Alibaba Model Studio, for the exploiter), SECSCAN_MCP_URL (optional).
  */
 
 import { enqueueEngagement, runEngagement, watchQueue } from "./index.js";
@@ -34,7 +34,7 @@ function usage(): never {
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
 
-Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, SECSCAN_MCP_URL (optional).`);
+Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional).`);
   process.exit(2);
 }
 

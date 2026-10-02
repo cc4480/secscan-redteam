@@ -1,1 +1,17 @@
-{"description":"Unified, provider-pluggable LLM interface for the red-team. v0.1: DeepSeek only (deepseek-v4-flash + deepseek-v4-pro).","devDependencies":{"@types/node":"^26.6.3","typescript":"^5.6.0"},"license":"UNLICENSED","main":"dist/index.js","name":"@secscan/redteam-llm-router","private":true,"scripts":{"build":"tsc -p tsconfig.json","typecheck":"tsc --noEmit -p tsconfig.json"},"type":"module","version":"0.1.0"}
+{
+  "description": "Unified, provider-pluggable LLM interface for the red-team. v0.5: DeepSeek (flash) + Qwen (qwen3.8-max reasoning).",
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^5.6.0"
+  },
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "name": "@secscan/redteam-llm-router",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "type": "module",
+  "version": "0.2.0"
+}

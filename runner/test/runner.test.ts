@@ -147,6 +147,7 @@ describe("runEngagement gating (dry-run agents, fake gate)", () => {
   const opts = (verify: typeof noVerify) => ({
     mcpToken: "test",
     deepseekApiKey: "test",
+    qwenApiKey: "test",
     engagementsDir: dir,
     dryRunAgents: true,
     deps: { verify },
@@ -198,5 +199,25 @@ describe("runEngagement gating (dry-run agents, fake gate)", () => {
     const inp = input("red");
     inp.roe.scope = ["%%%"];
     await assert.rejects(() => runEngagement(inp, opts(yesVerify)), /scope/);
+  });
+
+  it("fails fast without the Qwen key (exploiter engine) when agents are live", async () => {
+    const live = {
+      mcpToken: "test",
+      deepseekApiKey: "test",
+      // qwenApiKey intentionally absent
+      engagementsDir: dir,
+      deps: { verify: async () => true },
+    };
+    const oldQwen = process.env["QWEN_API_KEY"];
+    const oldDash = process.env["DASHSCOPE_API_KEY"];
+    delete process.env["QWEN_API_KEY"];
+    delete process.env["DASHSCOPE_API_KEY"];
+    try {
+      await assert.rejects(() => runEngagement(input("red"), live), /QWEN_API_KEY/);
+    } finally {
+      if (oldQwen !== undefined) process.env["QWEN_API_KEY"] = oldQwen;
+      if (oldDash !== undefined) process.env["DASHSCOPE_API_KEY"] = oldDash;
+    }
   });
 });

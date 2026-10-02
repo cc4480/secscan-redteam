@@ -9,8 +9,10 @@
  *   4. Optionally add role routes in src/policy.ts.
  *
  * Provider statuses:
- *   - deepseek : ACTIVE (v0.1)
+ *   - deepseek : ACTIVE (v0.1) — coordinator/recon/reporter on deepseek-flash
+ *   - qwen (Alibaba) : ACTIVE (v0.5) — exploiter on qwen3.8-max (reasoning)
  *   - anthropic (Claude), openai (ChatGPT), google (Gemini), zhipu (GLM),
- *     qwen (Alibaba) : PLANNED — interface is ready, no implementation yet.
+ *     moonshot (Kimi — the runner-up for the next swap) : PLANNED —
+ *     interface is ready, no implementation yet.
  */
 export {};

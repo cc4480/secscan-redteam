@@ -27,6 +27,8 @@ export interface LiveState {
   plan: OperationPlan | null;
   findings: Finding[];
   batteryCoverage?: Record<BatteryCategory, number>;
+  /** The reporter's unified operation narrative (Megazord header for the console). */
+  operationNarrative?: string;
   eventCount: number;
   startedAt: string;
   updatedAt: string;

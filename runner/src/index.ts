@@ -12,7 +12,8 @@
  * ```
  *
  * Credentials come from the environment (Secure Vault), never from code:
- *   SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, SECSCAN_MCP_URL (optional).
+ *   SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY (Alibaba Model Studio,
+ *   exploiter engine), SECSCAN_MCP_URL (optional).
  *
  * Console bridge: the console's "start engagement" action writes an
  * EngagementInput JSON file into the queue dir; `watchQueue()` picks it up

@@ -23,6 +23,7 @@ import type {
 } from "./types.js";
 import { ROLE_MODEL_POLICY } from "./policy.js";
 import { DeepSeekProvider } from "./providers/deepseek.js";
+import { QwenProvider } from "./providers/qwen.js";
 
 const providers = new Map<string, LlmProvider>();
 
@@ -96,5 +97,8 @@ export async function completeForRole(
   });
 }
 
-// v0.1: DeepSeek is the only registered provider.
+// Providers. To add the next one (Kimi was the runner-up): implement
+// LlmProvider in src/providers/<id>.ts (see providers/README.md) and
+// register it here — no changes to the router core or the harness.
 registerProvider(new DeepSeekProvider());
+registerProvider(new QwenProvider());

@@ -66,6 +66,8 @@ describe("battery coverage enforcement", () => {
 
   function scriptedLlm() {
     const counts: Record<string, number> = {};
+    const taskCalls: Record<string, number> = {};
+    let replans = 0;
     const probe = (category: string, id: number): ToolCallRequest => ({
       id: `call-${id}`,
       name: "http_probe",
@@ -78,21 +80,64 @@ describe("battery coverage enforcement", () => {
       },
     });
     const textOnly = (text: string): ChatResult => ({ text, toolCalls: [], provider: "fake", model: "fake" });
+    const taskJson = (tasks: object[], finish: boolean, note: string): ChatResult =>
+      textOnly("```json " + JSON.stringify({ tasks, finish, note }) + " ```");
     return async (role: AgentRole, _messages: ChatMessage[], _opts: object): Promise<ChatResult> => {
       counts[role] = (counts[role] ?? 0) + 1;
-      const n = counts[role]!;
+      const has = (s: string) => _messages.some((m) => m.content.includes(s));
       if (role === "coordinator") {
+        // Sign-off turns: play the handoff protocol.
+        if (has("Transition awaiting sign-off")) {
+          return textOnly("SIGN-OFF: test approval — brief is sufficient.");
+        }
+        // Dynamic orchestration: decompose, then try to finish early (the
+        // runner must force another round), then cover the missing categories.
+        if (has("DECOMPOSE")) {
+          return taskJson(
+            [{ kind: "probe", brief: "test logic flaws", attackId: "T1190", category: "logic", maxTurns: 4 }],
+            false,
+            "opening with logic",
+          );
+        }
+        if (has("RE-PLAN")) {
+          replans++;
+          if (has("OVERRIDE")) {
+            return taskJson(
+              [
+                { kind: "probe", brief: "test functionality abuse", attackId: "T1190", category: "functionality", maxTurns: 4 },
+                { kind: "probe", brief: "test validation rigor", attackId: "T1190", category: "validation", maxTurns: 4 },
+              ],
+              false,
+              "covering missing categories",
+            );
+          }
+          // Black mode caps at 1 task/round: the runner rejects over-cap tasks
+          // with an event — re-task validation when it's still missing.
+          if (replans === 1) return taskJson([], true, "wrapping up early");
+          if (_messages.some((m) => m.content.includes("validation:MISSING"))) {
+            return taskJson(
+              [{ kind: "probe", brief: "test validation rigor", attackId: "T1190", category: "validation", maxTurns: 4 }],
+              false,
+              "retrying validation task dropped over cap",
+            );
+          }
+          return taskJson([], true, "battery complete");
+        }
         return textOnly('```json {"adversaryProfile":"test","steps":[]} ```');
       }
       if (role === "recon") return textOnly("recon brief: surface mapped");
       if (role === "reporter") return textOnly("# Report\n\n```json " + '{"findings":[]}' + " ```");
-      // exploiter: probes logic twice, then keeps trying to stop early
-      if (n === 1) return { text: "logic hypotheses", toolCalls: [probe("logic", 1), probe("logic", 2)], provider: "fake", model: "fake" };
-      if (n === 2) return textOnly("logic done, stopping early");
-      if (n === 3) return { text: "functionality hypothesis", toolCalls: [probe("functionality", 3)], provider: "fake", model: "fake" };
-      if (n === 4) return textOnly("functionality done, stopping");
-      if (n === 5) return { text: "validation hypothesis", toolCalls: [probe("validation", 4)], provider: "fake", model: "fake" };
-      return textOnly("battery complete");
+      // exploiter (task subagent): one probe per task, then the task report.
+      // Keyed by task brief so parallel tasks don't confuse the script.
+      const n = counts[role]!;
+      const sys = _messages.find((m) => m.role === "system")?.content ?? "";
+      const brief = sys.match(/- Task: ([^\n]+)/)?.[1] ?? `task-${n}`;
+      taskCalls[brief] = (taskCalls[brief] ?? 0) + 1;
+      if (taskCalls[brief] === 1) {
+        const cat = sys.match(/Battery category: (\w+)/)?.[1] ?? "logic";
+        return { text: `${cat} hypothesis`, toolCalls: [probe(cat, n)], provider: "fake", model: "fake" };
+      }
+      return textOnly("TRIED: probe / OBSERVED: 200 ok / VERDICT: killed - no flaw");
     };
   }
 
@@ -110,6 +155,7 @@ describe("battery coverage enforcement", () => {
     const res = await runEngagement(input, {
       mcpToken: "test",
       deepseekApiKey: "test",
+      qwenApiKey: "test",
       engagementsDir: dir,
       deps: {
         verify: async () => true,
@@ -123,12 +169,17 @@ describe("battery coverage enforcement", () => {
     assert.deepEqual(state?.batteryCoverage, { logic: 1, functionality: 1, validation: 1 });
     const events = readEvents(engDir);
     const probes = events.filter((e) => e.action === "http_probe");
-    assert.equal(probes.length, 4);
-    // The runner refused to let the phase end thin: two nudges fired.
-    const nudges = events.filter((e) => e.action === "phase_nudge");
-    assert.ok(nudges.length >= 2, `expected ≥2 nudges, got ${nudges.length}`);
-    assert.ok(nudges.some((e) => e.result.includes("functionality")));
-    assert.ok(nudges.some((e) => e.result.includes("validation")));
+    assert.equal(probes.length, 3);
+    // Dynamic orchestration: the coordinator decomposed into tasks, tried to
+    // finish early, was forced back for the missing categories, then finished.
+    const spawns = events.filter((e) => e.action === "task_spawn");
+    assert.equal(spawns.length, 3);
+    assert.ok(spawns.some((e) => e.result.includes("(logic)")));
+    assert.ok(spawns.some((e) => e.result.includes("(functionality)")));
+    assert.ok(spawns.some((e) => e.result.includes("(validation)")));
+    const replans = events.filter((e) => e.action === "replan");
+    assert.ok(replans.some((e) => e.result.includes("covering missing categories")), "forced battery round must happen");
+    assert.ok(events.some((e) => e.action === "task_complete"));
     // Report carries the coverage line.
     const report = readFileSync(join(engDir, "report.md"), "utf8");
     assert.ok(report.includes("Battery coverage"));
@@ -146,6 +197,7 @@ describe("battery coverage enforcement", () => {
     const res = await runEngagement(input, {
       mcpToken: "test",
       deepseekApiKey: "test",
+      qwenApiKey: "test",
       engagementsDir: dir,
       deps: {
         verify: async () => true,
