@@ -1,13 +1,52 @@
-# SecScan RedTeam — v0.1 scaffold
+# SecScan RedTeam — v0.4.0: live engagement runner + Red/Black teams
 
 > Working name: **secscan-redteam** (renameable — see "Naming" below).
 
 AI red-team pentesting, sold as scoped, authorized, paid B2B engagements.
 The system ties the **SecScan scanning engine** (via its live MCP endpoint)
-to the **DeepSeek Harness** ("everything is a plugin"), adds a **multi-LLM
-router**, and runs a four-role agent team whose exploiter **reasons** —
-forming hypotheses from tool output and inventing new tests on the fly,
-instead of marching down a static checklist.
+to a **live engagement runner** that executes the full loop as code —
+authorize → plan → recon → exploit → report — with a four-role DeepSeek agent
+team whose exploiter **reasons** and now runs a **systematic three-category
+battery** (logic flaws, functionality abuse, validation rigor) instead of
+marching down a static checklist.
+
+## Red vs Black — the two engagement modes
+
+- **RED (overt red team):** aggressive breadth. Full technique catalog, active
+  scanner tier, direct hypothesis testing. Speed and coverage beat stealth.
+  The blue team may know the engagement is happening.
+- **BLACK (covert-ops tier):** black-box — zero prior knowledge assumed.
+  Stealth-prioritized: low-noise techniques first, jittered pacing, payload
+  encoding to reduce signature footprint, immediate backoff on any detection
+  signal (WAF block, 429, challenge page). Every detection signal is logged as
+  an OPSEC event and becomes a detection-gap finding. Undeclared to the
+  target's blue team.
+
+**Both modes require server-authoritative domain-ownership proof before any
+active testing.** Covert means covert *vs the blue team* — never vs the
+authorization gate. The gate cannot be bypassed, talked around, or
+"black-teamed"; it fails closed for everyone, including the operator.
+
+## Rules of Engagement (ROE)
+
+Every engagement carries an ROE contract that the runner enforces
+mechanically, not by policy memo:
+
+- **Scope** — exact in-scope hosts. Nothing else is ever touched (exact
+  hostname match; the prober additionally refuses private/loopback IPs and
+  non-HTTP schemes).
+- **Excluded techniques** — ATT&CK IDs that are off-limits. `T1499` (DoS) is
+  always excluded; black mode also excludes `T1110` (brute force) by default.
+- **Blackout windows** — daily `HH:MM–HH:MM` windows (with timezone) during
+  which the runner pauses all traffic, then resumes.
+- **Stop conditions** — e.g. production outage, WAF hard-block. Three
+  consecutive 5xx responses halt the engagement automatically.
+- **Test window** — the runner refuses to run outside the agreed window.
+- **Deconfliction contact** — who to call on the client side if something
+  goes wrong.
+
+Non-destructive always. Web targets only — no phishing, social engineering,
+or physical testing in the automated runner; those stay manual.
 
 ## Vision
 
@@ -73,7 +112,47 @@ evidence, and copy-paste fixes.
   closed; aggressive testing without proof is denied with remediation
   instructions. Legally non-negotiable.
 - **engagements/** — per-client runbook template (scope, authorization,
-  rules, log, close-out).
+  rules, log, close-out). Live engagements stream here:
+  `engagements/live/<id>/{events.jsonl, state.json, engagement.md, report.md}`;
+  the console tails these for its live view. `engagements/queue/` receives
+  engagement requests from the console.
+- **runner/** — the live engagement runner (`@secscan/redteam-runner`, v0.4.0).
+  Executes authorize → plan → recon → exploit → report as code: the
+  coordinator produces an ATT&CK-mapped operation plan, recon runs the SecScan
+  engine, the exploiter runs the hypothesis → probe → observe loop against
+  the systematic three-category battery (logic flaws, functionality abuse,
+  validation rigor — 24 OWASP-referenced items; the runner refuses to end the
+  exploit phase until all three categories are probed), and the reporter
+  writes the client report. Every action streams to a JSONL event log with
+  timestamp, phase, actor, ATT&CK ID, target, and result. 32 unit tests,
+  no network needed.
+
+## Running a live engagement
+
+Keys via environment ONLY (`SECSCAN_MCP_TOKEN`, `DEEPSEEK_API_KEY`;
+`SECSCAN_MCP_URL` and `REDTEAM_HOME` optional):
+
+```bash
+# 1. Authorize the domain first (server flow — do this once per domain):
+#    start_domain_verification → publish TXT at _secscan-challenge.<domain>
+#    → check_domain_verification. The runner verifies before starting and
+#    re-checks before every aggressive action.
+
+# 2a. Run one engagement directly:
+npx redteam-runner start --target secscan.us --mode red \
+  --objective "assess the external attack surface" \
+  --scope secscan.us --exclude T1110 \
+  --blackout "02:00-04:00 America/Chicago"
+
+# 2b. Or serve the console queue (the Red Team Console's Live tab drops
+#     engagement requests here; the watcher runs them as they arrive):
+npx redteam-runner watch
+```
+
+Black-team run: `--mode black`. Same battery, stealth-weighted: low-noise
+variants first, jittered pacing, OPSEC backoff on detection signals.
+Blocked engagements (no ownership proof) exit non-zero with the reason —
+nothing aggressive ever runs unverified.
 
 ## Setup
 
@@ -109,44 +188,48 @@ mechanically by re-checking `list_verified_domains` itself.
 
 ## Engagement model
 
-Paid B2B, per engagement: scoping call → client proves domain ownership →
-coordinator runs recon → dynamic exploitation → client-ready report
-(executive summary, evidence-backed findings, fixes, retest checklist) →
-one retest pass after remediation. Passive-only mode is available for
-prospects who haven't completed verification — the gate enforces the
-boundary mechanically, not by policy memo.
+Paid B2B, per engagement: scoping call → ROE contract → client proves domain
+ownership (server flow) → coordinator plans (ATT&CK-mapped, adversary
+profile) → recon (SecScan engine) → dynamic exploitation (three-category
+battery, ruthless but non-destructive) → client-ready report (executive
+summary, authorization statement, ATT&CK timeline, evidence-backed findings
+with fixes, detection gaps, honest limits, retest checklist) → one retest
+pass after remediation. The Red Team Console's Live tab runs the whole thing:
+engagement form → ownership-verification panel → live event feed →
+phase/ATT&CK timeline → findings as they land → downloadable report.
 
-## What's real vs. stubbed in v0.1
+## What's real in v0.4.0
 
-**Real (works today, no keys needed):**
+**Real (works today):**
 - `auth-gate` — server-authoritative verification + pre-execute decision
-  logic, unit-tested (`npm test`), fails closed. The gate asks the SecScan
-  server for its verified-domain list before any aggressive test; the pure
-  decision function is production-grade.
-- `agents/` — complete role prompts with ReAct loops and the exploiter's
-  worked dynamic-testing example.
-- `llm-router` architecture — provider registry, per-role model policy,
-  DeepSeek wire client (OpenAI-compatible chat completions + tool-call
-  translation). Needs `DEEPSEEK_API_KEY` to run live.
-
-**Validated against the live harness (2026-10-01):**
-- `harness-plugin` — verified against the REAL harness contracts (checked into
-  the local deepseek-harness source at release 0.2.0-rc.2): `tools/pre-execute`
-  hook with real `PreToolDecision`/`ToolExecution` types, `ctx.systemPrompt.section()`,
-  `{name, inject, apply}` module shape. Typechecks standalone against the real
-  type packages; installed into the live `redteam` dsh profile 2026-10-01 and
-  load-validated (`--dump-config` resolves both patch entries; apply() + gate
-  logic exercised). The SecScan tools come from the harness-native
-  @deepseek-ai/dsh-mcp-client (Streamable HTTP -> https://secscan.us/api/mcp).
-  Needs SECSCAN_MCP_TOKEN (MCP scope) at runtime to connect.
+  logic, unit-tested, fails closed.
+- `runner` — live engagement loop as code (authorize → plan → recon →
+  exploit → report), red/black modes, ROE enforcement (scope, technique
+  exclusions, blackout windows, test window, stop conditions), systematic
+  24-item attack battery with per-category coverage enforcement, ATT&CK +
+  OWASP mapping, JSONL event streaming, 32 unit tests. CLI: `start`, `queue`,
+  `watch`.
+- `agents/` — role prompts with ReAct loops; the exploiter prompt now carries
+  the full three-category battery (logic flaws, functionality abuse,
+  validation rigor) with black-mode stealth variants.
+- `llm-router` — provider registry, per-role model policy (flash for
+  coordinator/recon/reporter, v4-pro for the exploiter), DeepSeek wire client.
+- `harness-plugin` — verified against the real harness contracts; installs
+  the auth gate as a `tools/pre-execute` hook.
+- Red Team Console — Live tab wired to the runner (engagement form, red/black
+  mode, ROE fields, verification panel, live event feed, ATT&CK timeline,
+  battery coverage, findings, OPSEC notes, report download); the 2026-10-01
+  replay remains a permanent read-only archive.
+- Proven in combat: full passive + aggressive + D-4 engagements against
+  secscan.us (v0.3.x) — Grade A, 8 hypotheses killed, reports in
+  `engagements/`.
 
 **Stubbed / planned:**
 - Non-DeepSeek providers (Claude, ChatGPT, Gemini, GLM, Qwen) — interface
   ready, implementations not started.
-- Streaming in the router (`complete()` is request/response; harness
-  `LlmAdapter` streaming subclasses are the documented next step).
-- A runner CLI that boots the whole engagement end-to-end (`dsh` profile
-  session currently plays this role).
+- Streaming in the router (`complete()` is request/response).
+- OAST infrastructure for SSRF canary callbacks (D-1); second test account
+  for cross-account IDOR (D-2).
 
 ## Naming
 
@@ -168,8 +251,10 @@ package names (`@secscan/redteam-*`) and the plugin id in
 
 ## Roadmap
 
-1. Install into a live `dsh` profile; run a first passive engagement.
-2. Complete a verified-ownership aggressive engagement end-to-end.
-3. Wrap the router as harness `LlmAdapter` streaming subclasses.
-4. Add the second provider (per business priority).
-5. Runner CLI + engagement state persistence.
+1. ~~Install into a live `dsh` profile; run a first passive engagement.~~ Done (v0.2.1).
+2. ~~Complete a verified-ownership aggressive engagement end-to-end.~~ Done (v0.3.x — Grade A).
+3. ~~Runner CLI + engagement state persistence.~~ Done (v0.4.0).
+4. ~~Console live-run launcher.~~ Done (v0.4.0).
+5. Wrap the router as harness `LlmAdapter` streaming subclasses.
+6. Add the second provider (per business priority).
+7. OAST infrastructure + second test account (clears D-1, D-2).

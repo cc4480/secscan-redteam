@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+/**
+ * redteam-runner CLI.
+ *
+ *   redteam-runner start --target secscan.us --mode red \
+ *     --objective "assess the external attack surface" \
+ *     --scope secscan.us --exclude T1110
+ *
+ *   redteam-runner watch [--queue <dir>]   # run queued console jobs
+ *
+ * Credentials via environment only: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY,
+ * SECSCAN_MCP_URL (optional, defaults to https://secscan.us/api/mcp).
+ */
+
+import { enqueueEngagement, runEngagement, watchQueue } from "./index.js";
+import type { EngagementInput, EngagementMode, RulesOfEngagement } from "./types.js";
+
+function arg(flag: string): string | undefined {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+function argAll(flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === flag && process.argv[i + 1]) out.push(process.argv[i + 1]!);
+  }
+  return out;
+}
+
+function usage(): never {
+  console.error(`Usage:
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"]
+  redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
+  redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
+
+Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, SECSCAN_MCP_URL (optional).`);
+  process.exit(2);
+}
+
+function parseBlackout(s: string): { start: string; end: string; tz?: string } {
+  const m = s.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})(?:\s+(.+))?$/);
+  if (!m) {
+    console.error(`[runner] bad --blackout ${JSON.stringify(s)}; want "HH:MM-HH:MM [Timezone]"`);
+    process.exit(2);
+  }
+  return { start: m[1]!, end: m[2]!, tz: m[3] };
+}
+
+function buildInput(): EngagementInput {
+  const target = arg("--target");
+  const mode = arg("--mode") as EngagementMode | undefined;
+  const objective = arg("--objective");
+  const scopes = argAll("--scope");
+  if (!target || !mode || !objective || scopes.length === 0) usage();
+  const roe: RulesOfEngagement = {
+    scope: scopes,
+    excludedTechniques: argAll("--exclude"),
+    blackoutWindows: argAll("--blackout").map(parseBlackout),
+    stopConditions: argAll("--stop"),
+    deconflictionContact: arg("--contact"),
+    notes: arg("--notes"),
+  };
+  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client") };
+}
+
+async function main(): Promise<void> {
+  const cmd = process.argv[2];
+  if (cmd === "start") {
+    const input = buildInput();
+    const result = await runEngagement(input);
+    console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));
+    process.exit(result.status === "complete" ? 0 : 1);
+  }
+  if (cmd === "queue") {
+    const input = buildInput();
+    const path = enqueueEngagement(input, arg("--queue"));
+    console.log(`queued: ${path}`);
+    return;
+  }
+  if (cmd === "watch") {
+    const queueDir = arg("--queue");
+    console.log(`[runner] watching ${queueDir ?? "(default queue dir)"} — Ctrl+C to stop`);
+    const ctrl = new AbortController();
+    process.on("SIGINT", () => ctrl.abort());
+    await watchQueue(queueDir, {}, 10_000, ctrl.signal);
+    return;
+  }
+  usage();
+}
+
+main().catch((err) => {
+  console.error(`[runner] fatal: ${(err as Error).message}`);
+  process.exit(1);
+});

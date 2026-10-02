@@ -1,1 +1,18 @@
-{"description":"AI red-team pentesting system: DeepSeek Harness agents + SecScan MCP tools + multi-LLM reasoning. Scoped, authorized, paid B2B engagements only.","license":"UNLICENSED","name":"secscan-redteam","private":true,"scripts":{"test":"npm run test --workspaces --if-present","typecheck":"npm run typecheck --workspaces --if-present"},"type":"module","version":"0.1.0","workspaces":["harness-plugin","llm-router","auth-gate"]}
+{
+  "description": "AI red-team pentesting system: DeepSeek Harness agents + SecScan MCP tools + multi-LLM reasoning. Scoped, authorized, paid B2B engagements only.",
+  "license": "UNLICENSED",
+  "name": "secscan-redteam",
+  "private": true,
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "workspaces": [
+    "harness-plugin",
+    "llm-router",
+    "auth-gate",
+    "runner"
+  ]
+}
