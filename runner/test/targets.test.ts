@@ -1,7 +1,7 @@
 /**
- * Full-battery tests (v0.6.0) — target-specific SecScan + SecLayer batteries
- * run as ONE unified engagement. No network, no API keys: fake LLM, fake
- * prober, injected server gate.
+ * Full-battery tests (v0.7.0) — EXHAUSTIVE target-specific SecScan (120+) +
+ * SecLayer (80+) batteries run as ONE unified engagement. No network, no API
+ * keys: fake LLM, fake prober, injected server gate.
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -37,26 +37,27 @@ function promptCtx(fullBattery?: boolean) {
 }
 
 describe("target profile integrity", () => {
-  it("both profiles present with expected battery sizes", () => {
+  it("both profiles present; battery floors met (secscan ≥120, seclayer ≥80)", () => {
     assert.deepEqual(FULL_BATTERY_TARGETS, ["secscan", "seclayer"]);
-    assert.equal(TARGET_PROFILES.secscan.battery.length, 24);
-    assert.equal(TARGET_PROFILES.seclayer.battery.length, 18);
-    for (const [id, profile] of Object.entries(TARGET_PROFILES)) {
-      const expect = id === "secscan" ? 8 : 6;
+    assert.ok(TARGET_PROFILES.secscan.battery.length >= 120, `secscan has ${TARGET_PROFILES.secscan.battery.length}`);
+    assert.ok(TARGET_PROFILES.seclayer.battery.length >= 80, `seclayer has ${TARGET_PROFILES.seclayer.battery.length}`);
+    // Every category represented on both targets (the 6-cell coverage contract).
+    for (const profile of Object.values(TARGET_PROFILES)) {
       for (const cat of BATTERY_CATEGORIES) {
-        assert.equal(targetItemsFor(profile, cat).length, expect, `${id}:${cat}`);
+        assert.ok(targetItemsFor(profile, cat).length > 0, `${profile.id}:${cat} non-empty`);
       }
     }
   });
-  it("ids unique per target, correct prefix/shape, every item has category/name/what", () => {
+  it("ids unique per target, SS-001/SL-001 shape, every item has category/name/brief/what/owasp", () => {
     for (const [id, profile] of Object.entries(TARGET_PROFILES)) {
       const prefix = id === "secscan" ? "SS" : "SL";
       const ids = profile.battery.map((b) => b.id);
       assert.equal(new Set(ids).size, ids.length, `${id} ids unique`);
       for (const b of profile.battery) {
-        assert.match(b.id, new RegExp(`^${prefix}-[LFV]-\\d+$`), b.id);
+        assert.match(b.id, new RegExp(`^${prefix}-\\d{3}$`), b.id);
         assert.ok(BATTERY_CATEGORIES.includes(b.category), `${b.id} category`);
         assert.ok(b.name.length > 0, `${b.id} name`);
+        assert.ok(b.brief.length > 10, `${b.id} brief is a real one-liner`);
         assert.ok(b.what.length > 20, `${b.id} what is concrete`);
         assert.ok(b.owasp.length > 0, `${b.id} owasp`);
         if (b.attackId) assert.ok(lookupTechnique(b.attackId), `${b.id} → ${b.attackId}`);
@@ -71,10 +72,18 @@ describe("target profile integrity", () => {
   it("checklist text carries needs/deferred markers honestly", () => {
     const text = targetBatteryChecklistText(TARGET_PROFILES.secscan, "red");
     assert.ok(text.includes("[needs: Second test account"), "cross-account IDOR marked");
-    assert.ok(text.includes("[needs: Canary/OAST"), "SSRF canary marked");
+    assert.ok(text.includes("[needs: Canary"), "canary infra marked");
     const black = targetBatteryChecklistText(TARGET_PROFILES.seclayer, "black");
     assert.ok(black.includes("[black:"), "stealth variants rendered");
     assert.ok(!targetBatteryChecklistText(TARGET_PROFILES.seclayer, "red").includes("[black:"));
+  });
+  it("compact checklist contains EVERY item id (full spectrum visible to the coordinator)", () => {
+    for (const profile of Object.values(TARGET_PROFILES)) {
+      const text = targetBatteryChecklistText(profile, "red");
+      for (const item of profile.battery) {
+        assert.ok(text.includes(item.id), `${item.id} present in compact checklist`);
+      }
+    }
   });
 });
 
@@ -102,19 +111,21 @@ describe("prompt wiring", () => {
   it("coordinator prompt includes BOTH batteries when fullBattery is set, generic otherwise", () => {
     const fb = coordinatorPrompt(promptCtx(true));
     assert.ok(fb.includes("FULL-BATTERY unified engagement"), "plan skeleton present");
-    assert.ok(fb.includes("SS-L-1"), "SecScan battery present");
-    assert.ok(fb.includes("SL-L-1"), "SecLayer battery present");
+    assert.ok(fb.includes("SS-001"), "SecScan battery present");
+    assert.ok(fb.includes("SL-001"), "SecLayer battery present");
+    assert.ok(fb.includes("120 items"), "secscan count shown");
+    assert.ok(fb.includes("80 items"), "seclayer count shown");
     const generic = coordinatorPrompt(promptCtx(false));
-    assert.ok(!generic.includes("SS-L-1"), "no target battery without the flag");
+    assert.ok(!generic.includes("SS-001"), "no target battery without the flag");
     assert.ok(!generic.includes("FULL-BATTERY unified engagement"));
   });
   it("exploiter prompt swaps in target batteries + targetProfile tagging when fullBattery", () => {
     const fb = exploiterPrompt(promptCtx(true));
-    assert.ok(fb.includes("SS-F-1") && fb.includes("SL-F-1"), "both target checklists");
+    assert.ok(fb.includes("SS-060") && fb.includes("SL-040"), "both target checklists");
     assert.ok(fb.includes("targetProfile"), "tagging instruction");
     assert.ok(fb.includes("3 × 2 = 6 cells"), "coverage rule");
     const generic = exploiterPrompt(promptCtx(undefined));
-    assert.ok(!generic.includes("SL-F-1"), "generic battery otherwise");
+    assert.ok(!generic.includes("SL-001"), "generic battery otherwise");
     assert.ok(generic.includes("L-1"), "generic checklist intact");
   });
 });
