@@ -19,6 +19,7 @@ import type { TargetId } from "./targets.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createReplayer, reverifyBundle, type PocBundle } from "./proof/index.js";
+import { loadTicketMapping, updateTicketsForReverify } from "./integrations/index.js";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -77,6 +78,9 @@ REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
     # v0.14.0 mechanical retest: re-executes a PoC bundle's steps against the
     # target. Without --execute: prints the replay plan only (no traffic).
     # With --execute: requires --scope (exact hosts; enforced mechanically),
+    # verdict reproduced/not-reproduced/target-changed is written to the
+    # report and — v0.15.0 — pushed to linked Jira/ServiceNow tickets via
+    # integrations.json when those sinks are configured.
     # replays ssh_exec/winrm_exec/msf_exec steps with a FRESH canary marker
     # (credentials resolve from env, never from the bundle), and reports
     # reproduced | not-reproduced | target-changed. Exit: 0 reproduced,
@@ -212,6 +216,22 @@ async function runReverify(): Promise<void> {
   }
   console.log(`[runner] ${report.registryNote}`);
   console.log(`[runner] report written: ${outPath}`);
+  // v0.15.0 retest loop: update the tickets linked in integrations.json
+  // (written by reportPhase next to the bundle) with the reverify verdict.
+  // Never throws — a missing mapping or unconfigured sink just logs.
+  try {
+    const mapping = loadTicketMapping(dirname(resolve(bundlePath)));
+    if (mapping) {
+      const { attempts } = await updateTicketsForReverify(mapping, bundle, report);
+      for (const a of attempts) {
+        console.log(`[runner] ticket ${a.sink}: ${a.status} — ${a.detail}`);
+      }
+    } else {
+      console.log(`[runner] no integrations.json next to the bundle — ticket update skipped (no linked tickets)`);
+    }
+  } catch (err) {
+    console.log(`[runner] ticket update failed (reverify report unaffected): ${(err as Error).message}`);
+  }
   process.exit(report.verdict === "reproduced" ? 0 : report.verdict === "target-changed" ? 2 : 1);
 }
 

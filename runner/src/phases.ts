@@ -43,7 +43,15 @@ import {
   renderCompliancePackMarkdown,
 } from "./compliance/index.js";
 import { coordinatorPrompt, exploiterPrompt, reconPrompt, reporterPrompt, taskPrompt } from "./prompts.js";
-import { buildNegativeProof, buildPocBundle, bundleSummary } from "./proof/index.js";
+import { buildNegativeProof, buildPocBundle, bundleSummary, type PocBundle } from "./proof/index.js";
+import {
+  buildSiemEvents,
+  notifySlack,
+  resolveSlackConfig,
+  syncFindingsToTickets,
+  writeSiemEvents,
+  type SlackEvent,
+} from "./integrations/index.js";
 import {
   TargetRateLimiter,
   TargetAutoHalt,
@@ -2156,6 +2164,27 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
   return summary;
 }
 
+/**
+ * v0.15.0 buyer integrations: best-effort Slack lifecycle notification.
+ * Never throws, never breaks the engagement — a missing webhook or a
+ * failed POST is silently skipped (the audit log records engagement
+ * events regardless).
+ */
+async function fireSlack(ctx: Ctx, ev: Omit<SlackEvent, "engagementId" | "target" | "mode">): Promise<void> {
+  try {
+    const cfg = resolveSlackConfig();
+    if (!cfg.configured) return;
+    await notifySlack(cfg, {
+      ...ev,
+      engagementId: ctx.events.engagementId,
+      target: ctx.input.target,
+      mode: ctx.input.mode,
+    });
+  } catch {
+    // best-effort only
+  }
+}
+
 async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string): Promise<Finding[]> {
   const selected = ctx.input.fullBattery ? activeTargets(ctx.input) : [];
   const fbCells = selected.flatMap((t) => BATTERY_CATEGORIES.map((c) => ({ t, c })));
@@ -2219,6 +2248,9 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   // was tried, the decisive observation that killed it). No bundle is ever
   // fabricated: unconfirmed findings are listed as such. Its own try/catch:
   // proof generation must never break the report.
+  // pocBundleMap is declared outside the try so the v0.15.0 integrations
+  // block (ticket sync + SIEM export) can reuse the bundles it built.
+  const pocBundleMap = new Map<string, PocBundle>();
   try {
     const proofEvents = readEvents(ctx.events.dir);
     const secretEnvNames = [
@@ -2260,6 +2292,7 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       });
       if (bundle) {
         writeFileSync(join(pocDir, `${f.id}.json`), JSON.stringify(bundle, null, 2));
+        pocBundleMap.set(f.id, bundle);
         bundleLines.push(`- ${bundleSummary(bundle)}`);
       } else {
         noBundleLines.push(`- **${f.id}** — ${f.title}: no PoC bundle — ${reason}`);
@@ -2303,6 +2336,66 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       action: "proof_bundles_failed",
       result: `PoC bundle generation failed (report.md unaffected): ${(err as Error).message}`,
     });
+  }
+  // v0.15.0 buyer integrations: confirmed findings sync to configured
+  // ticketing sinks (Jira/ServiceNow), SIEM-ready JSONL export, and Slack
+  // completion + critical-finding notifications. Its own try/catch:
+  // integrations must never break the report.
+  try {
+    const { attempts } = await syncFindingsToTickets(
+      {
+        engagementId: ctx.events.engagementId,
+        target: ctx.input.target,
+        findings,
+        bundles: pocBundleMap,
+      },
+      ctx.events.dir,
+    );
+    const severityCounts: Record<string, number> = {};
+    for (const f of findings) {
+      if (f.status === "confirmed") severityCounts[f.severity] = (severityCounts[f.severity] ?? 0) + 1;
+    }
+    const siemEvents = buildSiemEvents({
+      engagementId: ctx.events.engagementId,
+      target: ctx.input.target,
+      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"] ?? "(operator name not supplied)",
+      findings,
+      bundles: pocBundleMap,
+      safetySummary: `engagement ${ctx.events.engagementId}: ${findings.length} findings parsed; zero-disruption record in safety-manifest.json`,
+      severityCounts,
+    });
+    writeSiemEvents(ctx.events.dir, siemEvents);
+    const ok = attempts.filter((a) => a.status === "ok").length;
+    const skipped = attempts.filter((a) => a.status === "skipped").length;
+    const failed = attempts.filter((a) => a.status === "failed").length;
+    ctx.events.append({
+      phase: "report",
+      actor: "reporter",
+      action: "integrations",
+      result: `Ticket sync + SIEM export: ${ok} ok, ${skipped} skipped, ${failed} failed. ${siemEvents.length} SIEM events written.`,
+    });
+    reportMd += `\n\n---\n\n## Integrations (runner-computed)\n\n`;
+    reportMd += `Ticket sync: ${attempts.map((a) => `${a.sink}=${a.status}`).join(", ") || "(no ticketing sinks attempted)"}\n\n`;
+    for (const a of attempts) {
+      if (a.status !== "ok") reportMd += `- ${a.sink}: ${a.status} — ${a.detail}\n`;
+    }
+    reportMd += `\nSIEM export: ${siemEvents.length} events → \`siem-events.jsonl\` (schema v1, see docs/integrations.md).\n`;
+    reportMd += `Ticket linkage: \`integrations.json\` (findingId → ticket refs; used by \`reverify\` for the retest loop).\n`;
+    // Slack: completion summary + one alert per critical finding (best-effort).
+    await fireSlack(ctx, { kind: "completed", severityCounts });
+    for (const f of findings) {
+      if (f.status === "confirmed" && f.severity === "critical") {
+        await fireSlack(ctx, { kind: "critical_finding", findingId: f.id, findingTitle: f.title });
+      }
+    }
+  } catch (err) {
+    ctx.events.append({
+      phase: "report",
+      actor: "reporter",
+      action: "integrations_failed",
+      result: `Integrations failed (report.md unaffected): ${(err as Error).message}`,
+    });
+    reportMd += `\n\n---\n\n## Integrations (runner-computed)\n\nIntegrations failed: ${(err as Error).message}\n`;
   }
   writeFileSync(join(ctx.events.dir, "report.md"), reportMd);
   ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings parsed).` });
@@ -2589,6 +2682,8 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   };
 
   events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
+  // v0.15.0: Slack lifecycle — engagement started (best-effort, never blocking).
+  void fireSlack(ctx, { kind: "started" });
 
   try {
     const verdict = await authorizePhase(ctx);
@@ -2597,6 +2692,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     }
     await planPhase(ctx);
     await coordinatorSignOff(ctx, "plan→recon", `Operation plan:\n${JSON.stringify(ctx.plan, null, 1)}`);
+    void fireSlack(ctx, { kind: "phase", phase: "recon" });
     const brief = await reconPhase(ctx);
     await coordinatorSignOff(
       ctx,
@@ -2604,12 +2700,14 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
       `Recon brief:\n${brief.slice(0, 3000)}\n\nShared target map (${ctx.targetMap.length} entries):\n${ctx.targetMap.map((t) => `- ${t.method} ${t.area}${t.authState ? ` [${t.authState}]` : ""}${t.attackId ? ` ${t.attackId}` : ""}`).join("\n") || "(empty)"}\nRegistry hits consulted: ${ctx.registryHits.length}. Fingerprint: ${JSON.stringify(ctx.fingerprint)}`,
     );
     const summary = await exploitPhase(ctx, brief);
+    void fireSlack(ctx, { kind: "phase", phase: "exploit" });
     await coordinatorSignOff(
       ctx,
       "exploit→report",
       `Exploitation summary:\n${summary.slice(0, 3000)}\n\nVerdicts — confirmed: ${ctx.liveFindings.length}, killed: ${ctx.killedLive.length}.\nBattery: ${["logic", "functionality", "validation"].map((c) => `${c}:${ctx.coverage.has(c as BatteryCategory) ? "yes" : "no"}`).join(", ")}.`,
     );
     const findings = await reportPhase(ctx, brief, summary);
+    void fireSlack(ctx, { kind: "phase", phase: "report" });
     events.updateState({ status: "complete", phase: "done" });
     events.append({ phase: "done", actor: "runner", action: "engagement_complete", result: `Complete. ${findings.length} findings.` });
     return { engagementId, status: "complete", reportPath: join(dir, "report.md"), findings };
@@ -2617,6 +2715,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     const reason = err instanceof HaltError ? err.message : `unexpected error: ${(err as Error).message}`;
     events.updateState({ status: "halted", phase: "halted", blockedReason: reason });
     events.append({ phase: "halted", actor: "runner", action: "engagement_halted", result: reason });
+    void fireSlack(ctx, { kind: "halted", reason });
     return { engagementId, status: "halted", blockedReason: reason, findings: events.snapshot.findings };
   } finally {
     // The registry always persists — every verdict recorded live is already in it.
