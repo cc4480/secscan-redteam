@@ -188,7 +188,10 @@ describe("unified plan", () => {
       prev = i;
     }
     assert.ok(s.includes("3 × 4 = 12 cells"), "coverage rule stated");
-    assert.ok(s.includes("PLAN-ONLY"), "host plan-only rule stated");
+    assert.ok(
+      s.includes("All 410 items are executable"),
+      "v0.10.0 host execution reality stated",
+    );
   });
   it("subset skeleton: two targets → 6 cells, host phases omitted", () => {
     const s = fullBatteryPlanSkeleton(["secscan", "seclayer"]);
