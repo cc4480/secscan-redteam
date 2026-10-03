@@ -4,7 +4,7 @@
 
 **Status:** the host-exec track is built, tested, and live in
 `runner/src/host-exec/`. The Windows (WS-*) and Linux (LX-*) batteries are
-fully executable: **all 410 items execute** (3 carry honest operator
+fully executable: **all 418 items execute** (3 carry honest operator
 prerequisites — see below; nothing is plan-only anymore).
 
 **What landed in v0.9.0:**
@@ -113,7 +113,7 @@ prerequisites — see below; nothing is plan-only anymore).
 ## Metasploit bridge — DELIVERED (v0.11.0)
 
 **Status:** the Metasploit bridge is built, tested, and live in
-`runner/src/msf/`. The 410-item battery covers technique *classes*
+`runner/src/msf/`. The 418-item battery covers technique *classes*
 (ATT&CK-mapped); the bridge closes the CVE-*specific* gap — Metasploit's
 ~2,000 weaponized exploits — **without hardcoding 2,000 CVEs**. The
 methodology is dynamic: recon detects a service/version → `msf_exec
