@@ -69,6 +69,13 @@ export interface EngagementInput {
   objective: string;
   roe: RulesOfEngagement;
   client?: string;
+  /**
+   * Full-battery unified engagement (SecScan webapp + SecLayer MCP API as
+   * ONE operation). The coordinator prompt carries both target batteries as
+   * the plan skeleton; coverage requires all 3 categories × both targets.
+   * Set via --full-battery or --target secscan+seclayer.
+   */
+  fullBattery?: boolean;
 }
 
 /** One streamed event. Written to events.jsonl as it happens. */

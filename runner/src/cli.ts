@@ -30,9 +30,15 @@ function argAll(flag: string): string[] {
 
 function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"]
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery]
+  redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
+
+--full-battery (or --target secscan+seclayer): ONE unified engagement running the
+target-specific SecScan + SecLayer batteries (3 categories × 2 targets). The
+coordinator prompt carries both batteries as the plan skeleton; coverage counts
+complete only at 6/6 cells. --scope must cover secscan.us (both targets live there).
 
 Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional).`);
   process.exit(2);
@@ -53,6 +59,7 @@ function buildInput(): EngagementInput {
   const objective = arg("--objective");
   const scopes = argAll("--scope");
   if (!target || !mode || !objective || scopes.length === 0) usage();
+  const fullBattery = process.argv.includes("--full-battery") || target === "secscan+seclayer";
   const roe: RulesOfEngagement = {
     scope: scopes,
     excludedTechniques: argAll("--exclude"),
@@ -61,7 +68,7 @@ function buildInput(): EngagementInput {
     deconflictionContact: arg("--contact"),
     notes: arg("--notes"),
   };
-  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client") };
+  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client"), fullBattery };
 }
 
 async function main(): Promise<void> {

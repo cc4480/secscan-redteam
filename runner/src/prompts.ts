@@ -18,6 +18,7 @@
 import { TECHNIQUES } from "./attack.js";
 import { resolveExcludedTechniques } from "./attack.js";
 import { batteryChecklistText } from "./battery.js";
+import { fullBatteryChecklistText, fullBatteryPlanSkeleton } from "./targets.js";
 import type { EngagementMode, RulesOfEngagement } from "./types.js";
 
 export interface PromptContext {
@@ -26,6 +27,8 @@ export interface PromptContext {
   target: string;
   scopeHosts: string[];
   roe: RulesOfEngagement;
+  /** Full-battery unified engagement: both target batteries drive the plan. */
+  fullBattery?: boolean;
 }
 
 function attackCatalog(): string {
@@ -131,7 +134,7 @@ reactive — never coasting on a plan made three phases ago:
    surface. State what changed and why in your note.
 Finish only when the objective is met AND the battery is complete (all three
 categories probed, or no applicable surface explicitly declared, or probe
-budget exhausted).`;
+budget exhausted).${ctx.fullBattery ? `\n\n${fullBatteryPlanSkeleton()}\n\n${fullBatteryChecklistText(ctx.mode)}` : ""}`;
 }
 
 export function reconPrompt(ctx: PromptContext): string {
@@ -207,12 +210,14 @@ When you finish, report every verdict as JSON so the registry compounds (backsto
 Two independent observations before anything is "confirmed".
 
 ## The battery — systematic, not opportunistic
-You run a FULL battery across three categories. Tag every \`http_probe\` with
+${ctx.fullBattery
+  ? `You run the FULL target-specific battery: SecScan (SS-*) AND SecLayer (SL-*), three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` ("secscan" | "seclayer"), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on BOTH targets (3 × 2 = 6 cells) — the runner will keep you here until you do (or probes run out).`
+  : `You run a FULL battery across three categories. Tag every \`http_probe\` with
 \`category\` ("logic" | "functionality" | "validation") and the battery item ID
 in your hypothesis. The battery is complete only when you have probed ALL THREE
-categories — the runner will keep you here until you do (or probes run out).
+categories — the runner will keep you here until you do (or probes run out).`}
 
-${batteryChecklistText(ctx.mode)}
+${ctx.fullBattery ? fullBatteryChecklistText(ctx.mode) : batteryChecklistText(ctx.mode)}
 
 Work the checklist against what the target actually exposes: skip items with
 no applicable surface, but say which items you skipped and why. A category

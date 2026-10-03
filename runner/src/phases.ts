@@ -64,6 +64,8 @@ import type {
 } from "./types.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "./battery.js";
 import type { BatteryCategory } from "./battery.js";
+import { FULL_BATTERY_TARGETS, inferTargetProfile } from "./targets.js";
+import type { TargetId } from "./targets.js";
 
 export interface RunnerDeps {
   verify?: (domain: string, cfg: { endpoint: string; token: string }) => Promise<boolean>;
@@ -121,6 +123,11 @@ interface Ctx {
   consecutive5xx: number;
   /** Battery categories probed so far this engagement. */
   coverage: Set<BatteryCategory>;
+  /**
+   * Per-target battery coverage for full-battery engagements: target id →
+   * categories probed on that target. Empty when fullBattery is off.
+   */
+  targetCoverage: Map<TargetId, Set<BatteryCategory>>;
   probesUsed: number;
   // -- Shared operation state (the Megazord): one context every agent reads and
   // -- writes. No agent works from a stale or private picture.
@@ -190,7 +197,7 @@ const MCP_TOOLS: JsonSchemaTool[] = [
 const PROBE_TOOL: JsonSchemaTool = {
   name: "http_probe",
   description:
-    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis.",
+    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis. Full-battery engagements: also include targetProfile (secscan|seclayer).",
   parameters: {
     type: "object",
     properties: {
@@ -200,6 +207,7 @@ const PROBE_TOOL: JsonSchemaTool = {
       body: { type: "string" },
       attackId: { type: "string" },
       category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["secscan", "seclayer"] },
       hypothesis: { type: "string" },
     },
     required: ["method", "url", "category"],
@@ -351,6 +359,18 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     ctx.probesUsed++;
     if (category) {
       ctx.coverage.add(category);
+      if (ctx.input.fullBattery) {
+        // Per-target cell: explicit tag wins, otherwise infer from the URL
+        // path (/api/mcp → seclayer, everything else → secscan).
+        const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+        const tp: TargetId = rawTp === "secscan" || rawTp === "seclayer" ? rawTp : inferTargetProfile(url);
+        let set = ctx.targetCoverage.get(tp);
+        if (!set) {
+          set = new Set();
+          ctx.targetCoverage.set(tp, set);
+        }
+        set.add(category);
+      }
       ctx.events.updateState({
         batteryCoverage: {
           logic: ctx.coverage.has("logic") ? 1 : 0,
@@ -626,6 +646,20 @@ function mergeVerdictBlock(ctx: Ctx, text: string): void {
 }
 
 /** Compact shared-state digest appended to every tool result — the team's common picture, never stale. */
+/**
+ * Runner-computed battery coverage line. Generic engagements: 3 global
+ * categories. Full-battery engagements: 3 categories × 2 targets (6 cells).
+ */
+export function batteryStatusLine(ctx: Ctx): string {
+  if (ctx.input.fullBattery) {
+    return FULL_BATTERY_TARGETS.map(
+      (t) =>
+        `${t}: ${BATTERY_CATEGORIES.map((c) => `${c}${ctx.targetCoverage.get(t)?.has(c) ? "✓" : "…"}`).join(" ")}`,
+    ).join(" | ");
+  }
+  return BATTERY_CATEGORIES.map((c) => `${c}${ctx.coverage.has(c) ? "✓" : "…"}`).join(" ");
+}
+
 export function sharedStateDigest(ctx: Ctx, phase: EngagementPhase): string {
   const parts: string[] = [`[SHARED STATE · phase=${phase}]`];
   if (ctx.plan) parts.push(`plan: ${ctx.plan.steps.length} steps (${ctx.plan.adversaryProfile})`);
@@ -646,10 +680,7 @@ export function sharedStateDigest(ctx: Ctx, phase: EngagementPhase): string {
     parts.push(`killed(${ctx.killedLive.length}): ${ctx.killedLive.slice(0, 5).map((k) => k.hypothesis).join(" | ")}`);
   }
   if (ctx.registryHits.length) parts.push(`registry: ${ctx.registryHits.length} relevant hits surfaced this engagement`);
-  const cov = (["logic", "functionality", "validation"] as const)
-    .map((c) => `${c}${ctx.coverage.has(c) ? "✓" : "…"}`)
-    .join(" ");
-  parts.push(`battery: ${cov}`);
+  parts.push(`battery: ${batteryStatusLine(ctx)}`);
   if (ctx.opsecCooldown.size) parts.push(`OPSEC cooldowns: ${ctx.opsecCooldown.size}`);
   if (ctx.redirects) parts.push(`redirects used: ${ctx.redirects}/2`);
   const s = parts.join("\n");
@@ -793,6 +824,7 @@ function promptCtx(ctx: Ctx): {
   target: string;
   scopeHosts: string[];
   roe: RulesOfEngagement;
+  fullBattery?: boolean;
 } {
   return {
     mode: ctx.input.mode,
@@ -800,6 +832,7 @@ function promptCtx(ctx: Ctx): {
     target: ctx.input.target,
     scopeHosts: ctx.hosts,
     roe: ctx.input.roe,
+    fullBattery: ctx.input.fullBattery,
   };
 }
 
@@ -1253,7 +1286,13 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
     return "dry-run summary";
   }
   const cap = ctx.input.mode === "black" ? 1 : 3;
-  const missing = () => BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c));
+  /** Full battery: 3 categories × 2 targets = 6 cells, e.g. "secscan:logic". */
+  const missing = () =>
+    ctx.input.fullBattery
+      ? FULL_BATTERY_TARGETS.flatMap((t) =>
+          BATTERY_CATEGORIES.filter((c) => !ctx.targetCoverage.get(t)?.has(c)).map((c) => `${t}:${c}`),
+        )
+      : BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c));
   const summaries: string[] = [];
   const MAX_ROUNDS = 10;
   let forceAsked = false;
@@ -1261,7 +1300,7 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
   const baseContext = () =>
     `Recon brief:\n${reconBrief.slice(0, 4000)}\n\n${sharedStateDigest(ctx, "exploit")}\n\n` +
     `Registry hits surfaced: ${ctx.registryHits.length}. Probe budget: ${ctx.config.maxExploitProbes} total, ${ctx.probesUsed} used. ` +
-    `Battery: ${(["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
+    `Battery: ${ctx.input.fullBattery ? FULL_BATTERY_TARGETS.map((t) => `${t}:{${BATTERY_CATEGORIES.map((c) => `${c}:${ctx.targetCoverage.get(t)?.has(c) ? "done" : "MISSING"}`).join(",")}}`).join(" ") : (["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
     `OPSEC cooldowns: ${ctx.opsecCooldown.size}. Redirects used: ${ctx.redirects}/2.`;
 
   let directive = await coordinatorDirective(ctx, "decompose", baseContext());
@@ -1324,7 +1363,9 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
       result: `Max orchestration rounds (${MAX_ROUNDS}) reached — closing the phase.`,
     });
   }
-  const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
+  const covered = ctx.input.fullBattery
+    ? FULL_BATTERY_TARGETS.flatMap((t) => BATTERY_CATEGORIES.filter((c) => ctx.targetCoverage.get(t)?.has(c)).map((c) => `${t}:${c}`))
+    : BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const summary = summaries.join("\n\n") || "no tasks executed";
   ctx.events.append({
     phase: "exploit",
@@ -1336,11 +1377,20 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
 }
 
 async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string): Promise<Finding[]> {
+  const fbCells = ctx.input.fullBattery
+    ? FULL_BATTERY_TARGETS.flatMap((t) => BATTERY_CATEGORIES.map((c) => ({ t, c })))
+    : [];
+  const fbCovered = fbCells.filter(({ t, c }) => ctx.targetCoverage.get(t)?.has(c));
   const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
-  const batteryLine =
-    `Battery coverage: ${covered.length}/3 categories probed ` +
-    `(${covered.map((c) => `${c}:${ctx.coverage.has(c) ? "yes" : "no"}`).join(", ")}, ${ctx.probesUsed} probes total). ` +
-    (covered.length < 3 ? `NOT COVERED: ${BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c)).join(", ")} — list these under Honest limits.` : "Full battery complete.");
+  const batteryLine = ctx.input.fullBattery
+    ? `Battery coverage (FULL BATTERY — 3 categories × 2 targets): ${fbCovered.length}/6 cells probed ` +
+      `(${batteryStatusLine(ctx)}, ${ctx.probesUsed} probes total). ` +
+      (fbCovered.length < 6
+        ? `NOT COVERED: ${fbCells.filter(({ t, c }) => !ctx.targetCoverage.get(t)?.has(c)).map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
+        : "Full battery complete on both targets.")
+    : `Battery coverage: ${covered.length}/3 categories probed ` +
+      `(${covered.map((c) => `${c}:${ctx.coverage.has(c) ? "yes" : "no"}`).join(", ")}, ${ctx.probesUsed} probes total). ` +
+      (covered.length < 3 ? `NOT COVERED: ${BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c)).join(", ")} — list these under Honest limits.` : "Full battery complete.");
   let reportMd: string;
   if (ctx.config.dryRunAgents) {
     reportMd = `# Engagement report (dry-run)\n\nTarget: ${ctx.input.target}\nMode: ${ctx.input.mode}\n`;
@@ -1501,6 +1551,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     opsecCooldown: new Set(),
     consecutive5xx: 0,
     coverage: new Set(),
+    targetCoverage: new Map(),
     probesUsed: 0,
     fingerprint: { host: hosts[0]!, stack: [], appType: "unknown" },
     registry,
