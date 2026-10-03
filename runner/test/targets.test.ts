@@ -14,6 +14,9 @@ import {
   TARGET_PROFILES,
   FULL_BATTERY_TARGETS,
   HOST_EXEC_TOOLING,
+  NEEDS_HUMAN_OPERATOR,
+  NEEDS_KERBEROS_TICKET,
+  NEEDS_PRIVILEGED_CLIENT,
   TARGET_PREFIXES,
   activeTargets,
   fullBatteryPlanSkeleton,
@@ -102,7 +105,11 @@ describe("target profile integrity", () => {
     assert.ok(text.includes("[needs: Second test account"), "cross-account IDOR marked");
     assert.ok(text.includes("[needs: Canary"), "canary infra marked");
     const win = targetBatteryChecklistText(TARGET_PROFILES.windows, "red");
-    assert.ok(win.includes(`[needs: ${HOST_EXEC_TOOLING}]`), "host tooling marked");
+    assert.ok(win.includes(`[needs: ${NEEDS_KERBEROS_TICKET}]`), "kerberos ticket prerequisite marked (WS-064)");
+    assert.ok(win.includes(`[needs: ${NEEDS_HUMAN_OPERATOR}]`), "human-operator prerequisite marked (WS-065)");
+    const lin = targetBatteryChecklistText(TARGET_PROFILES.linux, "red");
+    assert.ok(lin.includes(`[needs: ${NEEDS_PRIVILEGED_CLIENT}]`), "privileged-client prerequisite marked (LX-041)");
+    assert.ok(!win.includes(`[needs: ${HOST_EXEC_TOOLING}]`), "no v0.9.0 plan-only markers remain");
     const black = targetBatteryChecklistText(TARGET_PROFILES.seclayer, "black");
     assert.ok(black.includes("[black:"), "stealth variants rendered");
     assert.ok(!targetBatteryChecklistText(TARGET_PROFILES.seclayer, "red").includes("[black:"));
@@ -122,25 +129,35 @@ describe("target profile integrity", () => {
   });
 });
 
-describe("host-exec tooling scoping (v0.9.0)", () => {
-  it("no cell is fully tooling-blocked; exactly 10 items stay plan-only", () => {
+describe("host-exec tooling scoping (v0.10.0)", () => {
+  it("no cell is fully blocked; exactly 3 items carry honest prerequisites (nothing plan-only)", () => {
     const remaining: string[] = [];
     for (const id of ["windows", "linux"] as TargetId[]) {
       const profile = TARGET_PROFILES[id];
       for (const c of BATTERY_CATEGORIES) {
-        // v0.9.0: ssh_exec/smb_exec/winrm_exec make every cell probe-able.
+        // v0.10.0: every cell is probe-able — tools exist for all 410 items.
         assert.equal(targetCellBlocked(profile, c), false, `${id}:${c} probe-able`);
       }
       for (const b of profile.battery) {
-        if (b.needs === HOST_EXEC_TOOLING) remaining.push(`${id}:${b.id}`);
+        if (b.needs) remaining.push(`${id}:${b.id} [${b.needs}]`);
       }
     }
-    assert.equal(remaining.length, 10, `10 plan-only items remain (got ${remaining.join(", ")})`);
+    assert.equal(remaining.length, 3, `3 prerequisite items remain (got ${remaining.join(", ")})`);
     assert.deepEqual(
       remaining.sort(),
-      ["windows:WS-010", "windows:WS-019", "windows:WS-023", "windows:WS-038", "windows:WS-043", "windows:WS-064", "windows:WS-065", "linux:LX-018", "linux:LX-019", "linux:LX-041"].sort(),
-      "the honest remainder: interactive RDP, Kerberos/hash ops, collector binaries, NFS mounts",
+      [
+        `linux:LX-041 [${NEEDS_PRIVILEGED_CLIENT}]`,
+        `windows:WS-064 [${NEEDS_KERBEROS_TICKET}]`,
+        `windows:WS-065 [${NEEDS_HUMAN_OPERATOR}]`,
+      ].sort(),
+      "the honest remainder: ticket material, human operator, privileged client",
     );
+    // The v0.9.0 marker is fully retired.
+    for (const id of ["windows", "linux"] as TargetId[]) {
+      for (const b of TARGET_PROFILES[id].battery) {
+        assert.notEqual(b.needs, HOST_EXEC_TOOLING, `${b.id} no longer plan-only`);
+      }
+    }
   });
   it("targetCellStatus: done > blocked > missing (blocked mechanic preserved on a synthetic fully-blocked cell)", () => {
     const win = TARGET_PROFILES.windows;
@@ -208,7 +225,8 @@ describe("prompt wiring", () => {
     assert.ok(fb.includes("targetProfile"), "tagging instruction");
     assert.ok(fb.includes('"windows" | "linux"'), "host tags listed");
     assert.ok(fb.includes("3 × 4 = 12 cells"), "coverage rule");
-    assert.ok(fb.includes("PLAN-ONLY"), "host plan-only rule");
+    assert.ok(fb.includes("[needs: ...] EXECUTE when the prerequisite is met"), "prerequisite rule");
+    assert.ok(fb.includes("never pretend the runner shadowed a session"), "human-gated shadowing rule");
     const generic = exploiterPrompt(promptCtx(undefined));
     assert.ok(!generic.includes("SL-001"), "generic battery otherwise");
     assert.ok(generic.includes("L-1"), "generic checklist intact");
@@ -375,7 +393,7 @@ describe("full-battery coverage mechanics", () => {
     assert.ok(report.includes("list these under Honest limits"), "honest-limits directive");
   });
 
-  it("12 cells (all four targets): all probed → complete; the 10 plan-only items named under Honest limits", async () => {
+  it("12 cells (all four targets): all probed → complete; the 3 prerequisite items named under Honest limits", async () => {
     const input: EngagementInput = { ...baseInput, targets: undefined }; // default: all four
     const res = await run(input, scriptedLlm12());
     assert.equal(res.status, "complete");
@@ -384,13 +402,13 @@ describe("full-battery coverage mechanics", () => {
     assert.ok(report.includes("12/12 cells probed"), "all 12 cells probed");
     assert.ok(report.includes("Full battery complete: all 12 cells probed or honestly blocked."), "completion line");
     assert.ok(!report.includes("NOT COVERED"), "no missing cells");
-    assert.ok(!report.includes("BLOCKED (host-exec tooling"), "no fully-blocked cells in v0.9.0");
+    assert.ok(!report.includes("BLOCKED (prerequisite"), "no fully-blocked cells in v0.10.0");
     assert.ok(
-      report.includes("Plan-only items (needs: host-exec tooling — planned, not probed; see Honest limits)"),
-      "plan-only remainder named honestly",
+      report.includes("Items with prerequisites (execute when met — see Honest limits)"),
+      "prerequisite remainder named honestly",
     );
-    for (const id of ["windows:WS-019", "windows:WS-023", "linux:LX-018", "linux:LX-041"]) {
-      assert.ok(report.includes(id), `${id} named as plan-only`);
+    for (const id of ["windows:WS-064", "windows:WS-065", "linux:LX-041"]) {
+      assert.ok(report.includes(id), `${id} named with its prerequisite`);
     }
   });
 });

@@ -22,6 +22,8 @@
  */
 
 import { runCommand, runPowershell } from "winrm-client";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { HOST_EXEC_TIMEOUT_MS, type HostCredentials } from "./common.js";
 
 export interface WinrmExecArgs {
@@ -102,4 +104,187 @@ export function createWinrmTransport(): WinrmTransport {
       // Stateless per-call library: nothing to close.
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// WinRM listener probe (battery WS-010) — unauthenticated reconnaissance.
+//
+// Sends a single unauthenticated POST /wsman per port and reads what the
+// listener volunteers: a real WinRM listener answers 401 with
+// WWW-Authenticate headers advertising its auth schemes (Negotiate, NTLM,
+// Kerberos, CredSSP, Basic) and usually a Server header. That 401 IS the
+// finding — it confirms a listener, its TLS posture, and its auth surface —
+// without creating a session, sending credentials, or running a command.
+//
+// TLS: port 5986 is probed with rejectUnauthorized: false. This is
+// deliberate and documented: the target is an operator-scoped test host, and
+// the certificate itself (issuer, expiry, SANs) is part of the observation,
+// not a trust decision. Never use this against hosts outside the declared
+// ROE scope — the executor enforces that before the probe runs.
+//
+// Pure Node http/https — no new dependencies.
+// ---------------------------------------------------------------------------
+
+/** Default WinRM ports: 5985 (HTTP) and 5986 (HTTPS). */
+export const WINRM_PROBE_PORTS = [5985, 5986] as const;
+
+/** Minimal SOAP envelope — any well-formed body elicits the 401 from a listener. */
+const WINRM_PROBE_BODY =
+  '<?xml version="1.0" encoding="utf-8"?>' +
+  '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
+  "<s:Header/>" +
+  "<s:Body><probe/></s:Body>" +
+  "</s:Envelope>";
+
+export interface WinrmProbeRequest {
+  host: string;
+  port: number;
+  useTls: boolean;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
+export interface WinrmProbeResponse {
+  statusCode: number;
+  headers: Record<string, string | string[] | undefined>;
+}
+
+/**
+ * Injectable request seam: production uses {@link defaultWinrmProbeRequest}
+ * (real HTTP/S); tests inject a fake. Never sends credentials.
+ */
+export type WinrmProbeRequestImpl = (req: WinrmProbeRequest) => Promise<WinrmProbeResponse>;
+
+export interface WinrmProbeArgs {
+  host: string;
+  ports?: number[];
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** Test seam — production callers leave this unset. */
+  requestImpl?: WinrmProbeRequestImpl;
+}
+
+export interface WinrmProbeResult {
+  port: number;
+  reachable: boolean;
+  useTls: boolean;
+  authSchemes: string[];
+  serverHeader?: string;
+  note: string;
+}
+
+/** Real HTTP/S implementation of the probe request. No credentials, no session. */
+export function defaultWinrmProbeRequest(req: WinrmProbeRequest): Promise<WinrmProbeResponse> {
+  return new Promise((resolve, reject) => {
+    if (req.signal?.aborted) {
+      reject(new Error("[winrm-probe] aborted by kill switch before request"));
+      return;
+    }
+    const body = Buffer.from(WINRM_PROBE_BODY, "utf8");
+    const doRequest = req.useTls ? httpsRequest : httpRequest;
+    const clientReq = doRequest(
+      {
+        host: req.host,
+        port: req.port,
+        path: "/wsman",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/soap+xml;charset=UTF-8",
+          "Content-Length": body.length,
+        },
+        // The cert is observed, not trusted: the target is an
+        // operator-scoped test host (see module docstring above).
+        rejectUnauthorized: false,
+        timeout: req.timeoutMs,
+      },
+      (res) => {
+        // Drain the body — we only care about status + headers.
+        res.resume();
+        res.on("end", () => {
+          const headers: Record<string, string | string[] | undefined> = {};
+          for (const [k, v] of Object.entries(res.headers)) headers[k] = v;
+          resolve({ statusCode: res.statusCode ?? 0, headers });
+        });
+      },
+    );
+    const fail = (err: Error) => {
+      clientReq.destroy();
+      reject(err);
+    };
+    clientReq.on("error", (err) => fail(err as Error));
+    clientReq.on("timeout", () =>
+      fail(new Error(`[winrm-probe] ${req.host}:${req.port} timed out after ${req.timeoutMs}ms`)),
+    );
+    req.signal?.addEventListener("abort", () => fail(new Error("[winrm-probe] aborted by kill switch — request destroyed")), {
+      once: true,
+    });
+    clientReq.end(body);
+  });
+}
+
+/**
+ * Parse WWW-Authenticate headers into advertised scheme names.
+ * HONEST LIMITATION: splitting on commas breaks on quoted parameters that
+ * contain commas (rare in practice for auth schemes, e.g. `Basic
+ * realm="a,b"`). Scheme names themselves never contain commas, so the
+ * scheme list is still correct; only exotic parameter values could merge.
+ */
+export function parseWwwAuthenticate(headers: Record<string, string | string[] | undefined>): string[] {
+  const raw = headers["www-authenticate"];
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const schemes: string[] = [];
+  for (const v of values) {
+    for (const part of v.split(",")) {
+      const scheme = part.trim().split(/\s+/)[0] ?? "";
+      if (scheme && !schemes.some((s) => s.toLowerCase() === scheme.toLowerCase())) {
+        schemes.push(scheme);
+      }
+    }
+  }
+  return schemes;
+}
+
+function headerValue(headers: Record<string, string | string[] | undefined>, name: string): string | undefined {
+  const v = headers[name.toLowerCase()];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/**
+ * Probe each port for a WinRM listener. Unauthenticated: sends one POST
+ * /wsman and reads the status + headers. Ports are probed sequentially so
+ * abort semantics stay simple; each port gets its own timeout.
+ */
+export async function probeWinrmListener(args: WinrmProbeArgs): Promise<WinrmProbeResult[]> {
+  const ports = args.ports ?? [...WINRM_PROBE_PORTS];
+  const timeoutMs = args.timeoutMs ?? HOST_EXEC_TIMEOUT_MS;
+  const requestImpl = args.requestImpl ?? defaultWinrmProbeRequest;
+  const results: WinrmProbeResult[] = [];
+  for (const port of ports) {
+    const useTls = port === 5986;
+    try {
+      const res = await requestImpl({ host: args.host, port, useTls, timeoutMs, signal: args.signal });
+      const authSchemes = parseWwwAuthenticate(res.headers);
+      const serverHeader = headerValue(res.headers, "server");
+      const status = res.statusCode;
+      let note: string;
+      if (status === 401 && authSchemes.length > 0) {
+        note = `401 Unauthorized — WinRM listener present, advertising auth: ${authSchemes.join(", ")}`;
+      } else if (status === 401) {
+        note = "401 Unauthorized — listener present but advertised no auth schemes";
+      } else {
+        note = `HTTP ${status} — responded without the expected 401 challenge; listener uncertain`;
+      }
+      results.push({ port, reachable: true, useTls, authSchemes, serverHeader, note });
+    } catch (err) {
+      results.push({
+        port,
+        reachable: false,
+        useTls,
+        authSchemes: [],
+        note: `not reachable: ${(err as Error).message}`,
+      });
+    }
+    if (args.signal?.aborted) break;
+  }
+  return results;
 }

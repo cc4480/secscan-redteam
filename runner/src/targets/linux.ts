@@ -11,13 +11,14 @@
  * authentication, logging & detection, network posture, kernel & system
  * hardening, cross-cutting chains.
  *
- * Execution model (v0.9.0): the runner's `ssh_exec` host tool executes this
+ * Execution model (v0.10.0): the runner's `ssh_exec` host tool executes this
  * battery — non-interactive SSH command execution with the safety core
- * (scope, denylist, timeouts). Only 3 items still need MORE than command
- * execution and stay marked `needs: "host-exec tooling"` — PLAN-ONLY,
- * reported BLOCKED under Honest limits: LX-018/LX-019 (SSH agent-forwarding
- * channel the tool doesn't establish), LX-041 (NFS mount needs a test
- * client with mount privileges, not just target-side commands).
+ * (scope, denylist, timeouts) — plus `ssh_agent_audit` (LX-018/LX-019: agent
+ * socket exposure + abuse-path analysis via agent-forwarded sessions) and
+ * `nfs_enum` (LX-041: userland RPC/MOUNT export enumeration, no kernel
+ * mount). One item keeps an honest prerequisite in `needs` (NOT plan-only —
+ * it executes when the prerequisite is met): LX-041's mount+file proof
+ * needs a privileged test client (operator-designated, in scope).
  *
  * Non-destructive always: read-only enumeration preferred; no service
  * crashing; no destructive payloads; persistence mechanisms REPORTED as
@@ -28,6 +29,7 @@
  */
 
 import type { TargetBatteryItem, TargetProfile } from "./types.js";
+import { NEEDS_PRIVILEGED_CLIENT } from "./types.js";
 
 const LINUX_BATTERY: TargetBatteryItem[] = [
   // ============================================ RECON — HOST ENUMERATION
@@ -143,17 +145,15 @@ const LINUX_BATTERY: TargetBatteryItem[] = [
     category: "functionality", name: "SSH agent-forwarding restriction check",
     brief: "Confirm ForwardAgent does not expose the operator's keys to the host.",
     owasp: "WSTG-ATHN", attackId: "T1021.004",
-    what: "Connect with agent forwarding explicitly configured per policy via host execution and verify whether the agent socket is exposed (SSH_AUTH_SOCK presence, socket permissions). If policy forbids forwarding, confirm it is refused. Benign connection only; no key material is used for onward auth.",
-    needs: "host-exec tooling",
+    what: "Connect with agent forwarding explicitly configured per policy via the runner's ssh_agent_audit tool and verify whether the agent socket is exposed (SSH_AUTH_SOCK presence, socket permissions). If policy forbids forwarding, confirm it is refused. Benign connection only; no key material is used for onward auth.",
   },
   {
     id: "LX-019",
     category: "logic", name: "Agent-forwarding abuse path analysis",
     brief: "If forwarding is allowed, map the exact socket-hijack path a host attacker would use.",
     owasp: "WSTG-ATHN", attackId: "T1021.004",
-    what: "Where agent forwarding is permitted, document the abuse path via host execution: agent socket location and permissions, which local users could reach it, and how a host-compromise would pivot through it. Analysis only — the socket is never actually hijacked.",
+    what: "Where agent forwarding is permitted, document the abuse path via the runner's ssh_agent_audit tool: agent socket location and permissions, which local users could reach it, and how a host-compromise would pivot through it. Analysis only — the socket is never actually hijacked.",
     blackNote: "Read the sshd_config value and socket perms; skip the live connection entirely.",
-    needs: "host-exec tooling",
   },
   {
     id: "LX-020", category: "validation", name: "Brute-force protections audit",
@@ -289,8 +289,8 @@ const LINUX_BATTERY: TargetBatteryItem[] = [
     category: "logic", name: "NFS no_root_squash abuse path",
     brief: "Export with no_root_squash — prove uid-0 mapping with a benign test file, removed after.",
     owasp: "CIS-v8-4.1", attackId: "T1210",
-    what: "Where an export carries no_root_squash (LX-042), mount it from an in-scope test client via host execution and prove root squashing is disabled by creating a benign test file as uid 0, then delete the file. No setuid binaries are written; the mount and file are cleaned up. Writable-export evidence only.",
-    needs: "host-exec tooling",
+    what: "Where an export carries no_root_squash (LX-042), mount it from an in-scope test client via host execution and prove root squashing is disabled by creating a benign test file as uid 0, then delete the file. Executes TODAY in two stages: (1) the runner's nfs_enum tool lists exports userland (RPC portmapper + MOUNT protocol, no privileges needed); (2) the mount+file proof runs via ssh_exec on the operator-designated privileged test client (REDTEAM_NFS_TEST_CLIENT, must be in scope). No setuid binaries are written; the mount and file are cleaned up. Writable-export evidence only.",
+    needs: NEEDS_PRIVILEGED_CLIENT,
   },
   {
     id: "LX-042", category: "validation", name: "/etc/exports misconfiguration audit",

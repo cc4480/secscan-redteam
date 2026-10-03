@@ -1,12 +1,13 @@
 # Runner Roadmap
 
-## Host-exec tooling — DELIVERED (v0.9.0)
+## Host-exec tooling — DELIVERED (v0.9.0), completed (v0.10.0)
 
 **Status:** the host-exec track is built, tested, and live in
 `runner/src/host-exec/`. The Windows (WS-*) and Linux (LX-*) batteries are
-no longer plan-only: 400 of 410 items are executable.
+fully executable: **all 410 items execute** (3 carry honest operator
+prerequisites — see below; nothing is plan-only anymore).
 
-**What landed:**
+**What landed in v0.9.0:**
 
 1. **ssh-exec** (`ssh_exec` agent tool) — non-interactive SSH command
    execution against in-scope Linux hosts, via `ssh2` (actively maintained).
@@ -20,6 +21,70 @@ no longer plan-only: 400 of 410 items are executable.
    execution against in-scope Windows hosts, via `winrm-client` (recently
    maintained; no abort handle — the kill switch races abandonment,
    documented in code).
+
+**What landed in v0.10.0 (the last 10 items):**
+
+4. **winrm-probe** (`winrm_probe`) — unauthenticated WinRM listener +
+   auth-scheme probe (WS-010): POST to /wsman, parse 401
+   `WWW-Authenticate` headers. No session, no credentials. Pure Node
+   http/https.
+5. **rdp-auth** (`rdp_auth`) — RDP credential validation via NLA (WS-019):
+   hand-rolled X.224 + TLS + CredSSP/SPNEGO + NTLMv2 (see
+   `host-exec/rdp.ts`). The only pure-JS Node RDP+NLA library found is
+   AGPL-3.0 licensed — a legal risk for a commercial product — so the
+   minimum viable handshake was implemented from the public specs instead.
+   Validates the credential, closes immediately; no desktop session is ever
+   driven. Servers without NLA are reported (not validated — the absent NLA
+   is the finding).
+6. **smb-pth** (`smb_pth`) — pass-the-hash with NTLMv2 keyed by the NT hash
+   (WS-023): raw-socket SMB2 NEGOTIATE + SESSION_SETUP, STATUS_SUCCESS =
+   the hash authenticates. The library path only does NTLMv1-from-password
+   (rejected by modern Windows), so the NTLMv2-from-hash handshake is
+   hand-rolled (`host-exec/ntlmv2.ts` shared primitives). Hash from
+   `REDTEAM_SMB_NTHASH` (test account's own, client-provided), password-grade
+   secrecy.
+7. **ad-enum** (`ad_enum`) — read-only LDAP AD enumeration via `ldapts`
+   (actively maintained): users/groups/computers/trusts/OUs/GPOs,
+   binary security-descriptor parsing for dangerous grants, **offline
+   BloodHound-style attack-path computation** (WS-038), and **AD CS
+   certificate-template audit** for ESC1/ESC2/ESC4 conditions (WS-043,
+   detection only — no cert ever requested). Nothing is written to the
+   directory, ever.
+8. **krb-ptt** (`krb_ptt`) — pass-the-ticket (WS-064) via the OS MIT krb5
+   user tools: ticket material from `REDTEAM_KRB_CCACHE_B64` /
+   `REDTEAM_KRB_CCACHE_PATH` / `REDTEAM_KRB_KIRBI_B64` (kirbi converted via
+   impacket's ticketConverter.py when available — the runner does not
+   implement KRB-CRED decryption itself), or `kinit` as the test account
+   itself; replayed ccache-only (`KRB5CCNAME`), `klist` confirms
+   presence/validity, `kvno` against an in-scope SPN proves KDC acceptance.
+   Only the test account's own tickets — no forging.
+9. **ssh-agent-audit** (`ssh_agent_audit`) — agent-forwarding socket
+   exposure (LX-018) + abuse-path analysis (LX-019) via ssh2 agent
+   forwarding. Analysis only — the socket is never used for onward auth.
+10. **nfs-enum** (`nfs_enum`) — userland NFS export enumeration (LX-041):
+    hand-rolled ONC RPC portmapper + MOUNT protocol, no kernel mount, no
+    privileges needed.
+11. **rdp-shadow-prep** (`rdp_shadow_prep`) — WS-065 preparation: read-only
+    WinRM enumeration of live session IDs + shadow policy, producing the
+    complete human handoff package (exact command, consent/ROE checklist,
+    what to observe). The shadowing act itself stays human-only (see below).
+
+**Honest prerequisites (v0.10.0) — NOT plan-only, they execute when met:**
+
+- `WS-064 [needs: kerberos ticket material]` — supply
+  `REDTEAM_KRB_CCACHE_B64` / `REDTEAM_KRB_CCACHE_PATH` /
+  `REDTEAM_KRB_KIRBI_B64`, or test-account credentials for the kinit
+  fallback; MIT krb5 user tools (`klist`, `kvno`, `kinit`) on the runner host.
+- `WS-065 [needs: human operator]` — **the single permanent exception.**
+  Shadowing a live user's session requires an operator sitting in a GUI
+  session viewing another person's desktop — a headless agent cannot
+  meaningfully automate that, and must not pretend to. The runner prepares
+  everything up to the human step (session IDs, exact command,
+  consent/ROE checklist, observation guide). Documented in `host-exec/rdp.ts`.
+- `LX-041 [needs: privileged test client]` — export enumeration runs
+  unprivileged; the mount+uid-0-file proof runs via `ssh_exec` on the
+  operator-designated privileged test client (`REDTEAM_NFS_TEST_CLIENT`,
+  must be in scope).
 
 **Non-negotiable properties — all mechanical, all tested:**
 
@@ -45,14 +110,6 @@ no longer plan-only: 400 of 410 items are executable.
 - **Timeouts + output caps** — 30s default timeout, 8KB output cap (no bulk
   exfiltration through the tool).
 
-**Remaining plan-only items (10):** interactive RDP logon (WS-019), WinRM
-listener probe without session (WS-010), pass-the-hash (WS-023),
-BloodHound collector tooling (WS-038), AD CS tooling (WS-043),
-pass-the-ticket (WS-064), RDP session shadowing (WS-065), SSH
-agent-forwarding channels (LX-018/LX-019), NFS test-client mounts (LX-041).
-These keep `needs: "host-exec tooling"` honestly and are named as plan-only
-items in the report under Honest limits — planned, not probed, never faked.
-
 ## Beyond
 
 - Console: surface the 12-cell coverage (✓/⊘/…) and the unified Megazord
@@ -61,3 +118,5 @@ items in the report under Honest limits — planned, not probed, never faked.
   the registry like web findings do today.
 - Retest mode: re-run a previous engagement's battery against a new
   deployment and diff the results — the resident-adversary loop.
+- Credential-less AD CS: explore LDAPS channel binding / signing enforcement
+  reporting as part of the ad_enum surface.

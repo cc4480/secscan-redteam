@@ -441,5 +441,8 @@ describe("host tools in the engagement loop", () => {
     for (const t of ["ssh_exec", "smb_exec", "winrm_exec"]) {
       assert.ok(sawTools.includes(t), `agent tool list includes ${t}`);
     }
+    for (const t of ["winrm_probe", "rdp_auth", "rdp_shadow_prep", "smb_pth", "ad_enum", "krb_ptt", "ssh_agent_audit", "nfs_enum"]) {
+      assert.ok(sawTools.includes(t), `agent tool list includes wave-2 tool ${t}`);
+    }
   });
 });

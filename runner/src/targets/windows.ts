@@ -14,19 +14,24 @@
  * crashing; no ransomware-style behavior; persistence mechanisms REPORTED
  * as findings, never planted; hijack proofs use benign canary files only.
  *
- * Execution model (v0.9.0): the runner's host-exec tools execute this
+ * Execution model (v0.10.0): the runner's host-exec tools execute this
  * battery — `smb_exec` (share reachability + listing), `winrm_exec`
- * (PowerShell/cmd commands). Only 7 items still need MORE than command
- * execution and stay marked `needs: "host-exec tooling"` — PLAN-ONLY,
- * reported BLOCKED under Honest limits: WS-010 (WinRM listener probe
- * without session), WS-019 (interactive RDP logon), WS-023 (pass-the-hash
- * needs hash auth), WS-038 (BloodHound collector tooling), WS-043 (AD CS
- * tooling), WS-064 (pass-the-ticket needs Kerberos), WS-065 (RDP shadowing).
+ * (PowerShell/cmd commands), `winrm_probe` (WS-010 listener/auth-scheme
+ * probe), `rdp_auth` (WS-019 NLA credential validation), `smb_pth` (WS-023
+ * pass-the-hash with NTLMv2), `ad_enum` (WS-038 attack-path computation +
+ * WS-043 AD CS template audit, both read-only LDAP), `krb_ptt` (WS-064
+ * ticket replay via MIT krb5 tools), and `rdp_shadow_prep` (WS-065 prepares
+ * the human handoff — session IDs, exact command, consent checklist).
+ * Two items keep honest prerequisites in `needs` (NOT plan-only — they
+ * execute when the prerequisite is met): WS-064 needs kerberos ticket
+ * material (ccache/kirbi via env, or kinit credentials); WS-065 needs a
+ * human operator for the shadowing act itself (preparation is automated).
  * SMB share enumeration note: the library has no NetShareEnum, so
  * list_shares is reachability probing of well-known + recon-supplied names.
  */
 
 import type { TargetBatteryItem, TargetProfile } from "./types.js";
+import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET } from "./types.js";
 
 const WINDOWS_BATTERY: TargetBatteryItem[] = [
   // ============================================ RECON — SMB / SHARES
@@ -90,8 +95,7 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "validation", name: "WinRM availability and auth-scheme exposure",
     brief: "WinRM on 5985/5986 reachable — which auth schemes does it advertise?",
     owasp: "CIS-v8-4.4", attackId: "T1021",
-    what: "Probe TCP 5985/5986 for WinRM listeners and record the advertised authentication schemes (Negotiate, Kerberos, NTLM, CredSSP, Basic) and TLS posture on 5986. Presence and scheme disclosure only; no session creation.",
-    needs: "host-exec tooling",
+    what: "Probe TCP 5985/5986 for WinRM listeners and record the advertised authentication schemes (Negotiate, Kerberos, NTLM, CredSSP, Basic) and TLS posture on 5986. Executes TODAY via the runner's winrm_probe tool: unauthenticated POST to /wsman, parsing the 401 WWW-Authenticate headers. Presence and scheme disclosure only; no session creation.",
   },
   {
     id: "WS-011", category: "validation", name: "HTTP banner grab on host web ports",
@@ -147,9 +151,8 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "functionality", name: "RDP credential validation with test account",
     brief: "Authorized test account over RDP — authentication succeeds, sessions logged?",
     owasp: "WSTG-ATHN-02", attackId: "T1078",
-    what: "Authenticate over RDP with the client-PROVIDED authorized test account only and verify session establishment, group membership applied, and that the attempt is fully logged by the host. Never guessed credentials, never a second account — one authorized credential, one session, then disconnect.",
+    what: "Authenticate over RDP with the client-PROVIDED authorized test account only and verify session establishment, group membership applied, and that the attempt is fully logged by the host. Executes TODAY via the runner's rdp_auth tool: X.224 negotiation requesting NLA, TLS upgrade, CredSSP/NTLMv2 handshake — the server's affirmative handshake completion IS the credential validation, after which the connection is closed immediately. No desktop session is established or driven (headless runner). If the server does not offer NLA, no validation is attempted — the absent NLA is the finding. Never guessed credentials, never a second account — one authorized credential, one handshake, then disconnect.",
     blackNote: "In black mode: single attempt, no reconnection storms; avoid tripping account-lockout-adjacent alerts.",
-    needs: "host-exec tooling",
   },
   {
     id: "WS-020", category: "functionality", name: "SMB credential validation with test account",
@@ -175,8 +178,7 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "logic", name: "Pass-the-hash exposure with test-account material",
     brief: "NTLM hash reuse of the test account — does the environment accept it?",
     owasp: "WSTG-ATHN-02", attackId: "T1078",
-    what: "Using ONLY the client-PROVIDED authorized test account's own NTLM material (captured from its own legitimate logon), test whether the hash authenticates to in-scope SMB/WinRM services where the password would. This audits PtH exposure of the test credential itself — never another principal's material, never dumped hashes.",
-    needs: "host-exec tooling",
+    what: "Using ONLY the client-PROVIDED authorized test account's own NTLM material (its own NT hash, REDTEAM_SMB_NTHASH), test whether the hash authenticates to in-scope SMB services. Executes TODAY via the runner's smb_pth tool: raw-socket SMB2 NEGOTIATE + SESSION_SETUP carrying an NTLMv2 AUTHENTICATE keyed by the hash (no password anywhere in the flow); STATUS_SUCCESS = PtH works, LOGON_FAILURE = rejected. Session logged off immediately on success; no share touched. This audits PtH exposure of the test credential itself — never another principal's material, never dumped hashes.",
   },
   {
     id: "WS-024", category: "logic", name: "Kerberoasting exposure audit",
@@ -269,8 +271,7 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "validation", name: "BloodHound-style attack-path analysis",
     brief: "Shortest privilege paths to Domain Admins — computed, never walked.",
     owasp: "CIS-v8-4.4",
-    what: "Collect the AD object graph (users, groups, computers, sessions, ACLs) via read-only LDAP/RPC collection as the authorized test account and compute shortest privilege-escalation paths to Tier-0, BloodHound-style, using offline graph analysis. COMPUTED ONLY — no path is executed, no session hijacked, no edge traversed against live systems.",
-    needs: "host-exec tooling",
+    what: "Collect the AD object graph (users, groups, computers, sessions, ACLs) via read-only LDAP as the authorized test account and compute shortest privilege-escalation paths to Tier-0, BloodHound-style, using offline graph analysis. Executes TODAY via the runner's ad_enum tool (ldapts): users/groups/computers/trusts/OUs/GPOs plus binary security-descriptor parsing for dangerous grants, BFS shortest paths computed offline. COMPUTED ONLY — no path is executed, no session hijacked, no edge traversed against live systems.",
   },
   {
     id: "WS-039", category: "functionality", name: "Unquoted service paths",
@@ -301,8 +302,7 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "logic", name: "AD CS misconfiguration exposure",
     brief: "Certificate templates with ESC1–ESC8-style flaws — cert-based takeover?",
     owasp: "CIS-v8-4.4", attackId: "T1190",
-    what: "Audit AD Certificate Services templates and CA configuration for known misconfiguration classes (client-auth EKU with no manager approval, SAN-supplied templates, overly permissive enrollment rights). Template/policy audit ONLY — no certificate is requested or enrolled; the misconfig finding is the deliverable.",
-    needs: "host-exec tooling",
+    what: "Audit AD Certificate Services templates and CA configuration for known misconfiguration classes (client-auth EKU with no manager approval, SAN-supplied templates, overly permissive enrollment rights). Executes TODAY via the runner's ad_enum tool (adcs operation): read-only LDAP reads of certificate template objects, flagging ESC1/ESC2/ESC4-style conditions from template flags, EKUs, and enrollment ACLs. Template/policy audit ONLY — no certificate is requested or enrolled; the misconfig finding is the deliverable.",
   },
   {
     id: "WS-044", category: "logic", name: "Print Spooler exposure audit",
@@ -435,17 +435,17 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     category: "logic", name: "Pass-the-ticket exposure",
     brief: "Kerberos ticket reuse of the test account's own tickets — accepted?",
     owasp: "WSTG-ATHN-02", attackId: "T1078",
-    what: "Assess whether the authorized test account's OWN legitimately obtained Kerberos tickets can be replayed to in-scope services (pass-the-ticket exposure of the test credential itself). The test account's own tickets only — no other principal's tickets, no forging, no silver/golden ticket construction.",
-    needs: "host-exec tooling",
+    what: "Assess whether the authorized test account's OWN legitimately obtained Kerberos tickets can be replayed to in-scope services (pass-the-ticket exposure of the test credential itself). Executes TODAY via the runner's krb_ptt tool: the operator supplies ticket material (REDTEAM_KRB_CCACHE_B64 / REDTEAM_KRB_CCACHE_PATH / REDTEAM_KRB_KIRBI_B64) or the runner obtains a TGT via kinit as the test account itself; the ticket is replayed ccache-only (KRB5CCNAME) and kvno against an in-scope SPN proves KDC acceptance. The test account's own tickets only — no other principal's tickets, no forging, no silver/golden ticket construction.",
+    needs: NEEDS_KERBEROS_TICKET,
   },
   {
     id: "WS-065",
     category: "logic", name: "RDP session shadowing exposure",
     brief: "Can the test account shadow others' RDP sessions — session privacy gap?",
     owasp: "CIS-v8-4.4", attackId: "T1021",
-    what: "Audit whether the authorized test account holds the remote-control/shadow permission on in-scope RDS hosts and whether session shadowing would prompt the target user. PERMISSION AUDIT ONLY — no session is shadowed, no other user's session is viewed or touched.",
+    what: "Audit whether the authorized test account holds the remote-control/shadow permission on in-scope RDS hosts and whether session shadowing would prompt the target user. Executes TODAY via the runner's rdp_shadow_prep tool: read-only WinRM enumeration of live session IDs and shadow policy, producing a complete human handoff package (exact shadow command, consent/ROE checklist, what to observe and record). THE SHADOWING ACT ITSELF IS HUMAN-ONLY — a headless agent cannot sit in a GUI session viewing another person's live desktop, and must not pretend to. PERMISSION AUDIT + PREPARATION ONLY — no session is shadowed by the runner, no other user's session is viewed or touched.",
     blackNote: "In black mode this is a pure permission read — shadowing a live user session is never acceptable.",
-    needs: "host-exec tooling",
+    needs: NEEDS_HUMAN_OPERATOR,
   },
   {
     id: "WS-066", category: "functionality", name: "DCOM lateral execution exposure",

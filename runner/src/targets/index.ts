@@ -37,14 +37,14 @@
 import type { BatteryCategory } from "../battery.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "../battery.js";
 import type { TargetBatteryItem, TargetId, TargetKind, TargetProfile } from "./types.js";
-import { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, TARGET_PREFIXES, isTargetId } from "./types.js";
+import { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId } from "./types.js";
 import { SECSCAN_PROFILE } from "./secscan.js";
 import { SECLAYER_PROFILE } from "./seclayer.js";
 import { WINDOWS_PROFILE } from "./windows.js";
 import { LINUX_PROFILE } from "./linux.js";
 
 export type { TargetBatteryItem, TargetId, TargetKind, TargetProfile };
-export { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, TARGET_PREFIXES, isTargetId };
+export { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId };
 
 export const TARGET_PROFILES: Record<TargetId, TargetProfile> = {
   secscan: SECSCAN_PROFILE,
@@ -87,13 +87,15 @@ export function inferTargetProfile(url: string): TargetId {
 
 /**
  * A coverage cell is BLOCKED when the runner cannot execute any of its
- * items: every item in that target+category needs host-exec tooling and no
- * probe was tagged for the cell. Blocked cells are reported under Honest
- * limits — never counted as covered, never counted as failed.
+ * items: every item in that target+category carries a `needs` prerequisite
+ * the operator has not met, and no probe was tagged for the cell. Blocked
+ * cells are reported under Honest limits — never counted as covered, never
+ * counted as failed. (v0.10.0: no cell is fully blocked; the mechanic stays
+ * for future batteries.)
  */
 export function targetCellBlocked(profile: TargetProfile, category: BatteryCategory): boolean {
   const items = targetItemsFor(profile, category);
-  return items.length > 0 && items.every((b) => b.needs === HOST_EXEC_TOOLING);
+  return items.length > 0 && items.every((b) => !!b.needs);
 }
 
 export type CellStatus = "done" | "blocked" | "missing";

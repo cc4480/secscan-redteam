@@ -6,6 +6,8 @@
     "@marsaud/smb2": "^0.18.0",
     "@secscan/redteam-auth-gate": "0.1.0",
     "@secscan/redteam-llm-router": "0.2.0",
+    "js-md4": "^0.3.2",
+    "ldapts": "^9.2.0",
     "ssh2": "^1.17.0",
     "winrm-client": "^0.0.12"
   },
@@ -27,5 +29,5 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "type": "module",
-  "version": "0.9.0"
+  "version": "0.10.0"
 }

@@ -66,16 +66,19 @@ hands on hosts:
   Linux hosts), `smb_exec` (share reachability probing + directory listing
   on Windows hosts), `winrm_exec` (PowerShell/cmd command execution on
   Windows hosts) — plus the existing `http_probe` for HTTP(S) banner/TLS/
-  headers on host web ports. These count toward their coverage cells normally.
-- **Plan-only** (`[needs: host-exec tooling]`): the 10 remaining items that
-  need MORE than non-interactive command execution — interactive RDP logon,
-  pass-the-hash / pass-the-ticket (Kerberos/NTLM-hash auth), BloodHound
-  collector tooling, AD CS tooling, RDP session shadowing, SSH
-  agent-forwarding channels, NFS mounts from a test client. The agents still
-  write the hypothesis and the expected evidence for each item — the thinking
-  is real — but no probe is fired that the runner cannot execute. Those
-  coverage cells report **BLOCKED** under Honest limits: planned, never
-  probed, never faked.
+  headers on host web ports — plus the v0.10.0 wave: `winrm_probe` (WS-010),
+  `rdp_auth` (WS-019 NLA validation), `smb_pth` (WS-023 NTLMv2
+  pass-the-hash), `ad_enum` (WS-038 offline attack paths + WS-043 AD CS
+  template audit), `krb_ptt` (WS-064 ticket replay via MIT krb5 tools),
+  `ssh_agent_audit` (LX-018/LX-019), `nfs_enum` (LX-041 export listing),
+  `rdp_shadow_prep` (WS-065 handoff preparation). These count toward their
+  coverage cells normally.
+- **Honest prerequisites** (`[needs: ...]`): 3 items execute when the
+  operator meets the prerequisite — WS-064 needs kerberos ticket material,
+  LX-041's mount proof needs a privileged test client, WS-065 needs a human
+  operator for the shadowing act itself (the runner prepares everything up
+  to that step). Nothing is plan-only anymore; the report names each item
+  with its prerequisite under Honest limits.
 
 Every host invocation flows through the safety core: ROE-scope check (fail
 closed, before any packet), destructive-command denylist (fail closed),
@@ -92,8 +95,8 @@ One flag: `--full-battery`. One operation:
 1. **Recon** all surfaces — webapp, MCP API, and host/AD footprints.
 2. **Exploit** the SecScan battery.
 3. **Exploit** the SecLayer battery.
-4. **Exploit** the Windows battery (`smb_exec`/`winrm_exec` where applicable; 7 plan-only items planned).
-5. **Exploit** the Linux battery (`ssh_exec` where applicable; 3 plan-only items planned).
+4. **Exploit** the Windows battery (all 410-item host tools; WS-064/WS-065 execute when their prerequisites are met).
+5. **Exploit** the Linux battery (all host tools; LX-041's mount proof needs the privileged test client).
 6. **Cross-cutting chains** — paths spanning targets: does a primitive on
    one surface become impact on another?
 7. **Unified report** — one Megazord narrative, all batteries.

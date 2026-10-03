@@ -101,6 +101,11 @@ export interface HostCredentials {
   password?: string;
   privateKey?: string;
   domain?: string;
+  /**
+   * NT hash (32 hex chars) for pass-the-hash — the test account's OWN hash,
+   * provided by the client. Handled with the same secrecy as a password.
+   */
+  ntHash?: string;
 }
 
 function need(name: string, value: string | undefined, hint: string): string {
@@ -144,10 +149,45 @@ export function resolveWinrmCredentials(env: NodeJS.ProcessEnv = process.env): H
   return { username, password };
 }
 
+/**
+ * SMB pass-the-hash credentials: REDTEAM_SMB_USER + REDTEAM_SMB_NTHASH.
+ * The hash is the test account's OWN NTLM hash, provided by the client —
+ * never dumped, never another principal's material. Strict 32-hex validation.
+ */
+export function resolveSmbHashCredentials(env: NodeJS.ProcessEnv = process.env): HostCredentials {
+  const username = need("REDTEAM_SMB_USER", env["REDTEAM_SMB_USER"], "the authorized test-account login name.");
+  const ntHash = need(
+    "REDTEAM_SMB_NTHASH",
+    env["REDTEAM_SMB_NTHASH"],
+    "the test account's own NTLM hash as 32 hex chars (client-provided; used for the WS-023 pass-the-hash exposure test only).",
+  ).toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(ntHash)) {
+    throw new Error("[host-exec] REDTEAM_SMB_NTHASH must be exactly 32 hex characters (the NT hash, not a password).");
+  }
+  return { username, ntHash, domain: env["REDTEAM_SMB_DOMAIN"] };
+}
+
+/**
+ * AD/LDAP credentials: dedicated REDTEAM_AD_* when set, otherwise the SMB
+ * test-account credentials (same authorized test account, documented fallback).
+ */
+export function resolveAdCredentials(env: NodeJS.ProcessEnv = process.env): HostCredentials {
+  const username = env["REDTEAM_AD_USER"] ?? env["REDTEAM_SMB_USER"];
+  const password = env["REDTEAM_AD_PASSWORD"] ?? env["REDTEAM_SMB_PASSWORD"];
+  const domain = env["REDTEAM_AD_DOMAIN"] ?? env["REDTEAM_SMB_DOMAIN"];
+  if (!username || !password) {
+    throw new Error(
+      "[host-exec] missing AD credential: set REDTEAM_AD_USER + REDTEAM_AD_PASSWORD (or REDTEAM_SMB_USER + REDTEAM_SMB_PASSWORD as fallback). " +
+        "Host-exec refuses to run without operator-provided test-account credentials.",
+    );
+  }
+  return { username, password, domain };
+}
+
 /** Values that must never appear in logs, errors, or events. */
 export function collectSecrets(creds: HostCredentials): string[] {
   const out: string[] = [];
-  for (const v of [creds.password, creds.privateKey]) {
+  for (const v of [creds.password, creds.privateKey, creds.ntHash]) {
     if (v && v.length >= 4 && !v.startsWith("__KEY_PATH__:")) out.push(v);
   }
   return out;

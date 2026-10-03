@@ -26,15 +26,28 @@ export const TARGET_PREFIXES: Record<TargetId, string> = {
 };
 
 /**
- * Marker for battery items the runner cannot execute even WITH the host-exec
+ * Marker for battery items the runner could not execute even WITH the host-exec
  * tools (v0.9.0): anything needing interactive sessions (RDP GUI), active
  * network attacks (relay/spoofing), Kerberos protocol operations, binary
  * tooling deployment (BloodHound collectors), or AD CS/RDS role tooling.
  * Such items are PLAN-ONLY — the agents plan the hypothesis and expected
  * evidence, and the coverage cell reports BLOCKED (under Honest limits)
  * instead of covered or failed.
+ *
+ * v0.10.0: no battery item uses this marker anymore — every former
+ * plan-only item is now executable or carries a narrower prerequisite below.
+ * The constant stays for backward compatibility (reports, saved state).
  */
 export const HOST_EXEC_TOOLING = "host-exec tooling";
+
+/**
+ * Narrower v0.10.0 prerequisites — these items EXECUTE when the prerequisite
+ * is met (they are not plan-only). The report lists them with their marker
+ * so the operator knows exactly what to supply.
+ */
+export const NEEDS_KERBEROS_TICKET = "kerberos ticket material";
+export const NEEDS_HUMAN_OPERATOR = "human operator";
+export const NEEDS_PRIVILEGED_CLIENT = "privileged test client";
 
 export interface TargetBatteryItem {
   /** SS-001… / SL-001… — unique per target, zero-padded, ordered by surface. */

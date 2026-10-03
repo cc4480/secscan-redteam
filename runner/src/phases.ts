@@ -311,7 +311,153 @@ const WINRM_EXEC_TOOL: JsonSchemaTool = {
 };
 
 /** Host tools: available to recon and exploiter during host phases. */
-const HOST_TOOLS = [SSH_EXEC_TOOL, SMB_EXEC_TOOL, WINRM_EXEC_TOOL];
+const WINRM_PROBE_TOOL: JsonSchemaTool = {
+  name: "winrm_probe",
+  description:
+    "Probe TCP 5985/5986 for WinRM listeners WITHOUT creating a session: unauthenticated POST to /wsman, recording the advertised auth schemes from the 401 WWW-Authenticate headers (Negotiate/Kerberos/NTLM/CredSSP/Basic) and TLS posture on 5986. Presence and scheme disclosure only — no credentials used. Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      ports: { type: "array", items: { type: "number" } },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const RDP_AUTH_TOOL: JsonSchemaTool = {
+  name: "rdp_auth",
+  description:
+    "Validate the authorized test account's RDP credential via NLA (CredSSP/NTLMv2) — headless, no desktop session. Flow: X.224 negotiation requesting NLA, TLS upgrade, CredSSP handshake; the server's affirmative handshake completion IS the validation, then the connection closes immediately. If the server does not offer NLA, no validation is attempted (the absent NLA is the finding). Test-account credentials resolved from the environment — NEVER in args. In-scope hosts only (runner-enforced). Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const RDP_SHADOW_PREP_TOOL: JsonSchemaTool = {
+  name: "rdp_shadow_prep",
+  description:
+    "Prepare RDP session shadowing for a HUMAN operator — the runner never shadows. Read-only WinRM enumeration of live RDP session IDs and shadow policy/permission state, producing a complete handoff package: exact shadow command, consent/ROE checklist, what to observe and record. The shadowing act itself needs a human operator in a GUI session (needs: human operator). Test-account credentials from the environment. In-scope hosts only. Include attackId, category, targetProfile ('windows'), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const SMB_PTH_TOOL: JsonSchemaTool = {
+  name: "smb_pth",
+  description:
+    "Pass-the-hash: test whether the test account's OWN NT hash (REDTEAM_SMB_NTHASH, client-provided — never dumped, never another principal's) authenticates to in-scope SMB. Raw-socket SMB2 NEGOTIATE + SESSION_SETUP with NTLMv2 keyed by the hash; STATUS_SUCCESS = PtH works. Session logged off immediately; no share touched. The hash is handled with password-grade secrecy (never in args, never logged). In-scope hosts only (runner-enforced). Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const AD_ENUM_TOOL: JsonSchemaTool = {
+  name: "ad_enum",
+  description:
+    "Read-only LDAP Active Directory enumeration as the authorized test account (ldapts simple bind; test-account credentials from the environment — NEVER in args). Operations (pick what the item needs): users, groups, computers, trusts, ous, gpos, acls (binary security-descriptor parsing for dangerous grants to non-Tier-0 principals), attack_paths (BloodHound-style shortest paths to Tier-0, COMPUTED OFFLINE — never executed), adcs (certificate template audit for ESC1/ESC2/ESC4 conditions — DETECTION ONLY, no cert requested). Nothing is ever written to the directory. In-scope hosts only (runner-enforced). Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      useTls: { type: "boolean" },
+      baseDn: { type: "string" },
+      operations: { type: "array", items: { type: "string", enum: ["users", "groups", "computers", "trusts", "ous", "gpos", "acls", "attack_paths", "adcs"] } },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "operations", "category"],
+  },
+};
+
+const KRB_PTT_TOOL: JsonSchemaTool = {
+  name: "krb_ptt",
+  description:
+    "Pass-the-ticket: replay the test account's OWN Kerberos tickets (needs: kerberos ticket material). Sources: REDTEAM_KRB_CCACHE_B64 / REDTEAM_KRB_CCACHE_PATH / REDTEAM_KRB_KIRBI_B64, or kinit as the test account itself (legitimately obtained). The ticket is replayed ccache-only (KRB5CCNAME); klist confirms presence/validity and kvno against an in-scope SPN proves KDC acceptance. Only the test account's own tickets — no forging, no silver/golden tickets. Requires MIT krb5 user tools on the runner host. In-scope hosts/SPNs only (runner-enforced). Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      spn: { type: "string" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const SSH_AGENT_AUDIT_TOOL: JsonSchemaTool = {
+  name: "ssh_agent_audit",
+  description:
+    "SSH agent-forwarding audit (modes: socket-check | abuse-path). Connects WITH agent forwarding (needs a local agent socket: REDTEAM_SSH_AGENT_SOCKET or SSH_AUTH_SOCK) and verifies whether the agent socket is exposed on the remote host (presence, permissions) or — in abuse-path mode — documents which local users could reach it and how a host compromise would pivot through it. ANALYSIS ONLY: the socket is never used for onward authentication. Test-account credentials from the environment. In-scope hosts only. Include attackId, category, targetProfile ('linux' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      mode: { type: "string", enum: ["socket-check", "abuse-path"] },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["linux"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "mode", "category"],
+  },
+};
+
+const NFS_ENUM_TOOL: JsonSchemaTool = {
+  name: "nfs_enum",
+  description:
+    "Userland NFS export enumeration: RPC portmapper + MOUNT protocol EXPORT listing (no kernel mount, no privileges needed, no credentials). Reports exported paths and client grants — the evidence for no_root_squash/world-export findings. For LX-041's mount+file proof, use ssh_exec on the operator-designated privileged test client (REDTEAM_NFS_TEST_CLIENT, must be in scope): mount there, create+delete a benign uid-0 test file, unmount. In-scope hosts only (runner-enforced). Include attackId, category, targetProfile ('linux' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["linux"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "category"],
+  },
+};
+
+const HOST_TOOLS = [SSH_EXEC_TOOL, SMB_EXEC_TOOL, WINRM_EXEC_TOOL, WINRM_PROBE_TOOL, RDP_AUTH_TOOL, RDP_SHADOW_PREP_TOOL, SMB_PTH_TOOL, AD_ENUM_TOOL, KRB_PTT_TOOL, SSH_AGENT_AUDIT_TOOL, NFS_ENUM_TOOL];
 const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
   name: "query_registry",
   description:
@@ -632,6 +778,99 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     }
   }
 
+  // -- Host execution tools, wave 2 (v0.10.0): winrm_probe, rdp_auth,
+  // rdp_shadow_prep, smb_pth, ad_enum, krb_ptt, ssh_agent_audit, nfs_enum.
+  // Same safety-core contract as wave 1: ROE technique check, pinned
+  // targetProfile (never inferred), coverage counting, kill-switch
+  // controller registration, DENIED/ABORTED mapping.
+  const WAVE2_TOOLS = new Set([
+    "winrm_probe",
+    "rdp_auth",
+    "rdp_shadow_prep",
+    "smb_pth",
+    "ad_enum",
+    "krb_ptt",
+    "ssh_agent_audit",
+    "nfs_enum",
+  ]);
+  if (WAVE2_TOOLS.has(call.name)) {
+    const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
+    const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
+    const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
+    if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
+      return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") };
+    }
+    const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+    const wantTp = call.name === "ssh_agent_audit" || call.name === "nfs_enum" ? "linux" : "windows";
+    if (!isTargetId(rawTp) || rawTp !== wantTp) {
+      return {
+        result: `DENIED: ${call.name} requires targetProfile "${wantTp}" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
+        attackId,
+        target: String(args["host"] ?? ""),
+      };
+    }
+    const host = String(args["host"] ?? "");
+    ctx.probesUsed++;
+    if (category) {
+      ctx.coverage.add(category);
+      if (ctx.input.fullBattery) {
+        let set = ctx.targetCoverage.get(wantTp);
+        if (!set) {
+          set = new Set();
+          ctx.targetCoverage.set(wantTp, set);
+        }
+        set.add(category);
+      }
+      ctx.events.updateState({
+        batteryCoverage: {
+          logic: ctx.coverage.has("logic") ? 1 : 0,
+          functionality: ctx.coverage.has("functionality") ? 1 : 0,
+          validation: ctx.coverage.has("validation") ? 1 : 0,
+        },
+      });
+    }
+    const ctrl = new AbortController();
+    ctx.hostKill.controllers.add(ctrl);
+    try {
+      if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
+      const exec = ctx.hostExecutor;
+      exec.killSwitch = ctx.hostKill;
+      const t = { host, scopeHosts: ctx.hosts, signal: ctrl.signal };
+      const res =
+        call.name === "winrm_probe"
+          ? await exec.winrmProbe({ ...t, ports: Array.isArray(args["ports"]) ? (args["ports"] as unknown[]).map(Number).filter((n) => n > 0 && n < 65536).slice(0, 16) : undefined })
+          : call.name === "rdp_auth"
+            ? await exec.rdpValidate({ ...t, port: numArg(args["port"]) })
+            : call.name === "rdp_shadow_prep"
+              ? await exec.rdpShadowPrep(t)
+              : call.name === "smb_pth"
+                ? await exec.smbPth({ ...t, port: numArg(args["port"]) })
+                : call.name === "ad_enum"
+                  ? await exec.adEnum({
+                      ...t,
+                      port: numArg(args["port"]),
+                      useTls: args["useTls"] === true,
+                      baseDn: optStr(args["baseDn"]),
+                      operations: (Array.isArray(args["operations"]) ? args["operations"] : []).map(String),
+                    })
+                  : call.name === "krb_ptt"
+                    ? await exec.krbPtt({ ...t, spn: optStr(args["spn"]) })
+                    : call.name === "ssh_agent_audit"
+                      ? await exec.sshAgentAudit({ ...t, port: numArg(args["port"]), mode: args["mode"] === "abuse-path" ? "abuse-path" : "socket-check" })
+                      : await exec.nfsEnum(t);
+      if (/kill switch/i.test(res.summary)) {
+        return { result: `ABORTED by coordinator kill switch — engagement halting. ${res.summary}`, attackId, target: host };
+      }
+      if (res.refused) {
+        return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
+      }
+      const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
+      return { result: `${res.summary}.${out}`, attackId, target: host };
+    } finally {
+      ctx.hostKill.controllers.delete(ctrl);
+    }
+  }
+
   // MCP tools.
   const readOnly = new Set(["get_scan_status", "get_report", "list_recent_scans", "get_account"]);
   if (call.name === "scan_url") {
@@ -886,7 +1125,7 @@ function mergeVerdictBlock(ctx: Ctx, text: string): void {
 /**
  * Runner-computed battery coverage line. Generic engagements: 3 global
  * categories. Full-battery engagements: 3 categories × selected targets
- * (12 cells by default). ✓ probed · ⊘ blocked (host-exec tooling) · … missing.
+ * (12 cells by default). ✓ probed · ⊘ blocked (prerequisite) · … missing.
  */
 export function batteryStatusLine(ctx: Ctx): string {
   if (ctx.input.fullBattery) {
@@ -1539,7 +1778,7 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
     return "dry-run summary";
   }
   const cap = ctx.input.mode === "black" ? 1 : 3;
-  /** Cell status for one target × category: done | blocked (host-exec tooling) | missing. */
+  /** Cell status for one target × category: done | blocked (prerequisite) | missing. */
   const cellStatus = (t: TargetId, c: BatteryCategory) =>
     targetCellStatus(TARGET_PROFILES[t], c, ctx.targetCoverage.get(t));
   /** Full battery: 3 categories × selected targets (12 cells by default). Blocked cells never force more rounds — they are honestly reported, not chased. */
@@ -1639,20 +1878,23 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   const fbDone = fbStatus.filter((x) => x.s === "done");
   const fbBlocked = fbStatus.filter((x) => x.s === "blocked");
   const fbMissing = fbStatus.filter((x) => x.s === "missing");
-  // Individual battery items that stay plan-only even though their cells are
-  // probe-able (interactive RDP, Kerberos ops, collector binaries, ...).
+  // Individual battery items carrying a `needs` prerequisite (v0.10.0: the
+  // only ones left are WS-064 [kerberos ticket material], WS-065 [human
+  // operator], LX-041 [privileged test client]). They execute when the
+  // prerequisite is met; the report names the prerequisite so the operator
+  // knows exactly what to supply. Nothing is plan-only anymore.
   const fbPlanOnly = selected.flatMap((t) =>
-    TARGET_PROFILES[t].battery.filter((b) => b.needs === HOST_EXEC_TOOLING).map((b) => `${t}:${b.id}`),
+    TARGET_PROFILES[t].battery.filter((b) => !!b.needs).map((b) => `${t}:${b.id} [needs: ${b.needs}]`),
   );
   const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const batteryLine = ctx.input.fullBattery
     ? `Battery coverage (FULL BATTERY — 3 categories × ${selected.length} targets): ${fbDone.length}/${fbCells.length} cells probed ` +
       `(${batteryStatusLine(ctx)}, ${ctx.probesUsed} probes total). ` +
       (fbBlocked.length > 0
-        ? `BLOCKED (host-exec tooling not yet available — planned, not probed; see Honest limits): ${fbBlocked.map(({ t, c }) => `${t}:${c}`).join(", ")}. `
+        ? `BLOCKED (prerequisite not met — planned, not probed; see Honest limits): ${fbBlocked.map(({ t, c }) => `${t}:${c}`).join(", ")}. `
         : "") +
       (fbPlanOnly.length > 0
-        ? `Plan-only items (needs: host-exec tooling — planned, not probed; see Honest limits): ${fbPlanOnly.join(", ")}. `
+        ? `Items with prerequisites (execute when met — see Honest limits): ${fbPlanOnly.join(", ")}. `
         : "") +
       (fbMissing.length > 0
         ? `NOT COVERED: ${fbMissing.map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
