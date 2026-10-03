@@ -183,7 +183,7 @@ export function derLen(n: number): Buffer {
   return Buffer.from([0x80 | bytes.length, ...bytes]);
 }
 
-export function derTLV(tag: number, content: Buffer): Buffer {
+function derTLV(tag: number, content: Buffer): Buffer {
   return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
 }
 
@@ -250,12 +250,12 @@ export function derParse(buf: Buffer): DerNode {
 }
 
 /** Find first child with the given context tag (0xa0, 0xa1, ...). */
-export function derChild(node: DerNode, tag: number): DerNode | undefined {
+function derChild(node: DerNode, tag: number): DerNode | undefined {
   return node.children.find((c) => c.tag === tag);
 }
 
 /** Unwrap [n] OCTET STRING (context tag holding a single OCTET STRING child, or raw bytes). */
-export function derUnwrapOctet(node: DerNode): Buffer {
+function derUnwrapOctet(node: DerNode): Buffer {
   const inner = node.children.find((c) => c.tag === 0x04);
   return inner ? inner.content : node.content;
 }

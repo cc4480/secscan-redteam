@@ -8,7 +8,7 @@
 
 export type HttpFn = (url: string, init: RequestInit) => Promise<Response>;
 
-export const INTEGRATION_TIMEOUT_MS = 15_000;
+const INTEGRATION_TIMEOUT_MS = 15_000;
 
 export class IntegrationHttpError extends Error {
   readonly status: number;
@@ -67,7 +67,7 @@ export async function requestJson(
 }
 
 /** Strip query strings from URLs before they appear in errors/logs. */
-export function redactUrl(url: string): string {
+function redactUrl(url: string): string {
   const q = url.indexOf("?");
   return q >= 0 ? url.slice(0, q) : url;
 }

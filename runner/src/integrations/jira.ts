@@ -40,7 +40,7 @@ export function buildJiraSummary(input: JiraIssueInput): string {
   return `[${f.severity.toUpperCase()}] ${f.title} (${f.id}, ${input.target})`.slice(0, 255);
 }
 
-export function buildJiraDescription(input: JiraIssueInput): string[] {
+function buildJiraDescription(input: JiraIssueInput): string[] {
   const { finding: f, bundle, engagementId, target } = input;
   const lines: string[] = [
     `SecScan RedTeam finding ${f.id} — confirmed during engagement ${engagementId} against ${target}.`,

@@ -31,12 +31,12 @@ export interface SnowRecordInput {
   target: string;
 }
 
-export function buildSnowShortDescription(input: SnowRecordInput): string {
+function buildSnowShortDescription(input: SnowRecordInput): string {
   const f = input.finding;
   return `[${f.severity.toUpperCase()}] ${f.title} (${f.id}, ${input.target})`.slice(0, 160);
 }
 
-export function buildSnowDescription(input: SnowRecordInput): string {
+function buildSnowDescription(input: SnowRecordInput): string {
   const { finding: f, bundle, engagementId, target } = input;
   const parts = [
     `SecScan RedTeam finding ${f.id} — confirmed during engagement ${engagementId} against ${target}.`,

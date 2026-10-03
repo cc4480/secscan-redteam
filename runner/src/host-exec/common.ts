@@ -17,7 +17,6 @@
 
 export const HOST_EXEC_TIMEOUT_MS = 30_000;
 export const HOST_OUTPUT_CAP = 8 * 1024;
-export const HOST_COMMAND_CAP = 4_000;
 
 /** Scope check: exact match against the engagement's declared scope hosts. */
 export function validateHostTarget(

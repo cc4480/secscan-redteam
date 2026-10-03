@@ -129,10 +129,3 @@ export function resolveSlackConfig(env: NodeJS.ProcessEnv = process.env): SlackR
   }
   return { configured: true, webhookUrl: url };
 }
-
-/** Names of env vars that carry secrets — redacted from any log/error text. */
-export const INTEGRATION_SECRET_ENVS = [
-  "REDTEAM_JIRA_API_TOKEN",
-  "REDTEAM_SNOW_PASSWORD",
-  "REDTEAM_SLACK_WEBHOOK_URL",
-];

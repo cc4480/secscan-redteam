@@ -28,7 +28,8 @@ import { runEngagement, type RunOptions } from "./phases.js";
 import type { EngagementEvent, EngagementInput, EngagementResult } from "./types.js";
 
 export { runEngagement, resolveConfig } from "./phases.js";
-export type { RunOptions, RunnerDeps } from "./phases.js";
+export type { RunOptions } from "./phases.js";
+export type { RunnerDeps } from "./context.js";
 export type {
   EngagementEvent,
   EngagementInput,
@@ -158,7 +159,7 @@ export interface QueueJob {
 }
 
 /** Where the console drops engagement requests. REDTEAM_HOME-aware. */
-export function defaultQueueDir(): string {
+function defaultQueueDir(): string {
   const home = process.env["REDTEAM_HOME"];
   return home ? join(home, "engagements", "queue") : join(process.cwd(), "engagements", "queue");
 }
