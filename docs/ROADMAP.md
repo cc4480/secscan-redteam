@@ -1,46 +1,57 @@
 # Runner Roadmap
 
-## Next capability: host-exec tooling (unblocks the Windows/Linux batteries)
+## Host-exec tooling — DELIVERED (v0.9.0)
 
-**Status (v0.8.0):** the Windows (WS-*) and Linux (LX-*) batteries exist as
-exhaustive plan batteries — 100+ items each, every distinct attacker intent
-against host and Active Directory surfaces. The runner can *plan* them today
-but can only *execute* the HTTP(S) subset (banner grabs, TLS inspection,
-security headers via `http_probe`). Every other host item is marked
-`[needs: host-exec tooling]` and its coverage cell reports **BLOCKED** under
-Honest limits — planned, never probed, never faked.
+**Status:** the host-exec track is built, tested, and live in
+`runner/src/host-exec/`. The Windows (WS-*) and Linux (LX-*) batteries are
+no longer plan-only: 400 of 410 items are executable.
 
-**What host-exec tooling must provide:**
+**What landed:**
 
-1. **ssh-exec** — authenticated SSH command execution against in-scope
-   Linux hosts, using operator-provided test-account credentials/keys only.
-2. **smb-exec** — authenticated SMB session execution and share
-   enumeration against in-scope Windows hosts (test accounts only).
-3. **winrm-exec** — authenticated WinRM command execution against
-   in-scope Windows hosts (test accounts only).
+1. **ssh-exec** (`ssh_exec` agent tool) — non-interactive SSH command
+   execution against in-scope Linux hosts, via `ssh2` (actively maintained).
+   Test-account credentials from environment/Secure Vault only.
+2. **smb-exec** (`smb_exec` agent tool) — SMB session + share reachability
+   probing + directory listing against in-scope Windows hosts, via
+   `@marsaud/smb2` (most complete Node SMB2 implementation; no NetShareEnum
+   support — `list_shares` is reachability probing of well-known +
+   recon-supplied names, documented in code).
+3. **winrm-exec** (`winrm_exec` agent tool) — non-interactive PowerShell/cmd
+   execution against in-scope Windows hosts, via `winrm-client` (recently
+   maintained; no abort handle — the kill switch races abandonment,
+   documented in code).
 
-**Non-negotiable properties (same bar as the rest of the runner):**
+**Non-negotiable properties — all mechanical, all tested:**
 
-- **Audit logging** — every command, its target, its arguments, and its
-  result lands in the JSONL operation log with time, phase, actor,
-  ATT&CK ID, and effect. No silent execution, ever.
-- **Kill switch** — the coordinator's abort authority extends to host
-  execution: one abort stops in-flight host commands and no new ones start.
-- **Scope enforcement** — host allowlist from the ROE, checked on every
-  invocation, same as `http_probe`. Out-of-scope host → denied loudly.
-- **Credential discipline** — test-account credentials referenced in ROE
-  notes, injected via Secure Vault / environment, never logged, never in
-  error strings. The T1078 contract (provided credentials only, never
-  guessed or stuffed) is mechanical, not advisory.
-- **Non-destructive defaults** — read-only enumeration commands are the
-  default set; any state-changing command requires explicit ROE allowance
-  and is still bounded (benign canary files, single paired requests,
-  no service disruption).
+- **Scope enforcement** — the target host must exactly match the ROE-declared
+  scope; anything else is rejected before any packet is sent (fail closed).
+- **Destructive-command denylist** — `rm -rf /`, `mkfs`, `dd of=/dev/*`,
+  disk wipes, shutdown/reboot, shadow-copy deletion, ransomware patterns,
+  and more are refused mechanically (fail closed). Documented in
+  `host-exec/common.ts`.
+- **Credential discipline** — `REDTEAM_SSH_USER`/`REDTEAM_SSH_PASSWORD` (or
+  `REDTEAM_SSH_KEY`/`REDTEAM_SSH_KEY_PATH`), `REDTEAM_SMB_USER`/
+  `REDTEAM_SMB_PASSWORD` (+ optional `REDTEAM_SMB_DOMAIN`),
+  `REDTEAM_WINRM_USER`/`REDTEAM_WINRM_PASSWORD`. Never in code, never in
+  args, never in logs/errors/events (redaction tested). Fail fast with an
+  actionable message when missing. T1078 is mechanical: provided test
+  accounts only.
+- **Audit logging** — every invocation lands in the JSONL operation log
+  (time, phase, actor, tool, target host, redacted command summary, result
+  summary) like any other probe; the console feed shows host actions.
+- **Kill switch** — coordinator abort sets the shared abort flag and aborts
+  every registered in-flight execution across all parallel tasks; new host
+  work is refused once aborted.
+- **Timeouts + output caps** — 30s default timeout, 8KB output cap (no bulk
+  exfiltration through the tool).
 
-**When it lands:** the `[needs: host-exec tooling]` markers come off item
-by item as each execution path is proven, and BLOCKED cells start counting
-as probed. The battery content doesn't change — only the execution layer
-grows into it.
+**Remaining plan-only items (10):** interactive RDP logon (WS-019), WinRM
+listener probe without session (WS-010), pass-the-hash (WS-023),
+BloodHound collector tooling (WS-038), AD CS tooling (WS-043),
+pass-the-ticket (WS-064), RDP session shadowing (WS-065), SSH
+agent-forwarding channels (LX-018/LX-019), NFS test-client mounts (LX-041).
+These keep `needs: "host-exec tooling"` honestly and are named as plan-only
+items in the report under Honest limits — planned, not probed, never faked.
 
 ## Beyond
 

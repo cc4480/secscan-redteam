@@ -16,14 +16,16 @@
  * → unified report. Coverage counts complete only when every selected
  * target × category cell is probed OR honestly blocked (3 × 4 = 12 cells).
  *
- * HONEST EXECUTION SCOPING (v0.8.0): the runner has no SMB/SSH/RDP/WinRM
- * execution tooling yet — it cannot ACT on host batteries, only plan them.
- * Host items that need that tooling carry needs:"host-exec tooling" and are
+ * HONEST EXECUTION SCOPING (v0.9.0): the runner's host-exec tools
+ * (`ssh_exec`, `smb_exec`, `winrm_exec` in runner/src/host-exec/) execute
+ * the Windows/Linux batteries through the safety core (scope, denylist,
+ * timeouts, audit). Host items that need MORE than non-interactive command
+ * execution / SMB listing still carry needs:"host-exec tooling" and are
  * PLAN-ONLY: the agents write the hypothesis and expected evidence, and the
  * cell reports BLOCKED under Honest limits (never covered, never failed).
- * Items executable today via http_probe (HTTP banner/TLS/headers on host
- * web ports) carry no marker and count toward their cells normally.
- * See docs/ROADMAP.md for the host-exec tooling track.
+ * Items executable via http_probe (HTTP banner/TLS/headers on host web
+ * ports) carry no marker and count toward their cells normally.
+ * See docs/ROADMAP.md for the delivered host-exec track.
  *
  * Non-destructive always: never trigger emails to real users, never delete
  * scans/reports, benign canary content only, races are single paired

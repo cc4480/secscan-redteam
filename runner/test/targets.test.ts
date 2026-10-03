@@ -26,7 +26,7 @@ import {
   targetCellStatus,
   targetItemsFor,
 } from "../src/targets.js";
-import type { TargetId } from "../src/targets.js";
+import type { TargetId, TargetProfile } from "../src/targets.js";
 import { BATTERY_CATEGORIES } from "../src/battery.js";
 import { lookupTechnique } from "../src/attack.js";
 import { coordinatorPrompt, exploiterPrompt } from "../src/prompts.js";
@@ -122,26 +122,41 @@ describe("target profile integrity", () => {
   });
 });
 
-describe("host-exec tooling scoping", () => {
-  it("windows/linux logic+functionality cells are fully tooling-blocked; validation stays probe-able", () => {
+describe("host-exec tooling scoping (v0.9.0)", () => {
+  it("no cell is fully tooling-blocked; exactly 10 items stay plan-only", () => {
+    const remaining: string[] = [];
     for (const id of ["windows", "linux"] as TargetId[]) {
       const profile = TARGET_PROFILES[id];
-      assert.equal(targetCellBlocked(profile, "logic"), true, `${id}:logic blocked`);
-      assert.equal(targetCellBlocked(profile, "functionality"), true, `${id}:functionality blocked`);
-      // Validation keeps http_probe-executable items (banner/TLS/headers) — never fully blocked.
-      assert.equal(targetCellBlocked(profile, "validation"), false, `${id}:validation probe-able`);
-      const execItems = targetItemsFor(profile, "validation").filter((b) => b.needs !== HOST_EXEC_TOOLING);
-      assert.ok(execItems.length >= 3, `${id}:validation has ≥3 executable items (has ${execItems.length})`);
+      for (const c of BATTERY_CATEGORIES) {
+        // v0.9.0: ssh_exec/smb_exec/winrm_exec make every cell probe-able.
+        assert.equal(targetCellBlocked(profile, c), false, `${id}:${c} probe-able`);
+      }
+      for (const b of profile.battery) {
+        if (b.needs === HOST_EXEC_TOOLING) remaining.push(`${id}:${b.id}`);
+      }
     }
+    assert.equal(remaining.length, 10, `10 plan-only items remain (got ${remaining.join(", ")})`);
+    assert.deepEqual(
+      remaining.sort(),
+      ["windows:WS-010", "windows:WS-019", "windows:WS-023", "windows:WS-038", "windows:WS-043", "windows:WS-064", "windows:WS-065", "linux:LX-018", "linux:LX-019", "linux:LX-041"].sort(),
+      "the honest remainder: interactive RDP, Kerberos/hash ops, collector binaries, NFS mounts",
+    );
   });
-  it("targetCellStatus: done > blocked > missing", () => {
+  it("targetCellStatus: done > blocked > missing (blocked mechanic preserved on a synthetic fully-blocked cell)", () => {
     const win = TARGET_PROFILES.windows;
-    assert.equal(targetCellStatus(win, "logic", new Set()), "blocked");
+    // v0.9.0: no real cell is fully blocked — cells report missing until probed.
+    assert.equal(targetCellStatus(win, "logic", new Set()), "missing");
     assert.equal(targetCellStatus(win, "logic", new Set(["logic"])), "done");
-    assert.equal(targetCellStatus(win, "validation", new Set()), "missing");
     assert.equal(targetCellStatus(win, "validation", new Set(["validation"])), "done");
     const sec = TARGET_PROFILES.secscan;
     assert.equal(targetCellStatus(sec, "logic", new Set()), "missing", "web cells are never blocked");
+    // The blocked mechanic itself still works: a cell where every item is marked → blocked.
+    const blockedProfile: TargetProfile = {
+      ...win,
+      battery: win.battery.map((b) => (b.category === "logic" ? { ...b, needs: HOST_EXEC_TOOLING } : b)),
+    };
+    assert.equal(targetCellStatus(blockedProfile, "logic", new Set()), "blocked");
+    assert.equal(targetCellStatus(blockedProfile, "logic", new Set(["logic"])), "done", "probed beats blocked");
   });
 });
 
@@ -360,20 +375,22 @@ describe("full-battery coverage mechanics", () => {
     assert.ok(report.includes("list these under Honest limits"), "honest-limits directive");
   });
 
-  it("12 cells (all four targets): web cells probed, host logic/functionality blocked, host validation probed → complete", async () => {
+  it("12 cells (all four targets): all probed → complete; the 10 plan-only items named under Honest limits", async () => {
     const input: EngagementInput = { ...baseInput, targets: undefined }; // default: all four
     const res = await run(input, scriptedLlm12());
     assert.equal(res.status, "complete");
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
     assert.ok(report.includes("3 categories × 4 targets"), "12-cell header");
-    assert.ok(
-      report.includes("BLOCKED (host-exec tooling not yet available"),
-      "blocked cells named as blocked",
-    );
-    for (const cell of ["windows:logic", "windows:functionality", "linux:logic", "linux:functionality"]) {
-      assert.ok(report.includes(cell), `${cell} named`);
-    }
+    assert.ok(report.includes("12/12 cells probed"), "all 12 cells probed");
     assert.ok(report.includes("Full battery complete: all 12 cells probed or honestly blocked."), "completion line");
     assert.ok(!report.includes("NOT COVERED"), "no missing cells");
+    assert.ok(!report.includes("BLOCKED (host-exec tooling"), "no fully-blocked cells in v0.9.0");
+    assert.ok(
+      report.includes("Plan-only items (needs: host-exec tooling — planned, not probed; see Honest limits)"),
+      "plan-only remainder named honestly",
+    );
+    for (const id of ["windows:WS-019", "windows:WS-023", "linux:LX-018", "linux:LX-041"]) {
+      assert.ok(report.includes(id), `${id} named as plan-only`);
+    }
   });
 });

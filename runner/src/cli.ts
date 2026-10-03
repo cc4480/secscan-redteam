@@ -60,7 +60,12 @@ Shop/DVWA container — never against a live/internet target.
 needed) — runs gating/authorize/scope/report plumbing only, useful for
 smoke-testing the runner itself.
 
-Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.`);
+Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
+Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
+REDTEAM_SSH_PASSWORD / REDTEAM_SSH_KEY / REDTEAM_SSH_KEY_PATH;
+REDTEAM_SMB_USER + REDTEAM_SMB_PASSWORD (+ optional REDTEAM_SMB_DOMAIN);
+REDTEAM_WINRM_USER + REDTEAM_WINRM_PASSWORD. Test accounts only, via
+environment or Secure Vault — never in code, never logged.`);
   process.exit(2);
 }
 

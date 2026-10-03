@@ -56,26 +56,34 @@ or misgrades is a finding against the product itself.
 
 Non-destructive, canary targets only — detection-validation, not abuse.
 
-## Host batteries: plan today, execute tomorrow
+## Host batteries: executed, not just planned (v0.9.0)
 
-The Windows and Linux batteries are exhaustive as *plans*. The runner's
-execution layer is honest about what it can do today:
+The Windows and Linux batteries are exhaustive *and* executable. The
+runner's host-exec layer (`runner/src/host-exec/`) gives the agents real
+hands on hosts:
 
-- **Executable now** (`http_probe`): HTTP banner grabs, TLS certificate
-  inspection, and security headers on host web ports. These count toward
-  their coverage cells normally.
-- **Plan-only** (`[needs: host-exec tooling]`): everything requiring
-  SMB/SSH/RDP/WinRM/WMI/AD execution. The agents still write the hypothesis
-  and the expected evidence for each item — the thinking is real — but no
-  probe is fired that the runner cannot execute. Those coverage cells report
-  **BLOCKED** under Honest limits: planned, never probed, never faked.
+- **Executable now**: `ssh_exec` (non-interactive SSH command execution on
+  Linux hosts), `smb_exec` (share reachability probing + directory listing
+  on Windows hosts), `winrm_exec` (PowerShell/cmd command execution on
+  Windows hosts) — plus the existing `http_probe` for HTTP(S) banner/TLS/
+  headers on host web ports. These count toward their coverage cells normally.
+- **Plan-only** (`[needs: host-exec tooling]`): the 10 remaining items that
+  need MORE than non-interactive command execution — interactive RDP logon,
+  pass-the-hash / pass-the-ticket (Kerberos/NTLM-hash auth), BloodHound
+  collector tooling, AD CS tooling, RDP session shadowing, SSH
+  agent-forwarding channels, NFS mounts from a test client. The agents still
+  write the hypothesis and the expected evidence for each item — the thinking
+  is real — but no probe is fired that the runner cannot execute. Those
+  coverage cells report **BLOCKED** under Honest limits: planned, never
+  probed, never faked.
 
-The next runner capability is the host-exec tooling track — `ssh-exec`,
-`smb-exec`, `winrm-exec`, each with audit logging, a kill switch, ROE
-scope enforcement, and Secure Vault credential discipline. See
-[ROADMAP.md](ROADMAP.md). When it lands, the markers come off item by item
-and BLOCKED cells start counting as probed. The battery doesn't change —
-the execution layer grows into it.
+Every host invocation flows through the safety core: ROE-scope check (fail
+closed, before any packet), destructive-command denylist (fail closed),
+test-account credentials from environment/Secure Vault only (never in args,
+never logged), 30s timeouts, capped output, and a coordinator kill switch
+that terminates in-flight executions. Every invocation lands in the JSONL
+operation log like any other probe. See [ROADMAP.md](ROADMAP.md) for the
+delivered track.
 
 ## How it runs
 
@@ -84,8 +92,8 @@ One flag: `--full-battery`. One operation:
 1. **Recon** all surfaces — webapp, MCP API, and host/AD footprints.
 2. **Exploit** the SecScan battery.
 3. **Exploit** the SecLayer battery.
-4. **Exploit** the Windows battery (plan-only items planned, HTTP items probed).
-5. **Exploit** the Linux battery (same).
+4. **Exploit** the Windows battery (`smb_exec`/`winrm_exec` where applicable; 7 plan-only items planned).
+5. **Exploit** the Linux battery (`ssh_exec` where applicable; 3 plan-only items planned).
 6. **Cross-cutting chains** — paths spanning targets: does a primitive on
    one surface become impact on another?
 7. **Unified report** — one Megazord narrative, all batteries.
@@ -110,16 +118,18 @@ limits — never silently dropped.
   the class stays in play with a different angle. Nothing is ever retired
   from the battery.
 - Items needing setup (second test account, canary/OAST infrastructure,
-  host-exec tooling) are marked honestly in `needs` — never pretended.
+  or more than the host-exec tools provide) are marked honestly in `needs`
+  — never pretended.
 
 ## Honest limits
 
 - Some items need a second test account or canary infrastructure the
   operator must provision; without them, those items are reported as
   not-covered, not as passed.
-- Windows/Linux items marked `[needs: host-exec tooling]` are planned, not
-  executed, until the host-exec tooling track lands — reported as BLOCKED,
-  never as covered or failed.
+- Windows/Linux items marked `[needs: host-exec tooling]` need more than
+  the host-exec tools provide (interactive RDP, Kerberos operations,
+  collector binaries) — they are planned, not executed, and reported as
+  BLOCKED, never as covered or failed.
 - ATT&CK mappings are advisory: web flaw classes map imperfectly onto an
   endpoint/intrusion framework. Where no technique honestly fits, the OWASP
   reference stands alone.

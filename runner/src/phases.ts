@@ -35,6 +35,7 @@ import {
 } from "./gate.js";
 import { McpClient } from "./mcp.js";
 import { WebProber, isPrivateOrLoopbackHost, type ProberLike } from "./prober.js";
+import { HostExecutor } from "./host-exec/index.js";
 import { coordinatorPrompt, exploiterPrompt, reconPrompt, reporterPrompt, taskPrompt } from "./prompts.js";
 import {
   loadRegistryFile,
@@ -64,7 +65,7 @@ import type {
 } from "./types.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "./battery.js";
 import type { BatteryCategory } from "./battery.js";
-import { activeTargets, inferTargetProfile, isTargetId, targetCellStatus, TARGET_PROFILES } from "./targets.js";
+import { activeTargets, HOST_EXEC_TOOLING, inferTargetProfile, isTargetId, targetCellStatus, TARGET_PROFILES } from "./targets.js";
 import type { TargetId } from "./targets.js";
 
 export interface RunnerDeps {
@@ -73,6 +74,8 @@ export interface RunnerDeps {
   /** Injectable for tests (defaults: real McpClient / WebProber). */
   mcp?: McpClient;
   prober?: ProberLike;
+  /** Injectable for tests (default: real HostExecutor with real transports). */
+  hostExecutor?: HostExecutor;
 }
 
 /** One entry in the shared target map (recon-written, whole-team-read). */
@@ -111,6 +114,14 @@ interface Ctx {
   events: EventLog;
   mcp: McpClient;
   prober: ProberLike;
+  /** Host execution (ssh/smb/winrm) — every call flows through the safety core. */
+  hostExecutor: HostExecutor;
+  /**
+   * Kill switch: coordinator abort sets `aborted` and aborts every registered
+   * controller, terminating in-flight host executions across all parallel
+   * tasks (they share this ctx). New host work is refused once aborted.
+   */
+  hostKill: { aborted: boolean; controllers: Set<AbortController> };
   hosts: string[];
   domain: string;
   excludedNote: string;
@@ -231,6 +242,76 @@ const BURST_PROBE_TOOL: JsonSchemaTool = {
 };
 
 const READ_TOOLS = MCP_TOOLS.filter((t) => t.name !== "scan_url");
+// ---------------------------------------------------------------------------
+// Host execution tools (v0.9.0) — the runner's hands on Windows/Linux hosts.
+// Every call flows through the host-exec safety core: kill-switch check,
+// ROE-scope check (fail closed, before any packet), destructive-command
+// denylist (fail closed), env/Secure-Vault credentials (never in args, never
+// logged), timeouts, and output caps. Non-interactive only; read-only first.
+// ---------------------------------------------------------------------------
+const SSH_EXEC_TOOL: JsonSchemaTool = {
+  name: "ssh_exec",
+  description:
+    "Execute ONE non-interactive command on an in-scope Linux host over SSH (test-account credentials resolved from the environment — NEVER put credentials in the command). In-scope hosts only (runner-enforced), destructive commands refused by denylist, 30s timeout, output capped. Include attackId, category (logic|functionality|validation), targetProfile (must be 'linux' — host targets are never inferred), and a one-sentence hypothesis. Prefer read-only enumeration (ss, uname, dpkg, find, sudo -l, systemctl) before anything state-changing.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      command: { type: "string" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["linux"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "command", "category"],
+  },
+};
+
+const SMB_EXEC_TOOL: JsonSchemaTool = {
+  name: "smb_exec",
+  description:
+    "SMB operations against an in-scope Windows host (test-account credentials resolved from the environment — NEVER put credentials in args). Operations: list_shares (reachability probe of well-known + recon-supplied share names — the library has no NetShareEnum, so this is reachability not full enumeration), list_dir (list a directory on a share), stat (check one path). In-scope hosts only (runner-enforced), read-only — the tool offers no writes. Include attackId, category, targetProfile ('windows' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      operation: { type: "string", enum: ["list_shares", "list_dir", "stat"] },
+      share: { type: "string" },
+      path: { type: "string" },
+      extraShares: { type: "array", items: { type: "string" } },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "operation", "category"],
+  },
+};
+
+const WINRM_EXEC_TOOL: JsonSchemaTool = {
+  name: "winrm_exec",
+  description:
+    "Execute ONE non-interactive command on an in-scope Windows host over WinRM (test-account credentials resolved from the environment — NEVER put credentials in the command). powershell=true (default) runs PowerShell — prefer it for structured enumeration (Get-Service, Get-ScheduledTask, Get-ItemProperty); powershell=false runs cmd.exe. In-scope hosts only (runner-enforced), destructive commands refused by denylist, 30s timeout, output capped. Include attackId, category, targetProfile ('windows' — never inferred), hypothesis. Prefer read-only enumeration before anything state-changing.",
+  parameters: {
+    type: "object",
+    properties: {
+      host: { type: "string" },
+      port: { type: "number" },
+      command: { type: "string" },
+      powershell: { type: "boolean" },
+      useTls: { type: "boolean" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["host", "command", "category"],
+  },
+};
+
+/** Host tools: available to recon and exploiter during host phases. */
+const HOST_TOOLS = [SSH_EXEC_TOOL, SMB_EXEC_TOOL, WINRM_EXEC_TOOL];
 const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
   name: "query_registry",
   description:
@@ -315,8 +396,8 @@ const ABORT_TOOL: JsonSchemaTool = {
     required: ["reason"],
   },
 };
-const RECON_TOOLS = [...MCP_TOOLS, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
-const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
+const RECON_TOOLS = [...MCP_TOOLS, ...HOST_TOOLS, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
+const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, ...HOST_TOOLS, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
 /** The coordinator's command tools: no probes, only command authority. */
 const COMMAND_TOOLS = [ABORT_TOOL];
 
@@ -466,6 +547,91 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     }
   }
 
+  // -- Host execution tools (v0.9.0): ssh/smb/winrm via the safety core ----
+  // Host targets are NEVER inferred — targetProfile is required and must be
+  // windows|linux. Every refusal (scope, denylist, kill switch, credentials)
+  // is a DENIED event, never silent. Coverage counts like http_probe.
+  if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm_exec") {
+    const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
+    const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
+    const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
+    if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
+      return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") };
+    }
+    const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+    const wantTp = call.name === "ssh_exec" ? "linux" : "windows";
+    if (!isTargetId(rawTp) || rawTp !== wantTp) {
+      return {
+        result: `DENIED: ${call.name} requires targetProfile "${wantTp}" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
+        attackId,
+        target: String(args["host"] ?? ""),
+      };
+    }
+    const host = String(args["host"] ?? "");
+    // The exec is really going out: count it toward the battery.
+    ctx.probesUsed++;
+    if (category) {
+      ctx.coverage.add(category);
+      if (ctx.input.fullBattery) {
+        let set = ctx.targetCoverage.get(wantTp);
+        if (!set) {
+          set = new Set();
+          ctx.targetCoverage.set(wantTp, set);
+        }
+        set.add(category);
+      }
+      ctx.events.updateState({
+        batteryCoverage: {
+          logic: ctx.coverage.has("logic") ? 1 : 0,
+          functionality: ctx.coverage.has("functionality") ? 1 : 0,
+          validation: ctx.coverage.has("validation") ? 1 : 0,
+        },
+      });
+    }
+    // Kill-switch wiring: register this execution's controller so a
+    // coordinator abort terminates it mid-flight (shared ctx → all parallel
+    // tasks). The executor checks the aborted flag before starting.
+    const ctrl = new AbortController();
+    ctx.hostKill.controllers.add(ctrl);
+    try {
+      if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
+      const exec = ctx.hostExecutor;
+      exec.killSwitch = ctx.hostKill;
+      const res =
+        call.name === "ssh_exec"
+          ? await exec.sshExec({ host, port: numArg(args["port"]), command: String(args["command"] ?? ""), scopeHosts: ctx.hosts, signal: ctrl.signal })
+          : call.name === "smb_exec"
+            ? await exec.smbExec({
+                host,
+                operation: (["list_shares", "list_dir", "stat"] as const).includes(args["operation"] as "list_shares") ? (args["operation"] as "list_shares" | "list_dir" | "stat") : "list_shares",
+                share: optStr(args["share"]),
+                path: optStr(args["path"]),
+                extraShares: Array.isArray(args["extraShares"]) ? (args["extraShares"] as unknown[]).map(String).slice(0, 20) : [],
+                scopeHosts: ctx.hosts,
+                signal: ctrl.signal,
+              })
+            : await exec.winrmExec({
+                host,
+                port: numArg(args["port"]),
+                command: String(args["command"] ?? ""),
+                powershell: args["powershell"] !== false,
+                useTls: args["useTls"] === true,
+                scopeHosts: ctx.hosts,
+                signal: ctrl.signal,
+              });
+      if (/kill switch/i.test(res.summary)) {
+        return { result: `ABORTED by coordinator kill switch — engagement halting. ${res.summary}`, attackId, target: host };
+      }
+      if (res.refused) {
+        return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
+      }
+      const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
+      return { result: `${res.summary}.${out}`, attackId, target: host };
+    } finally {
+      ctx.hostKill.controllers.delete(ctrl);
+    }
+  }
+
   // MCP tools.
   const readOnly = new Set(["get_scan_status", "get_report", "list_recent_scans", "get_account"]);
   if (call.name === "scan_url") {
@@ -581,6 +747,17 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
 
   if (call.name === "abort_engagement") {
     const reason = String(args["reason"] ?? "coordinator abort").slice(0, 500);
+    // KILL SWITCH: terminate every in-flight host execution across all
+    // parallel tasks (shared ctx), then refuse any new host work.
+    ctx.hostKill.aborted = true;
+    for (const c of ctx.hostKill.controllers) {
+      try {
+        c.abort();
+      } catch {
+        /* best effort */
+      }
+    }
+    ctx.hostKill.controllers.clear();
     ctx.events.append({ phase, actor: "coordinator", action: "abort_engagement", result: `ABORTED by coordinator: ${reason}` });
     throw new HaltError(`aborted by coordinator: ${reason}`);
   }
@@ -594,6 +771,11 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
 
 function optStr(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+function numArg(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 const VALID_SEVERITIES = new Set(["critical", "high", "medium", "low", "info"]);
@@ -1457,12 +1639,20 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   const fbDone = fbStatus.filter((x) => x.s === "done");
   const fbBlocked = fbStatus.filter((x) => x.s === "blocked");
   const fbMissing = fbStatus.filter((x) => x.s === "missing");
+  // Individual battery items that stay plan-only even though their cells are
+  // probe-able (interactive RDP, Kerberos ops, collector binaries, ...).
+  const fbPlanOnly = selected.flatMap((t) =>
+    TARGET_PROFILES[t].battery.filter((b) => b.needs === HOST_EXEC_TOOLING).map((b) => `${t}:${b.id}`),
+  );
   const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const batteryLine = ctx.input.fullBattery
     ? `Battery coverage (FULL BATTERY — 3 categories × ${selected.length} targets): ${fbDone.length}/${fbCells.length} cells probed ` +
       `(${batteryStatusLine(ctx)}, ${ctx.probesUsed} probes total). ` +
       (fbBlocked.length > 0
         ? `BLOCKED (host-exec tooling not yet available — planned, not probed; see Honest limits): ${fbBlocked.map(({ t, c }) => `${t}:${c}`).join(", ")}. `
+        : "") +
+      (fbPlanOnly.length > 0
+        ? `Plan-only items (needs: host-exec tooling — planned, not probed; see Honest limits): ${fbPlanOnly.join(", ")}. `
         : "") +
       (fbMissing.length > 0
         ? `NOT COVERED: ${fbMissing.map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
@@ -1625,6 +1815,8 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     events,
     mcp: deps.mcp ?? new McpClient({ endpoint: config.mcpEndpoint, token: config.mcpToken }),
     prober: deps.prober ?? new WebProber({ scopeHosts: hosts, minDelayMs: config.probeDelayMs, allowPrivateHosts: config.localSandbox }),
+    hostExecutor: deps.hostExecutor ?? new HostExecutor(),
+    hostKill: { aborted: false, controllers: new Set() },
     hosts,
     domain: hosts[0]!,
     excludedNote: "",

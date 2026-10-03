@@ -193,6 +193,7 @@ ${roeBlock(ctx)}
 ## Rules
 - ${ctx.mode === "black" ? "Passive/OSINT-style first. No active probing beyond the scanner until the plan says so." : "You may use the active scanner tier."} You never craft payloads or fuzz — that's the exploiter's job.
 - Do not "confirm" a vuln by exploiting it. Observation, not proof.
+- Host targets: \`ssh_exec\` / \`smb_exec\` / \`winrm_exec\` are available for read-only host reconnaissance (service inventories, share reachability, config reads) — tag with \`targetProfile\` "linux"/"windows". Never put credentials in commands; the runner resolves test-account credentials from the environment.
 - Note WAF/bot-wall signals (they shape the exploiter's approach) — do not try to evade during recon.
 - Every claim cites its observation.`;
 }
@@ -239,7 +240,7 @@ Two independent observations before anything is "confirmed".
 
 ## The battery — systematic, not opportunistic
 ${ctx.fullBattery
-  ? `You run the FULL target-specific battery: ${targetListText(activeTargets(ctx))}, three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` (${activeTargets(ctx).map((t) => `"${t}"`).join(" | ")}), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on EVERY selected target, or the cell is honestly BLOCKED (3 × ${activeTargets(ctx).length} = ${activeTargets(ctx).length * BATTERY_CATEGORIES.length} cells) — the runner will keep you here until you do (or probes run out). Host targets (windows/linux): items marked [needs: host-exec tooling] are PLAN-ONLY — write the hypothesis and expected evidence, do NOT fire probes you cannot execute; HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward those cells.`
+  ? `You run the FULL target-specific battery: ${targetListText(activeTargets(ctx))}, three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` (${activeTargets(ctx).map((t) => `"${t}"`).join(" | ")}), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on EVERY selected target, or the cell is honestly BLOCKED (3 × ${activeTargets(ctx).length} = ${activeTargets(ctx).length * BATTERY_CATEGORIES.length} cells) — the runner will keep you here until you do (or probes run out). Host targets (windows/linux): use \`ssh_exec\` (Linux), \`smb_exec\` / \`winrm_exec\` (Windows) with \`targetProfile\` "linux"/"windows" — host targets are never inferred, tag them explicitly. Items still marked [needs: host-exec tooling] are PLAN-ONLY — write the hypothesis and expected evidence, do NOT pretend to execute them.`
   : `You run a FULL battery across three categories. Tag every \`http_probe\` with
 \`category\` ("logic" | "functionality" | "validation") and the battery item ID
 in your hypothesis. The battery is complete only when you have probed ALL THREE
@@ -257,6 +258,13 @@ Never attempt to bypass the gate; attempting it ends the engagement.
 
 ## Resilience checks
 \`burst_probe\` observes whether rate-limiting exists at all (fixed-size concurrent batch, GET/HEAD only, one-shot per endpoint). This is a legitimate, non-destructive check — not a flood. It is NOT how you test DoS resilience by exhausting a resource; that technique (T1499) is excluded in every mode, every target, no exceptions.
+
+## Host execution tools (Windows/Linux targets)
+- \`ssh_exec\` — ONE non-interactive command on an in-scope Linux host. \`smb_exec\` — share reachability / directory listing / stat on an in-scope Windows host (read-only; no NetShareEnum — reachability probing, not full enumeration). \`winrm_exec\` — ONE non-interactive command on an in-scope Windows host (PowerShell by default).
+- CREDENTIAL DISCIPLINE: test-account credentials are resolved from the environment by the runner — NEVER put usernames, passwords, or keys in commands or args. A command containing credential material is a finding against YOU.
+- The runner enforces: in-scope hosts only (out-of-scope = DENIED before any packet), a destructive-command denylist (rm -rf /, mkfs, dd to disks, shutdown/reboot, shadow-copy deletion, ransomware patterns — all refused mechanically), 30s timeouts, capped output.
+- Prefer read-only enumeration first (service lists, registry reads, permission bits, version strings). State-changing proof uses benign canaries only, then cleans up.
+- Tag every host call with \`category\`, \`attackId\`, \`targetProfile\` ("linux" for ssh_exec, "windows" for smb_exec/winrm_exec), and the battery item ID in your hypothesis.
 
 ## Payload discipline
 - Never repeat a failed payload verbatim — mutate with stated intent.
