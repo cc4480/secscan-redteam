@@ -71,6 +71,8 @@ export interface EngagementInput {
   objective: string;
   roe: RulesOfEngagement;
   client?: string;
+  /** Named human operator accountable for the engagement (attestation + evidence pack). */
+  operatorName?: string;
   /**
    * Full-battery unified engagement (target-specific batteries as ONE
    * operation). The coordinator prompt carries the selected target batteries

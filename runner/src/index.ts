@@ -59,6 +59,32 @@ export { scopeHosts, urlInScope, inBlackout, inTestWindow, techniqueAllowed, che
 export type { CheckAuthorizationOptions } from "./gate.js";
 export { isPrivateOrLoopbackHost, validateProbeTarget } from "./prober.js";
 export type { ValidateProbeTargetOptions } from "./prober.js";
+export {
+  COMPLIANCE_CONTROLS,
+  METHODOLOGY_EXCLUSIONS,
+  METHODOLOGY_TOOLS,
+  TECHNIQUE_CONTROL_MAP,
+  allBatteryAttackIds,
+  buildCompliancePack,
+  buildRetestEvidence,
+  controlsForTechnique,
+  invalidMappedControlIds,
+  lookupControl,
+  renderAttestationLetter,
+  renderCompliancePackMarkdown,
+  unmappedBatteryTechniques,
+} from "./compliance/index.js";
+export type {
+  AttestationInput,
+  ComplianceControl,
+  ComplianceFramework,
+  CompliancePack,
+  CompliancePackInput,
+  PackFinding,
+  RetestEntry,
+  RetestObservation,
+  TechniqueControlMapping,
+} from "./compliance/index.js";
 
 export interface QueueJob {
   /** Path of the job file (for completion bookkeeping). */

@@ -74,6 +74,23 @@ export function targetItemsFor(profile: TargetProfile, category: BatteryCategory
   return profile.battery.filter((b) => b.category === category);
 }
 
+/**
+ * Every distinct ATT&CK technique ID used across all batteries (v0.12.0) —
+ * the compliance module maps each of these to controls, and the test
+ * suite asserts zero unmapped IDs. Items without an attackId are skipped
+ * (the mapping is technique-keyed; findings without ATT&CK IDs carry no
+ * control mapping, honestly).
+ */
+export function allBatteryAttackIds(): string[] {
+  const ids = new Set<string>();
+  for (const t of FULL_BATTERY_TARGETS) {
+    for (const item of TARGET_PROFILES[t].battery) {
+      if (item.attackId) ids.add(item.attackId);
+    }
+  }
+  return [...ids].sort();
+}
+
 /** Infer which target a probe URL belongs to: the MCP path is SecLayer, everything else is the webapp. Host targets are never inferred — they need an explicit tag. */
 export function inferTargetProfile(url: string): TargetId {
   try {

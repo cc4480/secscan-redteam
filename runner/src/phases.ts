@@ -36,6 +36,12 @@ import {
 import { McpClient } from "./mcp.js";
 import { WebProber, isPrivateOrLoopbackHost, type ProberLike } from "./prober.js";
 import { HostExecutor } from "./host-exec/index.js";
+import {
+  METHODOLOGY_EXCLUSIONS,
+  buildCompliancePack,
+  renderAttestationLetter,
+  renderCompliancePackMarkdown,
+} from "./compliance/index.js";
 import { coordinatorPrompt, exploiterPrompt, reconPrompt, reporterPrompt, taskPrompt } from "./prompts.js";
 import {
   loadRegistryFile,
@@ -2088,6 +2094,63 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   reportMd += `\n\n---\n\n## Battery coverage (runner-computed)\n\n${batteryLine}\n`;
   writeFileSync(join(ctx.events.dir, "report.md"), reportMd);
   ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings parsed).` });
+  // v0.12.0: compliance evidence pack — mechanical, runner-computed from
+  // engagement state. Evidence for the client's auditors, never a claim of
+  // compliance or certification.
+  try {
+    const pack = buildCompliancePack({
+      engagementId: ctx.events.engagementId,
+      client: ctx.input.client,
+      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"],
+      target: ctx.input.target,
+      mode: ctx.input.mode,
+      objective: ctx.input.objective,
+      scope: ctx.input.roe.scope,
+      verificationProof: ctx.verificationProof,
+      roe: ctx.input.roe,
+      testStart: new Date(ctx.startedAt).toISOString(),
+      testEnd: new Date().toISOString(),
+      plan: ctx.plan,
+      findings,
+      batteryCoverageNote: batteryLine,
+      registry: ctx.registry,
+    });
+    writeFileSync(join(ctx.events.dir, "compliance-pack.json"), JSON.stringify(pack, null, 2));
+    writeFileSync(join(ctx.events.dir, "compliance-pack.md"), renderCompliancePackMarkdown(pack));
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    for (const f of findings) {
+      if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
+    }
+    writeFileSync(
+      join(ctx.events.dir, "attestation.md"),
+      renderAttestationLetter({
+        engagementId: ctx.events.engagementId,
+        client: ctx.input.client,
+        operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"],
+        target: ctx.input.target,
+        mode: ctx.input.mode,
+        objective: ctx.input.objective,
+        scope: ctx.input.roe.scope,
+        testStart: new Date(ctx.startedAt).toISOString(),
+        testEnd: new Date().toISOString(),
+        findingCounts: counts,
+        exclusions: METHODOLOGY_EXCLUSIONS,
+      }),
+    );
+    ctx.events.append({
+      phase: "report",
+      actor: "runner",
+      action: "compliance_pack",
+      result: `Compliance evidence pack written (${pack.findings.length} findings, ${pack.coverage.controlsExercised}/${pack.coverage.controlsTotal} controls exercised).`,
+    });
+  } catch (err) {
+    ctx.events.append({
+      phase: "report",
+      actor: "runner",
+      action: "compliance_pack_failed",
+      result: `Compliance pack generation failed (report.md unaffected): ${(err as Error).message}`,
+    });
+  }
   ctx.events.updateState({ findings });
   return findings;
 }
