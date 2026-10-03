@@ -111,6 +111,45 @@ export type {
   AutoHaltConfig,
   TestEnvironment,
 } from "./safety/index.js";
+export {
+  loadWatchProfile,
+  checkScopeFresh,
+  profileHome,
+  alertSeverities,
+  emptyBaseline,
+  loadBaseline,
+  saveBaseline,
+  findingKey,
+  bundlePathFor,
+  classifyDrift,
+  resolveMissingDrift,
+  buildDriftReport,
+  applyDriftToBaseline,
+  touchBaselineEntries,
+  remediateBaselineEntries,
+  flagBaselineNeedsReview,
+  renderDriftMarkdown,
+  runWatchCycle,
+  watchLoop,
+  WATCH_PROFILE_VERSION,
+  BASELINE_VERSION,
+} from "./continuous/index.js";
+export type {
+  WatchProfile,
+  WatchCadence,
+  AlertSeverity,
+  BaselineEntry,
+  BaselineEntryStatus,
+  WatchBaseline,
+  DriftDisposition,
+  DriftMissing,
+  DriftClassification,
+  DriftReport,
+  ReverifyFn,
+  WatchCycleOptions,
+  WatchCycleStatus,
+  WatchCycleResult,
+} from "./continuous/index.js";
 
 export interface QueueJob {
   /** Path of the job file (for completion bookkeeping). */

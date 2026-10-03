@@ -11,7 +11,7 @@ import type { SlackConfig } from "./config.js";
 import { defaultHttp, type HttpFn } from "./http.js";
 import { IntegrationHttpError } from "./http.js";
 
-export type SlackEventKind = "started" | "phase" | "completed" | "critical_finding" | "halted";
+export type SlackEventKind = "started" | "phase" | "completed" | "critical_finding" | "halted" | "drift";
 
 export interface SlackEvent {
   kind: SlackEventKind;
@@ -27,6 +27,15 @@ export interface SlackEvent {
   findingId?: string;
   /** Reason for "halted" events. */
   reason?: string;
+  /** v0.16.0 continuous drift summary for "drift" events. */
+  drift?: {
+    newCount: number;
+    remediatedCount: number;
+    reopenedCount: number;
+    needsReviewCount: number;
+    changeRef?: string;
+    topNew: Array<{ id: string; severity: string; title: string }>;
+  };
 }
 
 export function buildSlackPayload(ev: SlackEvent): { text: string; blocks: unknown[] } {
@@ -53,6 +62,16 @@ export function buildSlackPayload(ev: SlackEvent): { text: string; blocks: unkno
     case "halted":
       line = `:octagonal_sign: Engagement halted: ${ev.reason}`;
       break;
+    case "drift": {
+      const d = ev.drift!;
+      const top = d.topNew.map((f) => `\n• *[${f.severity}]* ${f.id}: ${f.title}`).join("");
+      line =
+        `:satellite: *Drift alert* — ${d.newCount} new / ${d.remediatedCount} remediated / ` +
+        `${d.reopenedCount} reopened / ${d.needsReviewCount} needs review` +
+        (d.changeRef ? ` (change: ${d.changeRef})` : "") +
+        (top ? `\nNew findings:${top}` : "");
+      break;
+    }
   }
   return {
     text: `RedTeam ${ev.engagementId}: ${ev.kind}`,

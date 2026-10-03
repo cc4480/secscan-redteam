@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createReplayer, reverifyBundle, type PocBundle } from "./proof/index.js";
 import { loadTicketMapping, updateTicketsForReverify } from "./integrations/index.js";
+import { runWatchCycle, watchLoop } from "./continuous/index.js";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -44,6 +45,15 @@ function usage(): never {
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
+  redteam-runner watch --profile <profile.json> [--once] [--trigger "<change ref>"] [--max-rps <n>]
+    # v0.16.0 continuous testing: run the profile's engagement on its
+    # cadence, detect drift vs the rolling baseline, alert on new
+    # critical/high findings. --once runs a single cycle and exits
+    # (for cron/systemd/CI schedulers). --trigger runs once immediately,
+    # tagged with the change reference (CI/CD hook: wire your pipeline's
+    # webhook to this command). Without --once/--trigger, loops on the
+    # profile's cadence.intervalHours until Ctrl+C. Every cycle re-checks
+    # scopeValidUntil — expired authorization refuses to run, fail closed.
 
 --full-battery (or --target secscan+seclayer): ONE unified engagement running the
 target-specific batteries (3 categories × selected targets). The coordinator
@@ -235,6 +245,50 @@ async function runReverify(): Promise<void> {
   process.exit(report.verdict === "reproduced" ? 0 : report.verdict === "target-changed" ? 2 : 1);
 }
 
+async function runWatchCli(profilePath: string): Promise<void> {
+  const once = flag("--once");
+  const trigger = arg("--trigger");
+  const rpsIdx = process.argv.indexOf("--max-rps");
+  const rpsRaw = rpsIdx >= 0 ? process.argv[rpsIdx + 1] : undefined;
+  const maxRpsPerHost = rpsRaw === undefined ? undefined : Number(rpsRaw);
+  if (maxRpsPerHost !== undefined && (!Number.isFinite(maxRpsPerHost) || maxRpsPerHost <= 0)) {
+    console.error(`[runner] bad --max-rps ${JSON.stringify(rpsRaw)}; want a positive number (requests/sec per host)`);
+    process.exit(2);
+  }
+  // A triggered run is always a single cycle, tagged with the change ref —
+  // this is the CI/CD hook: wire the pipeline webhook to this command.
+  if (once || trigger) {
+    const result = await runWatchCycle({ profilePath, once: true, trigger, maxRpsPerHost });
+    const drift = result.drift;
+    console.log(
+      JSON.stringify(
+        {
+          status: result.status,
+          engagementId: result.engagementId,
+          engagementStatus: result.engagementStatus,
+          reason: result.reason,
+          drift: drift
+            ? {
+                new: drift.newFindings.map((f) => `${f.id}[${f.severity}]`),
+                unchanged: drift.unchangedCount,
+                reopened: drift.reopened.map((m) => m.entry.key),
+                remediated: drift.remediated.map((m) => m.entry.key),
+                needsReview: drift.needsReview.map((m) => m.entry.key),
+              }
+            : undefined,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(result.status === "complete" ? 0 : result.status === "refused" ? 2 : 1);
+  }
+  console.log(`[runner] continuous watch: ${profilePath} — Ctrl+C to stop`);
+  const ctrl = new AbortController();
+  process.on("SIGINT", () => ctrl.abort());
+  await watchLoop({ profilePath, maxRpsPerHost }, ctrl.signal);
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "start") {
@@ -261,6 +315,11 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "watch") {
+    const profilePath = arg("--profile");
+    if (profilePath) {
+      await runWatchCli(profilePath);
+      return;
+    }
     const queueDir = arg("--queue");
     console.log(`[runner] watching ${queueDir ?? "(default queue dir)"} — Ctrl+C to stop`);
     const ctrl = new AbortController();
