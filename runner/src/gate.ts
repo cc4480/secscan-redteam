@@ -12,6 +12,7 @@
 import { isServerVerified as authGateIsServerVerified } from "@secscan/redteam-auth-gate";
 import { extractDomain } from "@secscan/redteam-auth-gate";
 import { resolveExcludedTechniques } from "./attack.js";
+import { isPrivateOrLoopbackHost } from "./prober.js";
 import type { BlackoutWindow, EngagementMode, RulesOfEngagement } from "./types.js";
 
 export interface GateVerdict {
@@ -94,6 +95,21 @@ export interface ServerGateConfig {
   mcpToken: string;
 }
 
+export interface CheckAuthorizationOptions {
+  /**
+   * LOCAL SANDBOX MODE ONLY. When true, skips the server verification call
+   * — but ONLY when `domain` itself resolves to a private/loopback host
+   * (e.g. localhost, 127.0.0.1, a RFC1918 address). For any real-looking
+   * domain this flag has zero effect: the server check still runs and the
+   * engagement still fails closed exactly as before. This exists so a
+   * locally-hosted sandbox target (Juice Shop/DVWA on 127.0.0.1) can be
+   * engaged without needing DNS TXT ownership proof, which can't exist for
+   * a loopback address anyway. Default false; must be explicitly opted
+   * into (CLI --local-sandbox / REDTEAM_LOCAL_SANDBOX=1), never implied.
+   */
+  allowLocalSandbox?: boolean;
+}
+
 /**
  * The authorization gate: the SecScan server must positively list the domain
  * as verified. Network errors, timeouts, missing token → denied (fail closed).
@@ -106,12 +122,22 @@ export async function checkAuthorization(
     domain: string,
     cfg: { endpoint: string; token: string },
   ) => Promise<boolean> = (d, c) => authGateIsServerVerified(d, c),
+  opts: CheckAuthorizationOptions = {},
 ): Promise<GateVerdict> {
   let target: string;
   try {
     target = extractDomain(domain);
   } catch {
     return { allowed: false, reason: `unparseable target: ${domain}` };
+  }
+  if (opts.allowLocalSandbox && isPrivateOrLoopbackHost(target)) {
+    return {
+      allowed: true,
+      reason:
+        `LOCAL SANDBOX MODE: ${target} is a private/loopback target — server ownership ` +
+        `verification was skipped (no DNS TXT proof is possible for a loopback address). ` +
+        `This bypass never applies to a non-private domain.`,
+    };
   }
   let verified = false;
   try {

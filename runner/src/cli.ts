@@ -28,9 +28,13 @@ function argAll(flag: string): string[] {
   return out;
 }
 
+function flag(name: string): boolean {
+  return process.argv.includes(name);
+}
+
 function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery]
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--local-sandbox] [--dry-run]
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
@@ -40,7 +44,17 @@ target-specific SecScan + SecLayer batteries (3 categories × 2 targets). The
 coordinator prompt carries both batteries as the plan skeleton; coverage counts
 complete only at 6/6 cells. --scope must cover secscan.us (both targets live there).
 
-Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional).`);
+--local-sandbox: LOCAL SANDBOX MODE ONLY. Skips ownership verification and the
+private-host rejection, but only for a target that already resolves to a
+private/loopback address (e.g. localhost, 127.0.0.1). No effect on a real
+domain. Use only against infrastructure you own, e.g. a local Juice
+Shop/DVWA container — never against a live/internet target.
+
+--dry-run: skip the live agent loops (no DEEPSEEK_API_KEY/QWEN_API_KEY
+needed) — runs gating/authorize/scope/report plumbing only, useful for
+smoke-testing the runner itself.
+
+Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.`);
   process.exit(2);
 }
 
@@ -60,9 +74,10 @@ function buildInput(): EngagementInput {
   const scopes = argAll("--scope");
   if (!target || !mode || !objective || scopes.length === 0) usage();
   const fullBattery = process.argv.includes("--full-battery") || target === "secscan+seclayer";
+  const excludeArgs = argAll("--exclude");
   const roe: RulesOfEngagement = {
     scope: scopes,
-    excludedTechniques: argAll("--exclude"),
+    excludedTechniques: excludeArgs.length > 0 ? excludeArgs : null,
     blackoutWindows: argAll("--blackout").map(parseBlackout),
     stopConditions: argAll("--stop"),
     deconflictionContact: arg("--contact"),
@@ -75,7 +90,7 @@ async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "start") {
     const input = buildInput();
-    const result = await runEngagement(input);
+    const result = await runEngagement(input, { localSandbox: flag("--local-sandbox"), dryRunAgents: flag("--dry-run") });
     console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));
     process.exit(result.status === "complete" ? 0 : 1);
   }

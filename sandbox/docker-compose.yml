@@ -1,0 +1,26 @@
+services:
+  # OWASP Juice Shop — intentionally vulnerable modern web app, built
+  # specifically for this purpose (training/tooling validation). Safe,
+  # legal, standard target for red-team tooling dev.
+  # https://owasp.org/www-project-juice-shop/
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: redteam-sandbox-juiceshop
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  # OWASP DVWA — classic vulnerable PHP app (SQLi/XSS/CSRF/upload abuse),
+  # useful for lower-tech-stack coverage than Juice Shop's SPA/API surface.
+  # https://github.com/digininja/DVWA
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: redteam-sandbox-dvwa
+    ports:
+      - "127.0.0.1:3001:80"
+    restart: unless-stopped
+
+# Both bind ONLY to 127.0.0.1 — not reachable from the network, not from
+# other devices on the LAN, not from the internet. This is deliberate:
+# these apps are deliberately vulnerable and must never be exposed beyond
+# loopback.

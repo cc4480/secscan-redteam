@@ -56,6 +56,9 @@ export {
 } from "./battery.js";
 export type { BatteryCategory, BatteryItem } from "./battery.js";
 export { scopeHosts, urlInScope, inBlackout, inTestWindow, techniqueAllowed, checkAuthorization } from "./gate.js";
+export type { CheckAuthorizationOptions } from "./gate.js";
+export { isPrivateOrLoopbackHost, validateProbeTarget } from "./prober.js";
+export type { ValidateProbeTargetOptions } from "./prober.js";
 
 export interface QueueJob {
   /** Path of the job file (for completion bookkeeping). */

@@ -16,7 +16,7 @@ import {
   urlInScope,
 } from "../src/gate.js";
 import { readEvents, readState } from "../src/events.js";
-import { validateProbeTarget } from "../src/prober.js";
+import { validateProbeTarget, isPrivateOrLoopbackHost, WebProber } from "../src/prober.js";
 import { resolveExcludedTechniques, defaultExcludedForMode, ALWAYS_EXCLUDED } from "../src/attack.js";
 import { runEngagement } from "../src/phases.js";
 import type { EngagementInput } from "../src/types.js";
@@ -132,6 +132,68 @@ describe("prober guardrails", () => {
   it("rejects non-http schemes", () => {
     assert.equal(validateProbeTarget("file:///etc/passwd", scope).ok, false);
     assert.equal(validateProbeTarget("gopher://secscan.us/", scope).ok, false);
+  });
+});
+
+describe("local sandbox mode (explicit opt-in only)", () => {
+  it("isPrivateOrLoopbackHost recognizes private ranges and loopback names", () => {
+    for (const h of ["localhost", "127.0.0.1", "10.0.0.5", "192.168.1.1", "172.16.0.1", "::1"]) {
+      assert.ok(isPrivateOrLoopbackHost(h), h);
+    }
+    for (const h of ["secscan.us", "evil.com", "8.8.8.8"]) {
+      assert.ok(!isPrivateOrLoopbackHost(h), h);
+    }
+  });
+  it("without allowPrivateHosts, loopback is still rejected (default unchanged)", () => {
+    const r = validateProbeTarget("http://localhost:3000/", ["localhost"]);
+    assert.equal(r.ok, false);
+  });
+  it("with allowPrivateHosts, an in-scope loopback host is allowed", () => {
+    const r = validateProbeTarget("http://localhost:3000/", ["localhost"], { allowPrivateHosts: true });
+    assert.deepEqual(r, { ok: true });
+  });
+  it("allowPrivateHosts never widens the scope check itself", () => {
+    const r = validateProbeTarget("http://localhost:3000/", ["secscan.us"], { allowPrivateHosts: true });
+    assert.equal(r.ok, false);
+  });
+  it("checkAuthorization: allowLocalSandbox bypasses verify() only for a private/loopback target", async () => {
+    let verifyCalled = false;
+    const trackingVerify = async () => {
+      verifyCalled = true;
+      return false;
+    };
+    const localVerdict = await checkAuthorization(
+      "localhost",
+      { mcpEndpoint: "https://x", mcpToken: "t" },
+      trackingVerify,
+      { allowLocalSandbox: true },
+    );
+    assert.equal(localVerdict.allowed, true);
+    assert.equal(verifyCalled, false, "verify() must not be called for a loopback target in sandbox mode");
+  });
+  it("checkAuthorization: allowLocalSandbox has no effect on a real domain — verify() still gates it", async () => {
+    const verdict = await checkAuthorization(
+      "secscan.us",
+      { mcpEndpoint: "https://x", mcpToken: "t" },
+      noVerify,
+      { allowLocalSandbox: true },
+    );
+    assert.equal(verdict.allowed, false, "a real domain must still require server verification even with the flag on");
+  });
+});
+
+describe("burst probe (resilience check, not a flood primitive)", () => {
+  it("rejects non-GET/HEAD methods before any network call", async () => {
+    const prober = new WebProber({ scopeHosts: ["secscan.us"] });
+    await assert.rejects(() => prober.probeBurst({ method: "POST", url: "https://secscan.us/x" }), /GET\/HEAD/);
+  });
+  it("rejects out-of-scope targets before any network call", async () => {
+    const prober = new WebProber({ scopeHosts: ["secscan.us"] });
+    await assert.rejects(() => prober.probeBurst({ method: "GET", url: "https://evil.com/x" }), /refused/);
+  });
+  it("rejects loopback targets unless allowPrivateHosts is set (same invariant as probe())", async () => {
+    const prober = new WebProber({ scopeHosts: ["localhost"] });
+    await assert.rejects(() => prober.probeBurst({ method: "GET", url: "http://localhost:3000/x" }), /refused/);
   });
 });
 

@@ -32,11 +32,59 @@ export interface ProbeResult {
   opsecSignal?: string;
 }
 
+/**
+ * A fixed-size, one-shot resilience probe — NOT a flood/DoS primitive.
+ * Observes whether rate-limiting exists at all by firing one small, capped
+ * batch of concurrent idempotent requests. The batch size is fixed
+ * (BURST_SIZE) and not caller-adjustable, so it cannot be scaled up into a
+ * real load test; callers (phases.ts) additionally cap this to one call per
+ * endpoint per engagement.
+ */
+export interface ProbeBurstRequest {
+  /** GET or HEAD only — never a mutating method. */
+  method: string;
+  url: string;
+}
+
+export interface ProbeBurstResult {
+  count: number;
+  statuses: number[];
+  /** True if any response in the batch was a 429. */
+  rateLimited: boolean;
+  minMs: number;
+  maxMs: number;
+  note: string;
+}
+
+const BURST_SIZE = 8;
+
 const MAX_BODY_BYTES = 64 * 1024;
 const PRIVATE_HOST =
   /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0|\[::1\]|::1$)/i;
 
-export function validateProbeTarget(url: string, scopeHosts: string[]): { ok: true } | { ok: false; reason: string } {
+/** True when `host` is a literal private-range or loopback address/name. */
+export function isPrivateOrLoopbackHost(host: string): boolean {
+  return PRIVATE_HOST.test(host.toLowerCase());
+}
+
+export interface ValidateProbeTargetOptions {
+  /**
+   * LOCAL SANDBOX MODE ONLY. When true, a private/loopback host that is also
+   * an exact in-scope host is allowed. This never widens the scope check —
+   * it only lifts the private-IP rejection for a host you explicitly put in
+   * the ROE. Never set this for an engagement against a real domain: it has
+   * no effect there (the host still has to resolve as private/loopback to
+   * qualify), but it should never be on by default or implied by anything
+   * other than an explicit, separate opt-in flag.
+   */
+  allowPrivateHosts?: boolean;
+}
+
+export function validateProbeTarget(
+  url: string,
+  scopeHosts: string[],
+  opts: ValidateProbeTargetOptions = {},
+): { ok: true } | { ok: false; reason: string } {
   let u: URL;
   try {
     u = new URL(url);
@@ -47,7 +95,7 @@ export function validateProbeTarget(url: string, scopeHosts: string[]): { ok: tr
     return { ok: false, reason: `scheme not allowed: ${u.protocol}` };
   }
   const host = u.hostname.toLowerCase();
-  if (PRIVATE_HOST.test(host)) {
+  if (isPrivateOrLoopbackHost(host) && !opts.allowPrivateHosts) {
     return { ok: false, reason: `private/loopback host rejected: ${host}` };
   }
   if (!scopeHosts.includes(host)) {
@@ -74,27 +122,33 @@ export interface ProberOptions {
   timeoutMs?: number;
   /** Minimum ms between probes. Black mode adds jitter on top. Default 800. */
   minDelayMs?: number;
+  /** LOCAL SANDBOX MODE ONLY — see ValidateProbeTargetOptions. Default false. */
+  allowPrivateHosts?: boolean;
 }
 
 /** Structural interface so tests can inject a fake prober (no network). */
 export interface ProberLike {
   probe(req: ProbeRequest): Promise<ProbeResult>;
+  /** Optional: fake probers in tests need not implement this. */
+  probeBurst?(req: ProbeBurstRequest): Promise<ProbeBurstResult>;
 }
 
 export class WebProber implements ProberLike {
   private readonly scopeHosts: string[];
   private readonly timeoutMs: number;
   private readonly minDelayMs: number;
+  private readonly allowPrivateHosts: boolean;
   private lastProbeAt = 0;
 
   constructor(opts: ProberOptions) {
     this.scopeHosts = opts.scopeHosts.map((h) => h.toLowerCase());
     this.timeoutMs = opts.timeoutMs ?? 20_000;
     this.minDelayMs = opts.minDelayMs ?? 800;
+    this.allowPrivateHosts = opts.allowPrivateHosts ?? false;
   }
 
   async probe(req: ProbeRequest): Promise<ProbeResult> {
-    const v = validateProbeTarget(req.url, this.scopeHosts);
+    const v = validateProbeTarget(req.url, this.scopeHosts, { allowPrivateHosts: this.allowPrivateHosts });
     if (!v.ok) throw new Error(`[prober] refused: ${v.reason}`);
     if (req.body && Buffer.byteLength(req.body, "utf8") > MAX_BODY_BYTES) {
       throw new Error(`[prober] refused: body exceeds ${MAX_BODY_BYTES} bytes`);
@@ -137,5 +191,60 @@ export class WebProber implements ProberLike {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * One-shot resilience probe: fires a FIXED-size batch of concurrent
+   * GET/HEAD requests to observe whether rate-limiting exists. Never a
+   * flood primitive — BURST_SIZE is constant, not caller-controlled, and
+   * the global rate-limit cooldown applies afterward exactly as it would
+   * after a single probe() call.
+   */
+  async probeBurst(req: ProbeBurstRequest): Promise<ProbeBurstResult> {
+    const method = (req.method || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      throw new Error(`[prober] refused: burst probe only allows GET/HEAD (idempotent), got ${method}`);
+    }
+    const v = validateProbeTarget(req.url, this.scopeHosts, { allowPrivateHosts: this.allowPrivateHosts });
+    if (!v.ok) throw new Error(`[prober] refused: ${v.reason}`);
+
+    const wait = this.minDelayMs - (Date.now() - this.lastProbeAt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+
+    const started = Date.now();
+    const results = await Promise.all(
+      Array.from({ length: BURST_SIZE }, async () => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
+        try {
+          const res = await fetch(req.url, {
+            method,
+            headers: { "user-agent": "secscan-redteam-runner/0.5.0" },
+            redirect: "manual",
+            signal: ctrl.signal,
+          });
+          return { status: res.status, ms: Date.now() - started };
+        } catch {
+          return { status: 0, ms: Date.now() - started };
+        } finally {
+          clearTimeout(timer);
+        }
+      }),
+    );
+    this.lastProbeAt = Date.now();
+
+    const statuses = results.map((r) => r.status);
+    const rateLimited = statuses.includes(429);
+    const distinct = [...new Set(statuses)].join(", ");
+    return {
+      count: BURST_SIZE,
+      statuses,
+      rateLimited,
+      minMs: Math.min(...results.map((r) => r.ms)),
+      maxMs: Math.max(...results.map((r) => r.ms)),
+      note: rateLimited
+        ? `${BURST_SIZE} concurrent requests: rate limiting IS present (429 observed in the batch).`
+        : `${BURST_SIZE} concurrent requests: no rate limiting observed — status(es): ${distinct}.`,
+    };
   }
 }

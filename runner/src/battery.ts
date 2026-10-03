@@ -133,6 +133,27 @@ export const BATTERY: BatteryItem[] = [
     what: "User/ID existence oracles via response differentials (login, reset, signup). Low rate, handful of probes — this is an oracle check, not a harvest.",
     blackNote: "Minimal probes; stop at the first differential — the oracle's existence is the finding.",
   },
+  {
+    id: "F-9", category: "functionality", name: "SSRF to cloud metadata",
+    owasp: "WSTG-INPV-19 / OWASP API7:2023", attackId: "T1552.005",
+    what: "Any server-side fetch/webhook/import/URL-preview feature: redirect it at the cloud metadata endpoint (169.254.169.254, metadata.google.internal) and internal-only hosts. Stop at observing the fetched response; never use any credential it surfaces.",
+    blackNote: "One canary target per fetch-capable feature; a single confirmed internal fetch is the finding.",
+  },
+  {
+    id: "F-10", category: "functionality", name: "Session/JWT forgery",
+    owasp: "WSTG-SESS / OWASP API2:2023", attackId: "T1606",
+    what: "On a test-account token: try alg=none, RS256→HS256 confusion, kid-path injection, stripped/invalid signatures, and tampered claims (sub, role, exp). Observe whether the server actually verifies.",
+  },
+  {
+    id: "F-11", category: "functionality", name: "Session cookie hygiene",
+    owasp: "WSTG-SESS-02", attackId: "T1539",
+    what: "Check Secure/HttpOnly/SameSite flags, session-ID entropy/predictability, whether a pre-login session ID survives login (fixation), and whether logout/password-change actually invalidates prior sessions.",
+  },
+  {
+    id: "F-12", category: "functionality", name: "Self-service privilege escalation",
+    owasp: "WSTG-ATHZ-02", attackId: "T1098",
+    what: "On profile/account-settings/preferences endpoints, add role/permission/tier/plan fields the UI never exposes and see if they bind. Test accounts only.",
+  },
   // ---------------------------------------------------------- VALIDATION
   {
     id: "V-1", category: "validation", name: "Type juggling",

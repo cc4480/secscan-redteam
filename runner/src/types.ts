@@ -47,8 +47,8 @@ export interface BlackoutWindow {
 export interface RulesOfEngagement {
   /** Exact in-scope hosts or URLs. Nothing else is ever touched. */
   scope: string[];
-  /** ATT&CK technique IDs the engagement must not use, e.g. ["T1110"]. */
-  excludedTechniques?: string[];
+  /** ATT&CK technique IDs the engagement must not use, e.g. ["T1110"]. null/omitted = none beyond the mode defaults. */
+  excludedTechniques?: string[] | null;
   /** Daily windows during which the runner pauses (no traffic). */
   blackoutWindows?: BlackoutWindow[];
   /** Stop conditions, e.g. ["production outage", "WAF hard-block", "scope crossing"]. */
@@ -161,4 +161,12 @@ export interface ResolvedRunnerConfig {
   /** Persistent vulnerability registry path. Seeded on first run. */
   registryPath: string;
   dryRunAgents: boolean;
+  /**
+   * LOCAL SANDBOX MODE ONLY — explicit opt-in (CLI --local-sandbox or
+   * REDTEAM_LOCAL_SANDBOX=1). Skips ownership verification and the
+   * prober's private-host rejection, but ONLY for targets that already
+   * resolve to a private/loopback address. Has no effect on a real
+   * domain. Default false. See gate.ts / prober.ts for the invariant.
+   */
+  localSandbox: boolean;
 }

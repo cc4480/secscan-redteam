@@ -142,6 +142,53 @@ export const TECHNIQUES: AttackTechnique[] = [
     owasp: "WSTG-BUSL-08/09",
   },
   {
+    id: "T1552.005",
+    name: "Unsecured Credentials: Cloud Instance Metadata API",
+    tactic: "Credential Access",
+    phases: ["exploit"],
+    noise: "medium",
+    description:
+      "SSRF-to-metadata testing: coax the server into fetching the cloud metadata " +
+      "endpoint (169.254.169.254 etc.) via a server-side fetch/webhook/import feature. " +
+      "Stop at retrieving the metadata response; never use any credential it returns.",
+    owasp: "WSTG-INPV-19 / OWASP API7:2023",
+  },
+  {
+    id: "T1606",
+    name: "Forge Web Credentials",
+    tactic: "Credential Access",
+    phases: ["exploit"],
+    noise: "medium",
+    description:
+      "Session/JWT forgery testing: alg=none, alg confusion (RS256→HS256), kid-path " +
+      "injection, signature stripping, expiry/claim tampering. Test tokens only — never " +
+      "used to access another real user's account beyond the oracle confirmation.",
+    owasp: "WSTG-SESS / OWASP API2:2023",
+  },
+  {
+    id: "T1539",
+    name: "Steal Web Session Cookie",
+    tactic: "Credential Access",
+    phases: ["exploit"],
+    noise: "low",
+    description:
+      "Session/cookie security posture: missing Secure/HttpOnly/SameSite flags, " +
+      "session-ID predictability, session fixation (pre-login ID survives post-login), " +
+      "session non-invalidation on logout/password-change. Observational — no live session theft.",
+    owasp: "WSTG-SESS-02",
+  },
+  {
+    id: "T1098",
+    name: "Account Manipulation",
+    tactic: "Persistence",
+    phases: ["exploit"],
+    noise: "medium",
+    description:
+      "Self-service privilege/role escalation: profile or account-settings endpoints that " +
+      "accept a role/permission/tier field the UI doesn't expose. Test accounts only.",
+    owasp: "WSTG-ATHZ-02",
+  },
+  {
     id: "T1110",
     name: "Brute Force",
     tactic: "Credential Access",
@@ -185,7 +232,7 @@ export function defaultExcludedForMode(mode: EngagementMode): string[] {
 /** Full exclusion set: always-excluded + mode defaults + ROE exclusions (deduped, uppercased). */
 export function resolveExcludedTechniques(
   mode: EngagementMode,
-  roeExcluded: string[] | undefined,
+  roeExcluded: string[] | null | undefined,
 ): string[] {
   const set = new Set<string>([
     ...defaultExcludedForMode(mode),

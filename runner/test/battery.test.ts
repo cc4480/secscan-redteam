@@ -24,13 +24,14 @@ import { runEngagement } from "../src/phases.js";
 import type { EngagementInput } from "../src/types.js";
 
 describe("battery checklist integrity", () => {
-  it("has 24 items, 8 per category, unique IDs", () => {
-    assert.equal(BATTERY.length, 24);
+  it("has 28 items (8 logic, 12 functionality, 8 validation), unique IDs", () => {
+    assert.equal(BATTERY.length, 28);
+    const expected: Record<string, number> = { logic: 8, functionality: 12, validation: 8 };
     for (const cat of BATTERY_CATEGORIES) {
-      assert.equal(batteryItemsFor(cat).length, 8, cat);
+      assert.equal(batteryItemsFor(cat).length, expected[cat], cat);
     }
     const ids = BATTERY.map((b) => b.id);
-    assert.equal(new Set(ids).size, 24);
+    assert.equal(new Set(ids).size, 28);
     for (const b of BATTERY) {
       assert.match(b.id, /^[LFV]-\d+$/);
       assert.ok(b.owasp.length > 0, `${b.id} needs an OWASP reference`);

@@ -34,7 +34,7 @@ import {
   type GateVerdict,
 } from "./gate.js";
 import { McpClient } from "./mcp.js";
-import { WebProber, type ProberLike } from "./prober.js";
+import { WebProber, isPrivateOrLoopbackHost, type ProberLike } from "./prober.js";
 import { coordinatorPrompt, exploiterPrompt, reconPrompt, reporterPrompt, taskPrompt } from "./prompts.js";
 import {
   loadRegistryFile,
@@ -214,6 +214,22 @@ const PROBE_TOOL: JsonSchemaTool = {
   },
 };
 
+const BURST_PROBE_TOOL: JsonSchemaTool = {
+  name: "burst_probe",
+  description:
+    "Resilience/rate-limit check — NOT a flood or DoS tool. Fires one FIXED-size batch of concurrent GET/HEAD requests (size is not adjustable) to observe whether the target rate-limits at all. One-shot per endpoint per engagement; calling it again on the same path is refused. DoS/resource exhaustion stays off regardless of mode or target.",
+  parameters: {
+    type: "object",
+    properties: {
+      url: { type: "string" },
+      method: { type: "string", enum: ["GET", "HEAD"] },
+      attackId: { type: "string" },
+      hypothesis: { type: "string" },
+    },
+    required: ["url"],
+  },
+};
+
 const READ_TOOLS = MCP_TOOLS.filter((t) => t.name !== "scan_url");
 const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
   name: "query_registry",
@@ -300,7 +316,7 @@ const ABORT_TOOL: JsonSchemaTool = {
   },
 };
 const RECON_TOOLS = [...MCP_TOOLS, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
-const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
+const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
 /** The coordinator's command tools: no probes, only command authority. */
 const COMMAND_TOOLS = [ABORT_TOOL];
 
@@ -322,6 +338,7 @@ async function recheckVerified(ctx: Ctx): Promise<boolean> {
     ctx.domain,
     { mcpEndpoint: ctx.config.mcpEndpoint, mcpToken: ctx.config.mcpToken },
     ctx.deps.verify,
+    { allowLocalSandbox: ctx.config.localSandbox },
   );
   if (v.allowed) ctx.verifiedAt = new Date().toISOString();
   return v.allowed;
@@ -408,6 +425,43 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
       };
     } catch (err) {
       return { result: `probe failed: ${(err as Error).message}`, attackId, target: url };
+    }
+  }
+
+  if (call.name === "burst_probe") {
+    const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
+    if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
+      return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["url"] ?? "") };
+    }
+    const url = String(args["url"] ?? "");
+    let path = "";
+    try {
+      path = new URL(url).pathname;
+    } catch {
+      return { result: `DENIED: unparseable URL ${url}`, attackId, target: url };
+    }
+    const burstKey = `BURST ${path}`;
+    if (ctx.opsecCooldown.has(burstKey)) {
+      return {
+        result: `DENIED: burst_probe already ran against ${path} this engagement — one-shot per endpoint, not a repeatable flood primitive.`,
+        attackId,
+        target: url,
+      };
+    }
+    ctx.opsecCooldown.add(burstKey); // one-shot regardless of outcome, including failure
+    ctx.probesUsed++;
+    if (!ctx.prober.probeBurst) {
+      return { result: `burst_probe unavailable: this harness's prober does not implement it.`, attackId, target: url };
+    }
+    try {
+      const res = await ctx.prober.probeBurst({ method: String(args["method"] ?? "GET"), url });
+      return {
+        result: `Burst probe (${res.count} concurrent requests, fixed size): ${res.note} Latency range ${res.minMs}-${res.maxMs}ms.`,
+        attackId,
+        target: url,
+      };
+    } catch (err) {
+      return { result: `burst probe failed/refused: ${(err as Error).message}`, attackId, target: url };
     }
   }
 
@@ -825,6 +879,7 @@ function promptCtx(ctx: Ctx): {
   scopeHosts: string[];
   roe: RulesOfEngagement;
   fullBattery?: boolean;
+  localSandbox?: boolean;
 } {
   return {
     mode: ctx.input.mode,
@@ -833,6 +888,10 @@ function promptCtx(ctx: Ctx): {
     scopeHosts: ctx.hosts,
     roe: ctx.input.roe,
     fullBattery: ctx.input.fullBattery,
+    // Only actually relax discipline when the target is genuinely
+    // loopback/private — matches the gate's invariant exactly. Leaving
+    // --local-sandbox on does nothing against a real domain.
+    localSandbox: ctx.config.localSandbox && ctx.hosts.every((h) => isPrivateOrLoopbackHost(h)),
   };
 }
 
@@ -841,6 +900,7 @@ async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
     ctx.domain,
     { mcpEndpoint: ctx.config.mcpEndpoint, mcpToken: ctx.config.mcpToken },
     ctx.deps.verify,
+    { allowLocalSandbox: ctx.config.localSandbox },
   );
   if (!verdict.allowed) {
     ctx.events.append({ phase: "authorize", actor: "coordinator", action: "authorization_denied", target: ctx.domain, result: verdict.reason ?? "denied" });
@@ -848,7 +908,9 @@ async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
     return verdict;
   }
   ctx.verifiedAt = new Date().toISOString();
-  ctx.verificationProof = `SecScan server lists ${ctx.domain} as ownership-verified (${ctx.verifiedAt}).`;
+  ctx.verificationProof = verdict.reason
+    ? `${verdict.reason} (${ctx.verifiedAt})`
+    : `SecScan server lists ${ctx.domain} as ownership-verified (${ctx.verifiedAt}).`;
   ctx.events.append({
     phase: "authorize",
     actor: "coordinator",
@@ -1446,6 +1508,7 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
   engagementsDir?: string;
   registryPath?: string;
   dryRunAgents?: boolean;
+  localSandbox?: boolean;
 } = {}): ResolvedRunnerConfig {
   const mcpToken = opts.mcpToken ?? env["SECSCAN_MCP_TOKEN"];
   if (!mcpToken) {
@@ -1489,6 +1552,7 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
       opts.registryPath ??
       (env["REDTEAM_HOME"] ? join(env["REDTEAM_HOME"], "engagements", "registry.json") : join(process.cwd(), "engagements", "registry.json")),
     dryRunAgents: opts.dryRunAgents ?? false,
+    localSandbox: opts.localSandbox ?? env["REDTEAM_LOCAL_SANDBOX"] === "1",
   };
 }
 
@@ -1509,6 +1573,8 @@ export interface RunOptions {
   /** Registry path override (tests). Defaults to <REDTEAM_HOME>/engagements/registry.json. */
   registryPath?: string;
   dryRunAgents?: boolean;
+  /** LOCAL SANDBOX MODE ONLY. See ResolvedRunnerConfig.localSandbox. Default false. */
+  localSandbox?: boolean;
   deps?: RunnerDeps;
 }
 
@@ -1541,7 +1607,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     deps,
     events,
     mcp: deps.mcp ?? new McpClient({ endpoint: config.mcpEndpoint, token: config.mcpToken }),
-    prober: deps.prober ?? new WebProber({ scopeHosts: hosts, minDelayMs: config.probeDelayMs }),
+    prober: deps.prober ?? new WebProber({ scopeHosts: hosts, minDelayMs: config.probeDelayMs, allowPrivateHosts: config.localSandbox }),
     hosts,
     domain: hosts[0]!,
     excludedNote: "",

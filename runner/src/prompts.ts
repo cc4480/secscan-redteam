@@ -29,6 +29,15 @@ export interface PromptContext {
   roe: RulesOfEngagement;
   /** Full-battery unified engagement: both target batteries drive the plan. */
   fullBattery?: boolean;
+  /**
+   * LOCAL SANDBOX MODE ONLY. True only when the gate's allowLocalSandbox
+   * bypass actually fired (i.e. the target is loopback/private — see
+   * gate.ts/prober.ts). Relaxes the exploiter's non-destructive discipline
+   * so it may complete mutations/state changes it would otherwise stop
+   * short of, since a local sandbox target is disposable. Never changes
+   * technique exclusions (T1499 stays excluded) or scope enforcement.
+   */
+  localSandbox?: boolean;
 }
 
 function attackCatalog(): string {
@@ -52,7 +61,17 @@ function roeBlock(ctx: PromptContext): string {
   if (ctx.roe.stopConditions?.length) lines.push(`- Stop conditions: ${ctx.roe.stopConditions.join("; ")}`);
   if (ctx.roe.deconflictionContact) lines.push(`- Deconfliction contact: ${ctx.roe.deconflictionContact}`);
   if (ctx.roe.notes) lines.push(`- Operator notes: ${ctx.roe.notes}`);
-  lines.push(`- Non-destructive always: no data writes/deletes, no DoS, no resource exhaustion, no credential stuffing, no pivoting outside scoped hosts. Web targets only — no phishing, social engineering, or physical.`);
+  if (ctx.localSandbox) {
+    lines.push(
+      `- LOCAL SANDBOX MODE: this target is your own disposable local infrastructure (loopback, ` +
+        `verified by the runner — not a real client). You MAY complete mutations/state changes ` +
+        `(finish the race-condition double-spend, actually escalate a role, actually drive the ` +
+        `state machine through) that production engagements would stop short of. DoS/resource ` +
+        `exhaustion is STILL never allowed, sandbox or not — that stays off regardless of mode.`,
+    );
+  } else {
+    lines.push(`- Non-destructive always: no data writes/deletes, no DoS, no resource exhaustion, no credential stuffing, no pivoting outside scoped hosts. Web targets only — no phishing, social engineering, or physical.`);
+  }
   return lines.join("\n");
 }
 
@@ -227,10 +246,15 @@ with no applicable surface is an observation, not a gap — record it.
 Active testing ONLY on ownership-verified targets (the runner gates every probe).
 Never attempt to bypass the gate; attempting it ends the engagement.
 
+## Resilience checks
+\`burst_probe\` observes whether rate-limiting exists at all (fixed-size concurrent batch, GET/HEAD only, one-shot per endpoint). This is a legitimate, non-destructive check — not a flood. It is NOT how you test DoS resilience by exhausting a resource; that technique (T1499) is excluded in every mode, every target, no exceptions.
+
 ## Payload discipline
 - Never repeat a failed payload verbatim — mutate with stated intent.
 - Prefer oracle-style proof: reflected canary tokens, time differentials, response anomalies.
-- Stay non-destructive. If a step could degrade the target, stop and escalate to the coordinator.
+- ${ctx.localSandbox
+    ? "LOCAL SANDBOX MODE: you may complete a mutation/state change to confirm impact (this target is your own disposable local infra). DoS/resource exhaustion is still never allowed."
+    : "Stay non-destructive. If a step could degrade the target, stop and escalate to the coordinator."}
 - Two independent observations before calling anything a finding.
 - Tag each probe with its ATT&CK ID (T1190 for public-app flaw testing, T1552.001 for secret hunting, etc.).
 

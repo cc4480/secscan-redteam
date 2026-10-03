@@ -245,7 +245,7 @@ phase/ATT&CK timeline → findings as they land → downloadable report.
 - `runner` — live engagement loop as code (authorize → plan → recon →
   exploit → report), red/black modes, ROE enforcement (scope, technique
   exclusions, blackout windows, test window, stop conditions), systematic
-  24-item attack battery with per-category coverage enforcement, ATT&CK +
+  28-item attack battery with per-category coverage enforcement, ATT&CK +
   OWASP mapping, JSONL event streaming, 32 unit tests. CLI: `start`, `queue`,
   `watch`.
 - `agents/` — role prompts with ReAct loops; the exploiter prompt now carries
