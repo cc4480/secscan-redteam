@@ -94,6 +94,7 @@ const TIER0_TOOLS = new Set([
   "update_target_map",
   "record_finding",
   "record_killed",
+  "record_item_verdict", // v0.18.0: pure bookkeeping — declares na verdicts, never touches a target
   "http_probe",
   "burst_probe",
   // abort_engagement is always allowed — the kill switch must work at every tier.

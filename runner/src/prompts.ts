@@ -240,11 +240,10 @@ Two independent observations before anything is "confirmed".
 
 ## The battery — systematic, not opportunistic
 ${ctx.fullBattery
-  ? `You run the FULL target-specific battery: ${targetListText(activeTargets(ctx))}, three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` (${activeTargets(ctx).map((t) => `"${t}"`).join(" | ")}), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on EVERY selected target, or the cell is honestly BLOCKED (3 × ${activeTargets(ctx).length} = ${activeTargets(ctx).length * BATTERY_CATEGORIES.length} cells) — the runner will keep you here until you do (or probes run out). Host targets (windows/linux): use \`ssh_exec\` / \`ssh_agent_audit\` / \`nfs_enum\` (Linux), \`smb_exec\` / \`smb_pth\` / \`winrm_exec\` / \`winrm_probe\` / \`rdp_auth\` / \`ad_enum\` / \`krb_ptt\` (Windows) with \`targetProfile\` "linux"/"windows" — host targets are never inferred, tag them explicitly. Items carrying [needs: ...] EXECUTE when the prerequisite is met: WS-064 needs kerberos ticket material (supply REDTEAM_KRB_CCACHE_B64/PATH/KIRBI_B64 or kinit credentials), LX-041's mount proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope), WS-065 needs a human operator for the shadowing act itself (use \`rdp_shadow_prep\` to prepare the full handoff package — never pretend the runner shadowed a session).`
+  ? `You run the FULL target-specific battery: ${targetListText(activeTargets(ctx))}, three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` (${activeTargets(ctx).map((t) => `"${t}"`).join(" | ")}), and the battery item ID via the \`batteryItem\` parameter (e.g. "SS-042") — the runner tracks one verdict per item (3 × ${activeTargets(ctx).length} = ${activeTargets(ctx).length * BATTERY_CATEGORIES.length} cells) and the battery cannot report complete while any item is pending a verdict. Items with no applicable surface must be declared with \`record_item_verdict\` + evidence, never silently skipped. Host targets (windows/linux): use \`ssh_exec\` / \`ssh_agent_audit\` / \`nfs_enum\` (Linux), \`smb_exec\` / \`smb_pth\` / \`winrm_exec\` / \`winrm_probe\` / \`rdp_auth\` / \`ad_enum\` / \`krb_ptt\` (Windows) with \`targetProfile\` "linux"/"windows" — host targets are never inferred, tag them explicitly. Items carrying [needs: ...] EXECUTE when the prerequisite is met: WS-064 needs kerberos ticket material (supply REDTEAM_KRB_CCACHE_B64/PATH/KIRBI_B64 or kinit credentials), LX-041's mount proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope), WS-065 needs a human operator for the shadowing act itself (use \`rdp_shadow_prep\` to prepare the full handoff package — never pretend the runner shadowed a session).`
   : `You run a FULL battery across three categories. Tag every \`http_probe\` with
 \`category\` ("logic" | "functionality" | "validation") and the battery item ID
-in your hypothesis. The battery is complete only when you have probed ALL THREE
-categories — the runner will keep you here until you do (or probes run out).`}
+via the \`batteryItem\` parameter. The battery is complete only when every item carries a verdict — none pending — or probes run out.`}
 
 ${ctx.fullBattery ? fullBatteryChecklistText(ctx.mode, ctx.targets) : batteryChecklistText(ctx.mode)}
 
@@ -264,7 +263,7 @@ Never attempt to bypass the gate; attempting it ends the engagement.
 - CREDENTIAL DISCIPLINE: test-account credentials are resolved from the environment by the runner — NEVER put usernames, passwords, or keys in commands or args. A command containing credential material is a finding against YOU.
 - The runner enforces: in-scope hosts only (out-of-scope = DENIED before any packet), a destructive-command denylist (rm -rf /, mkfs, dd to disks, shutdown/reboot, shadow-copy deletion, ransomware patterns — all refused mechanically), 30s timeouts, capped output.
 - Prefer read-only enumeration first (service lists, registry reads, permission bits, version strings). State-changing proof uses benign canaries only, then cleans up.
-- Tag every host call with \`category\`, \`attackId\`, \`targetProfile\` ("linux" for ssh_exec, "windows" for smb_exec/winrm_exec), and the battery item ID in your hypothesis.
+- Tag every host call with \`category\`, \`attackId\`, \`targetProfile\` ("linux" for ssh_exec, "windows" for smb_exec/winrm_exec), and the battery item ID via the \`batteryItem\` parameter.
 
 ## Metasploit bridge — CVE-specific exploit validation (Windows/Linux targets)
 - \`msf_exec\` reaches Metasploit's ~2,000 CVE-specific exploits without hardcoding CVEs. Three actions:
@@ -295,6 +294,8 @@ export interface TaskBrief {
   brief: string;
   attackId?: string;
   category?: string;
+  /** Battery item ID this task covers (v0.18.0) — the specialist tags it on every tool call. */
+  batteryItem?: string;
 }
 
 /**
@@ -311,6 +312,7 @@ operation; you execute this task and report back.
 - Task: ${task.brief}
 ${task.attackId ? `- ATT&CK technique: ${task.attackId}` : ""}
 ${task.category ? `- Battery category: ${task.category}` : ""}
+${task.batteryItem ? `- Battery item: ${task.batteryItem} — tag batteryItem: "${task.batteryItem}" on EVERY tool call for this task so the runner reconciles it to the item ledger.` : ""}
 - Bounds: stay in scope, non-destructive, minimal tool calls to answer the task.
 - Record every verdict IMMEDIATELY with record_finding / record_killed — the coordinator and the whole team read them live.
 - End with a 3-line task report: TRIED: ... / OBSERVED: ... / VERDICT: confirmed|killed|inconclusive + one line why.

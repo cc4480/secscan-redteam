@@ -272,6 +272,8 @@ describe("full-battery coverage mechanics", () => {
   /** Scripted LLM: coordinator tasks per-target cells; exploiter probes with targetProfile (explicit for secscan, URL-inferred for seclayer). */
   function scriptedLlm(seclayerCells: boolean) {
     let n = 0;
+    const firstItem = (target: string, category: string) =>
+      TARGET_PROFILES[target as "secscan" | "seclayer"].battery.find((b) => b.category === category && !b.needs)!;
     const probe = (target: string, category: string): ToolCallRequest => ({
       id: `call-${++n}`,
       name: "http_probe",
@@ -282,6 +284,7 @@ describe("full-battery coverage mechanics", () => {
         attackId: "T1190",
         // Explicit tag for secscan cells; seclayer cells rely on /api/mcp URL inference.
         ...(target === "secscan" ? { targetProfile: "secscan" } : {}),
+        batteryItem: firstItem(target, category).id, // v0.18.0: tag the item under test
         hypothesis: `full battery ${target} ${category}`,
       },
     });
@@ -337,6 +340,9 @@ describe("full-battery coverage mechanics", () => {
         category,
         attackId: "T1018",
         targetProfile: target, // explicit tag for every cell — exercises the tagging path
+        batteryItem: TARGET_PROFILES[target as "secscan" | "seclayer" | "windows" | "linux"].battery.find(
+          (b) => b.category === category && !b.needs,
+        )!.id, // v0.18.0: tag the item under test
         hypothesis: `full battery ${target} ${category}`,
       },
     });
@@ -373,7 +379,28 @@ describe("full-battery coverage mechanics", () => {
       const category = sys.match(/Battery category: (\w+)/)?.[1] ?? parts[2] ?? "logic";
       if (!fired.has(brief)) {
         fired.add(brief);
-        return { text: `${target} ${category} hypothesis`, toolCalls: [probe(target, category)], provider: "fake", model: "fake" };
+        // v0.18.0: one tagged probe (attempts its item) + record_item_verdict
+        // na for every other non-prerequisite item in the cell — exercises
+        // the full per-item machinery. Prerequisite items stay blocked.
+        const items = TARGET_PROFILES[target as "secscan" | "seclayer" | "windows" | "linux"].battery.filter(
+          (b) => b.category === category,
+        );
+        const probedId = items.find((b) => !b.needs)!.id;
+        const toolCalls: ToolCallRequest[] = [probe(target, category)];
+        for (const item of items) {
+          if (item.id === probedId || item.needs) continue;
+          toolCalls.push({
+            id: `call-${++n}`,
+            name: "record_item_verdict",
+            arguments: {
+              batteryItem: item.id,
+              targetProfile: target,
+              verdict: "na",
+              evidence: "no applicable surface in scripted test scope",
+            },
+          });
+        }
+        return { text: `${target} ${category} hypothesis`, toolCalls, provider: "fake", model: "fake" };
       }
       return textOnly("TRIED: probe / OBSERVED: 200 ok / VERDICT: killed - no flaw");
     };
@@ -385,35 +412,51 @@ describe("full-battery coverage mechanics", () => {
       deepseekApiKey: "test",
       qwenApiKey: "test",
       engagementsDir: dir,
+      maxActions: 3000, // v0.18.0: per-item verdict tests declare na for hundreds of items
       deps: { verify: async () => true, completeForRole: llm as never, prober: fakeProber },
     });
   }
 
-  it("6/6 web cells (--targets secscan,seclayer) → report says full battery complete", async () => {
+  it("6/6 web cells probed but items pending → gate refuses complete, names pending items", async () => {
     const res = await run(baseInput, scriptedLlm(true));
     assert.equal(res.status, "complete");
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
-    assert.ok(report.includes("Full battery complete: all 6 cells probed or honestly blocked."), "6-cell completion line");
-    assert.ok(report.includes("3 categories × 2 targets"), "per-target coverage header");
+    // v0.18.0: cells probed is not enough — 6 tagged items attempted, the rest pending.
+    assert.ok(!report.includes("Full battery complete"), "no complete claim with pending items");
+    assert.ok(report.includes("NOT COVERED"), "not-covered marker");
+    assert.ok(report.includes("battery items pending a verdict"), "pending items named");
+    assert.ok(report.includes("list these under Honest limits"), "honest-limits directive");
+    assert.ok(report.includes("## Item reconciliation (runner-computed)"), "reconciliation section");
+    const verdicts = JSON.parse(readFileSync(join(dir, res.engagementId, "item-verdicts.json"), "utf8"));
+    assert.equal(verdicts.length, 200, "all 120 SS + 80 SL items in the ledger");
+    const pending = verdicts.filter((v: { disposition: string }) => v.disposition === "pending");
+    assert.ok(pending.length > 150, `most items still pending, got ${pending.length}`);
+    const attempted = verdicts.filter((v: { disposition: string }) => v.disposition === "executed-clean");
+    assert.equal(attempted.length, 6, "one tagged item attempted per cell");
   });
 
   it("missing seclayer cells → report names them under Honest limits", async () => {
     const res = await run(baseInput, scriptedLlm(false));
     assert.equal(res.status, "complete");
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
-    assert.ok(report.includes("NOT COVERED: seclayer:logic, seclayer:functionality, seclayer:validation"), "missing cells named");
+    assert.ok(report.includes("NOT COVERED:"), "not-covered marker");
+    assert.ok(report.includes("seclayer:logic"), "missing cells named");
+    assert.ok(report.includes("seclayer:validation"), "missing cells named");
     assert.ok(report.includes("list these under Honest limits"), "honest-limits directive");
   });
 
-  it("12 cells (all four targets): all probed → complete; the 3 prerequisite items named under Honest limits", async () => {
+  it("12 cells (all four targets): every item verdict-recorded → complete; prerequisite items named under Honest limits", async () => {
     const input: EngagementInput = { ...baseInput, targets: undefined }; // default: all four
     const res = await run(input, scriptedLlm12());
     assert.equal(res.status, "complete");
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
     assert.ok(report.includes("3 categories × 4 targets"), "12-cell header");
     assert.ok(report.includes("12/12 cells probed"), "all 12 cells probed");
-    assert.ok(report.includes("Full battery complete: all 12 cells probed or honestly blocked."), "completion line");
-    assert.ok(!report.includes("NOT COVERED"), "no missing cells");
+    assert.ok(
+      report.includes("Full battery complete: all 12 cells probed or honestly blocked; all 416 battery items carry a verdict."),
+      "completion line with item reconciliation",
+    );
+    assert.ok(!report.includes("NOT COVERED"), "no missing cells or pending items");
     assert.ok(!report.includes("BLOCKED (prerequisite"), "no fully-blocked cells in v0.10.0");
     assert.ok(
       report.includes("Items with prerequisites (execute when met — see Honest limits)"),
@@ -422,5 +465,14 @@ describe("full-battery coverage mechanics", () => {
     for (const id of ["windows:WS-064", "windows:WS-065", "linux:LX-041"]) {
       assert.ok(report.includes(id), `${id} named with its prerequisite`);
     }
+    // v0.18.0: the ledger reconciles every item.
+    const verdicts = JSON.parse(readFileSync(join(dir, res.engagementId, "item-verdicts.json"), "utf8"));
+    assert.equal(verdicts.length, 416, "all 416 static items in the ledger");
+    assert.equal(
+      verdicts.filter((v: { disposition: string }) => v.disposition === "pending").length,
+      0,
+      "zero pending",
+    );
+    assert.ok(report.includes("## Item reconciliation (runner-computed)"), "reconciliation section");
   });
 });

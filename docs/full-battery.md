@@ -142,10 +142,14 @@ One flag: `--full-battery`. One operation:
 four); `--target secscan+seclayer` is the web-only shortcut. The coordinator
 sees the full spectrum for the selected targets as a compact checklist
 (every ID + name + one-line brief); the full execution detail lives in the
-runner modules. The runner enforces coverage mechanically: the battery
-counts complete only when **3 categories × selected targets = 12 cells**
-are probed or honestly BLOCKED. Anything else is named under Honest
-limits — never silently dropped.
+runner modules. The runner enforces coverage mechanically at two levels:
+**cell level** — the battery counts complete only when **3 categories ×
+selected targets = 12 cells** are probed or honestly BLOCKED; and
+**per-item level (v0.18.0)** — every battery item carries one verdict
+(`pending`/`confirmed`/`executed-clean`/`killed`/`blocked`/`na`), and the
+battery may not report complete while any item is still `pending`.
+Anything else is named under Honest limits — never silently dropped.
+See `docs/coverage.md` for the per-item contract.
 
 ## Unbreakable rules
 

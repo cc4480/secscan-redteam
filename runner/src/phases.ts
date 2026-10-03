@@ -115,6 +115,17 @@ import type { BatteryCategory } from "./battery.js";
 import { activeTargets, HOST_EXEC_TOOLING, inferTargetProfile, isTargetId, targetCellStatus, TARGET_PROFILES } from "./targets.js";
 import type { TargetId } from "./targets.js";
 import { MsfExecutor } from "./msf/index.js";
+import {
+  buildItemLedger,
+  ensureCveEntry,
+  ledgerSummary,
+  markAttempted,
+  pendingByCell,
+  resolveItemKey,
+  serializeLedger,
+  setDisposition,
+} from "./coverage/items.js";
+import type { ItemVerdict } from "./coverage/items.js";
 
 export interface RunnerDeps {
   verify?: (domain: string, cfg: { endpoint: string; token: string }) => Promise<boolean>;
@@ -217,6 +228,13 @@ interface Ctx {
    * categories probed on that target. Empty when fullBattery is off.
    */
   targetCoverage: Map<TargetId, Set<BatteryCategory>>;
+  /**
+   * Per-item verdict ledger (v0.18.0): every selected battery item → one
+   * disposition (pending/confirmed/executed-clean/killed/blocked/na).
+   * The battery may not report complete while any item is pending.
+   * Empty when fullBattery is off.
+   */
+  itemLedger: Map<string, ItemVerdict>;
   probesUsed: number;
   // -- Shared operation state (the Megazord): one context every agent reads and
   // -- writes. No agent works from a stale or private picture.
@@ -661,6 +679,20 @@ const RECORD_KILLED_TOOL: JsonSchemaTool = {
     required: ["hypothesis", "killingObservation"],
   },
 };
+const RECORD_ITEM_VERDICT_TOOL: JsonSchemaTool = {
+  name: "record_item_verdict",
+  description:
+    'Record an explicit per-item verdict for a battery item that is NOT APPLICABLE to this target (e.g. "target exposes no SMB service"). The battery cannot report complete while any item is pending, so items with no applicable surface must be declared here — with evidence, never a bare flag. Args: batteryItem (e.g. "SS-042"), verdict ("na" — the only verdict this tool records), evidence (REQUIRED: the observation proving non-applicability).',
+  parameters: {
+    type: "object",
+    properties: {
+      batteryItem: { type: "string" },
+      verdict: { type: "string", enum: ["na"] },
+      evidence: { type: "string" },
+    },
+    required: ["batteryItem", "verdict", "evidence"],
+  },
+};
 const ABORT_TOOL: JsonSchemaTool = {
   name: "abort_engagement",
   description:
@@ -671,8 +703,38 @@ const ABORT_TOOL: JsonSchemaTool = {
     required: ["reason"],
   },
 };
-const RECON_TOOLS = [...MCP_TOOLS, ...HOST_TOOLS, MSF_EXEC_TOOL, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
-const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, ...HOST_TOOLS, MSF_EXEC_TOOL, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
+// ---------------------------------------------------------------------------
+// v0.18.0 per-item verdicts: every action tool carries an optional
+// `batteryItem` parameter (the battery item ID under test, e.g. "SS-042").
+// The dispatcher records the attempt against the item ledger; record_finding
+// / record_killed / record_item_verdict set terminal dispositions. Applied
+// once at tool-list assembly so the consts stay pristine for tests.
+// ---------------------------------------------------------------------------
+const BATTERY_ITEM_HINT =
+  ' Always include batteryItem: the battery item ID under test (e.g. "SS-042"). ' +
+  "The runner tracks one verdict per battery item and the battery cannot report complete while any item is pending.";
+
+function withBatteryItem(t: JsonSchemaTool): JsonSchemaTool {
+  const params = (t.parameters ?? {}) as { properties?: Record<string, unknown> };
+  return {
+    ...t,
+    description: t.description + BATTERY_ITEM_HINT,
+    parameters: {
+      ...params,
+      properties: {
+        ...(params.properties ?? {}),
+        batteryItem: {
+          type: "string",
+          description:
+            'Battery item ID this action tests (e.g. "SS-042", "WS-023"). Untagged actions cannot be reconciled to an item.',
+        },
+      },
+    },
+  };
+}
+
+const RECON_TOOLS = [...MCP_TOOLS, ...HOST_TOOLS.map(withBatteryItem), withBatteryItem(MSF_EXEC_TOOL), QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL, withBatteryItem(RECORD_ITEM_VERDICT_TOOL)];
+const EXPLOIT_TOOLS = [...READ_TOOLS, withBatteryItem(PROBE_TOOL), withBatteryItem(BURST_PROBE_TOOL), ...HOST_TOOLS.map(withBatteryItem), withBatteryItem(MSF_EXEC_TOOL), QUERY_REGISTRY_TOOL, withBatteryItem(RECORD_FINDING_TOOL), withBatteryItem(RECORD_KILLED_TOOL), withBatteryItem(RECORD_ITEM_VERDICT_TOOL)];
 /** The coordinator's command tools: no probes, only command authority. */
 const COMMAND_TOOLS = [ABORT_TOOL];
 
@@ -1194,6 +1256,32 @@ async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPha
     ctx.liveFindings.push(lf);
     syncLiveFindingsToState(ctx);
     writeFindingToRegistry(ctx, lf);
+    // v0.18.0 per-item verdicts: tie the confirmed finding to its battery item.
+    const fItem = optStr(args["batteryItem"]);
+    if (fItem && ctx.input.fullBattery && ctx.itemLedger.size > 0) {
+      const fKey = resolveItemKey(fItem, optStr(args["targetProfile"]));
+      if (fKey && ctx.itemLedger.has(fKey)) {
+        try {
+          setDisposition(ctx.itemLedger, fKey, "confirmed", {
+            reason: `[${lf.severity}] ${lf.title}`.slice(0, 300),
+          });
+        } catch (e) {
+          ctx.events.append({
+            phase,
+            actor: "runner",
+            action: "item_verdict_refused",
+            result: `record_finding for "${fItem}": ${(e as Error).message}`,
+          });
+        }
+      } else {
+        ctx.events.append({
+          phase,
+          actor: "runner",
+          action: "item_tag_unresolved",
+          result: `record_finding batteryItem "${fItem}" did not resolve to a selected battery item — finding recorded, ledger untouched.`,
+        });
+      }
+    }
     return {
       result: `Finding recorded to shared state + registry: [${lf.severity}] ${lf.title} (${attackId}). The reporter and all future engagements see it.`,
       attackId,
@@ -1211,11 +1299,78 @@ async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPha
     };
     ctx.killedLive.push(kl);
     writeKilledToRegistry(ctx, kl);
+    // v0.18.0 per-item verdicts: tie the killed hypothesis to its battery
+    // item (negative intelligence — the class stays in play per the registry rule).
+    const kItem = optStr(args["batteryItem"]);
+    if (kItem && ctx.input.fullBattery && ctx.itemLedger.size > 0) {
+      const kKey = resolveItemKey(kItem, optStr(args["targetProfile"]));
+      if (kKey && ctx.itemLedger.has(kKey)) {
+        try {
+          setDisposition(ctx.itemLedger, kKey, "killed", { reason: kl.killingObservation.slice(0, 500) });
+        } catch (e) {
+          ctx.events.append({
+            phase,
+            actor: "runner",
+            action: "item_verdict_refused",
+            result: `record_killed for "${kItem}": ${(e as Error).message}`,
+          });
+        }
+      } else {
+        ctx.events.append({
+          phase,
+          actor: "runner",
+          action: "item_tag_unresolved",
+          result: `record_killed batteryItem "${kItem}" did not resolve to a selected battery item — hypothesis recorded, ledger untouched.`,
+        });
+      }
+    }
     return {
       result: "Killed hypothesis recorded to shared state + registry as negative intelligence — future engagements keep the full spectrum; the exact attempt is dead, the class stays in play.",
       attackId: kl.attackId,
       target: ctx.domain,
     };
+  }
+
+  // v0.18.0 per-item verdicts: explicit not-applicable declarations. The
+  // battery cannot report complete while any item is pending, so items with
+  // no applicable surface must be declared here — with evidence, never a
+  // bare flag. "na" without evidence is refused mechanically.
+  if (call.name === "record_item_verdict") {
+    const rawItem = optStr(args["batteryItem"]) ?? "";
+    const verdict = (optStr(args["verdict"]) ?? "").toLowerCase();
+    const evidence = optStr(args["evidence"]) ?? "";
+    if (!ctx.input.fullBattery || ctx.itemLedger.size === 0) {
+      return {
+        result: "Item verdicts are tracked on full-battery engagements only — verdict not recorded.",
+        target: ctx.domain,
+      };
+    }
+    const key = resolveItemKey(rawItem, optStr(args["targetProfile"]));
+    if (!key || !ctx.itemLedger.has(key)) {
+      return {
+        result: `REFUSED: batteryItem "${rawItem}" did not resolve to a selected battery item.`,
+        target: ctx.domain,
+      };
+    }
+    if (verdict !== "na") {
+      return {
+        result: `REFUSED: record_item_verdict only records "na" (with evidence). Other verdicts land via record_finding / record_killed; attempts are recorded automatically from tagged actions.`,
+        target: ctx.domain,
+      };
+    }
+    try {
+      setDisposition(ctx.itemLedger, key, "na", { reason: evidence });
+    } catch (e) {
+      return { result: `REFUSED: ${(e as Error).message}`, target: ctx.domain };
+    }
+    ctx.events.append({
+      phase,
+      actor: role,
+      action: "item_verdict_na",
+      target: key,
+      result: `${key} marked not-applicable: ${evidence.slice(0, 200)}`,
+    });
+    return { result: `Item ${key} recorded as not-applicable with evidence.`, target: key };
   }
 
   if (call.name === "abort_engagement") {
@@ -1329,7 +1484,58 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     const clean = !/^(DENIED|HALTED)/i.test(d.result) && !d.result.startsWith("probe failed");
     if (clean) recordExploitStep(ctx.tier, call.name, args, host);
   }
+  // v0.18.0 per-item verdicts: a clean execution tagged with batteryItem
+  // marks that item attempted (pending/blocked → executed-clean). Denials,
+  // halts, aborts, refusals, and failed probes never mark anything. The
+  // verdict tools (record_finding / record_killed / record_item_verdict)
+  // set terminal dispositions in their own handlers — skipped here.
+  if (
+    call.name !== "record_finding" &&
+    call.name !== "record_killed" &&
+    call.name !== "record_item_verdict" &&
+    !/^(DENIED|HALTED|ABORTED|REFUSED)/i.test(d.result) &&
+    !d.result.startsWith("probe failed")
+  ) {
+    recordItemAttempt(ctx, args, phase);
+  }
   return d;
+}
+
+/**
+ * v0.18.0: resolve a tagged batteryItem (and any CVE) from tool args
+ * against the item ledger. Unresolvable tags are surfaced as events —
+ * never silently dropped.
+ */
+function recordItemAttempt(
+  ctx: Ctx,
+  args: Record<string, unknown>,
+  phase: EngagementPhase,
+): void {
+  if (!ctx.input.fullBattery || ctx.itemLedger.size === 0) return;
+  const rawTp = typeof args["targetProfile"] === "string" ? args["targetProfile"] : undefined;
+  // Dynamic per-CVE instances from msf_exec (v0.11.0): each CVE gets its
+  // own ledger entry, attempted here, confirmed via record_finding.
+  const rawCve = typeof args["cve"] === "string" ? args["cve"].trim() : "";
+  if (/^CVE-\d{4}-\d{4,7}$/i.test(rawCve)) {
+    try {
+      markAttempted(ctx.itemLedger, ensureCveEntry(ctx.itemLedger, rawCve));
+    } catch {
+      /* not a CVE id — ignore */
+    }
+  }
+  const rawItem = typeof args["batteryItem"] === "string" ? args["batteryItem"].trim() : "";
+  if (!rawItem) return;
+  const key = resolveItemKey(rawItem, rawTp);
+  if (!key || !ctx.itemLedger.has(key)) {
+    ctx.events.append({
+      phase,
+      actor: "runner",
+      action: "item_tag_unresolved",
+      result: `batteryItem "${rawItem}" did not resolve to a selected battery item — action executed but not reconciled to the ledger. Tag a valid item ID (e.g. SS-042).`,
+    });
+    return;
+  }
+  markAttempted(ctx.itemLedger, key);
 }
 
 // ---------------------------------------------------------------------------
@@ -1908,6 +2114,8 @@ export interface TaskDef {
   brief: string;
   attackId?: string;
   category?: BatteryCategory;
+  /** Battery item ID this task covers (v0.18.0) — surfaced to the specialist via taskPrompt. */
+  batteryItem?: string;
   maxTurns: number;
 }
 
@@ -2049,7 +2257,8 @@ function validateTasks(ctx: Ctx, raw: Array<Record<string, unknown>>, cap: numbe
       category = c as BatteryCategory;
     }
     const maxTurns = Math.min(Math.max(Number(r["maxTurns"]) || 6, 2), 8);
-    tasks.push({ id: `task-${++taskCounter}`, kind, brief, attackId, category, maxTurns });
+    const batteryItem = typeof r["batteryItem"] === "string" && r["batteryItem"].trim() ? r["batteryItem"].trim().slice(0, 40) : undefined;
+    tasks.push({ id: `task-${++taskCounter}`, kind, brief, attackId, category, batteryItem, maxTurns });
   }
   return tasks;
 }
@@ -2083,7 +2292,7 @@ async function coordinatorDirective(
     "coordinator",
     "exploit",
     coordinatorPrompt(promptCtx(ctx)),
-    `${head}\n\nReturn ONLY a JSON block: {"tasks": [<at most ${cap} task(s) this round>, {"kind": "probe|recon", "brief": "<1-2 sentences>", "attackId": "<ATT&CK, optional>", "category": "<logic|functionality|validation — probe tasks only>", "maxTurns": 6}], "finish": <true only when the objective is met AND (battery complete OR probe budget exhausted OR no applicable surface declared with reasons)>, "note": "<what changed and why, one line>"}\n\n${context}`,
+    `${head}\n\nReturn ONLY a JSON block: {"tasks": [<at most ${cap} task(s) this round>, {"kind": "probe|recon", "brief": "<1-2 sentences>", "attackId": "<ATT&CK, optional>", "category": "<logic|functionality|validation — probe tasks only>", "batteryItem": "<battery item ID this task covers, e.g. SS-042 — pick from the pending list>", "maxTurns": 6}], "finish": <true only when the objective is met AND (battery complete — every battery item verdict-recorded, none pending — OR probe budget exhausted OR no applicable surface declared with reasons)>, "note": "<what changed and why, one line>"}\n\n${context}`,
     COMMAND_TOOLS,
     3,
   );
@@ -2124,11 +2333,28 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
   const MAX_ROUNDS = 10;
   let forceAsked = false;
 
-  const baseContext = () =>
-    `Recon brief:\n${reconBrief.slice(0, 4000)}\n\n${sharedStateDigest(ctx, "exploit")}\n\n` +
-    `Registry hits surfaced: ${ctx.registryHits.length}. Probe budget: ${ctx.config.maxExploitProbes} total, ${ctx.probesUsed} used. ` +
-    `Battery: ${ctx.input.fullBattery ? activeTargets(ctx.input).map((t) => `${t}:{${BATTERY_CATEGORIES.map((c) => `${c}:${cellStatus(t, c) === "done" ? "done" : cellStatus(t, c) === "blocked" ? "BLOCKED" : "MISSING"}`).join(",")}}`).join(" ") : (["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
-    `OPSEC cooldowns: ${ctx.opsecCooldown.size}. Redirects used: ${ctx.redirects}/2.`;
+  const baseContext = () => {
+    // v0.18.0 per-item verdicts: the coordinator sees exactly which items
+    // still lack a verdict, per target × category, so re-planning aims at
+    // real gaps instead of re-probing cells.
+    const pendCells = ctx.input.fullBattery ? pendingByCell(ctx.itemLedger) : [];
+    const pendTotal = pendCells.reduce((n, g) => n + g.ids.length, 0);
+    const pendText =
+      pendCells.length > 0
+        ? `Items pending a verdict: ${pendTotal} — ` +
+          pendCells
+            .map((g) => `${g.target}:${g.category}:[${g.ids.slice(0, 12).join(",")}${g.ids.length > 12 ? `+${g.ids.length - 12}` : ""}]`)
+            .join(" ") +
+          `. Assign these item IDs via batteryItem on every action; the battery cannot report complete while any item is pending. Declare no-surface items with record_item_verdict + evidence. `
+        : `Items pending a verdict: none. `;
+    return (
+      `Recon brief:\n${reconBrief.slice(0, 4000)}\n\n${sharedStateDigest(ctx, "exploit")}\n\n` +
+      `Registry hits surfaced: ${ctx.registryHits.length}. Probe budget: ${ctx.config.maxExploitProbes} total, ${ctx.probesUsed} used. ` +
+      `Battery: ${ctx.input.fullBattery ? activeTargets(ctx.input).map((t) => `${t}:{${BATTERY_CATEGORIES.map((c) => `${c}:${cellStatus(t, c) === "done" ? "done" : cellStatus(t, c) === "blocked" ? "BLOCKED" : "MISSING"}`).join(",")}}`).join(" ") : (["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
+      pendText +
+      `OPSEC cooldowns: ${ctx.opsecCooldown.size}. Redirects used: ${ctx.redirects}/2.`
+    );
+  };
 
   let directive = await coordinatorDirective(ctx, "decompose", baseContext());
   let rounds = 0;
@@ -2148,13 +2374,27 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
     }
     if (directive.tasks.length === 0 || directive.finish) {
       const absent = missing();
-      if (absent.length === 0 || forceAsked) {
+      // v0.18.0 per-item verdicts: cells probed is not enough — every item
+      // needs a disposition. Pending items force one more round (once),
+      // exactly like missing cells; then the report records NOT COMPLETE honestly.
+      const pendKeys = ctx.input.fullBattery
+        ? [...ctx.itemLedger.values()].filter((v) => v.disposition === "pending").map((v) => v.key)
+        : [];
+      if ((absent.length === 0 && pendKeys.length === 0) || forceAsked) {
         if (absent.length > 0) {
           ctx.events.append({
             phase: "exploit",
             actor: "runner",
             action: "battery_incomplete",
             result: `Coordinator finished with categories unprobed: ${absent.join(", ")}. Recorded as not-covered.`,
+          });
+        }
+        if (pendKeys.length > 0) {
+          ctx.events.append({
+            phase: "exploit",
+            actor: "runner",
+            action: "battery_incomplete_items",
+            result: `Coordinator finished with ${pendKeys.length} battery items pending a verdict. Recorded as NOT COMPLETE in the report.`,
           });
         }
         break;
@@ -2164,8 +2404,10 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
       directive = await coordinatorDirective(
         ctx,
         "replan",
-        `OVERRIDE — battery incomplete (missing: ${absent.join(", ")}) and probe budget remains (${ctx.config.maxExploitProbes - ctx.probesUsed}). ` +
-          `Task the missing categories NOW (one task per category), or explicitly declare which battery items have no applicable surface and why.\n\n${baseContext()}`,
+        `OVERRIDE — battery incomplete (missing cells: ${absent.join(", ") || "none"}; ` +
+          `${pendKeys.length} items pending a verdict: ${pendKeys.slice(0, 20).join(", ")}${pendKeys.length > 20 ? "…" : ""}) ` +
+          `and probe budget remains (${ctx.config.maxExploitProbes - ctx.probesUsed}). ` +
+          `Task the missing cells/items NOW (one task per cell, tag batteryItem per item), or explicitly declare which battery items have no applicable surface and why (record_item_verdict with evidence).\n\n${baseContext()}`,
       );
       continue;
     }
@@ -2239,6 +2481,33 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   const fbPlanOnly = selected.flatMap((t) =>
     TARGET_PROFILES[t].battery.filter((b) => !!b.needs).map((b) => `${t}:${b.id} [needs: ${b.needs}]`),
   );
+  // v0.18.0 per-item verdicts: the battery may not report complete while any
+  // selected item lacks a defensible disposition. Blocked/na items never
+  // force extra rounds — they are reported honestly, exactly like cells.
+  const lsum = ledgerSummary(ctx.itemLedger);
+  const pendingKeys = [...ctx.itemLedger.values()]
+    .filter((v) => v.disposition === "pending")
+    .map((v) => v.key);
+  const nonCleanItems = [...ctx.itemLedger.values()].filter(
+    (v) => v.disposition !== "executed-clean" && v.disposition !== "pending",
+  );
+  try {
+    writeFileSync(
+      join(ctx.events.dir, "item-verdicts.json"),
+      JSON.stringify(serializeLedger(ctx.itemLedger), null, 2),
+    );
+  } catch {
+    /* the ledger lives in memory too — a write failure must never break the report */
+  }
+  ctx.events.append({
+    phase: "report",
+    actor: "runner",
+    action: pendingKeys.length > 0 ? "battery_incomplete_items" : "battery_complete_items",
+    result:
+      `Item reconciliation: ${lsum.total} items — ${lsum.confirmed} confirmed, ${lsum.executedClean} executed-clean, ` +
+      `${lsum.killed} killed, ${lsum.blocked} blocked, ${lsum.na} na, ${lsum.pending} pending.` +
+      (pendingKeys.length > 0 ? ` NOT COMPLETE: ${pendingKeys.length} items still pending a verdict.` : ""),
+  });
   const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const batteryLine = ctx.input.fullBattery
     ? `Battery coverage (FULL BATTERY — 3 categories × ${selected.length} targets): ${fbDone.length}/${fbCells.length} cells probed ` +
@@ -2249,9 +2518,17 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       (fbPlanOnly.length > 0
         ? `Items with prerequisites (execute when met — see Honest limits): ${fbPlanOnly.join(", ")}. `
         : "") +
-      (fbMissing.length > 0
-        ? `NOT COVERED: ${fbMissing.map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
-        : `Full battery complete: all ${fbCells.length} cells probed or honestly blocked.`)
+      (fbMissing.length > 0 || pendingKeys.length > 0
+        ? `NOT COVERED: ${[
+            ...fbMissing.map(({ t, c }) => `${t}:${c}`),
+            ...(pendingKeys.length > 0
+              ? [
+                  `${pendingKeys.length} battery items pending a verdict ` +
+                    `(${pendingKeys.slice(0, 25).join(", ")}${pendingKeys.length > 25 ? "…" : ""})`,
+                ]
+              : []),
+          ].join("; ")} — list these under Honest limits.`
+        : `Full battery complete: all ${fbCells.length} cells probed or honestly blocked; all ${lsum.total} battery items carry a verdict.`)
     : `Battery coverage: ${covered.length}/3 categories probed ` +
       `(${covered.map((c) => `${c}:${ctx.coverage.has(c) ? "yes" : "no"}`).join(", ")}, ${ctx.probesUsed} probes total). ` +
       (covered.length < 3 ? `NOT COVERED: ${BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c)).join(", ")} — list these under Honest limits.` : "Full battery complete.");
@@ -2382,6 +2659,31 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       action: "proof_bundles_failed",
       result: `PoC bundle generation failed (report.md unaffected): ${(err as Error).message}`,
     });
+  }
+  // v0.18.0 per-item verdicts: the item reconciliation section — every
+  // battery item's disposition, derived from the ledger (audit log +
+  // verdict tools), never hand-waved. Full ledger: item-verdicts.json.
+  if (ctx.input.fullBattery && ctx.itemLedger.size > 0) {
+    reportMd += `\n---\n\n## Item reconciliation (runner-computed)\n\n`;
+    reportMd +=
+      `Every battery item carries exactly one verdict this engagement. ` +
+      `The battery counts complete only when no item is pending.\n\n`;
+    reportMd +=
+      `**${lsum.total} items:** ${lsum.confirmed} confirmed · ${lsum.executedClean} executed-clean · ` +
+      `${lsum.killed} killed · ${lsum.blocked} blocked · ${lsum.na} not-applicable · ${lsum.pending} pending.\n\n`;
+    if (nonCleanItems.length > 0) {
+      reportMd += `Non-clean items (with reason):\n\n`;
+      for (const v of nonCleanItems) {
+        reportMd += `- **${v.key}** [${v.disposition}] ${v.name}${v.reason ? ` — ${v.reason}` : ""}\n`;
+      }
+      reportMd += `\n`;
+    }
+    if (pendingKeys.length > 0) {
+      reportMd +=
+        `**Battery NOT complete:** ${pendingKeys.length} items still pending a verdict ` +
+        `(${pendingKeys.slice(0, 50).join(", ")}${pendingKeys.length > 50 ? "…" : ""}). ` +
+        `See Honest limits.\n`;
+    }
   }
   // v0.15.0 buyer integrations: confirmed findings sync to configured
   // ticketing sinks (Jira/ServiceNow), SIEM-ready JSONL export, and Slack
@@ -2755,6 +3057,10 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     consecutive5xx: 0,
     coverage: new Set(),
     targetCoverage: new Map(),
+    // v0.18.0 per-item verdicts: every selected battery item opens pending
+    // (or blocked when its prerequisite is unmet); the report gate refuses
+    // "complete" while any item is still pending.
+    itemLedger: input.fullBattery ? buildItemLedger(activeTargets(input)) : new Map(),
     probesUsed: 0,
     fingerprint: { host: hosts[0]!, stack: [], appType: "unknown" },
     registry,
