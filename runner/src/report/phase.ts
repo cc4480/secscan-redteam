@@ -20,6 +20,7 @@ import { READ_TOOLS } from "../tools.js";
 import { batteryStatusLine } from "../coverage/cells.js";
 import { PocBundle } from "../proof/index.js";
 import { resolveOperatorName } from "../accountability/index.js";
+import { countVariants, variantCountLine, variantProgressSuffix } from "../variants/index.js";
 import { buildProofSection } from "./proof.js";
 import { buildIntegrationsSection } from "./integrations.js";
 import { writeSafetyArtifacts } from "./safety.js";
@@ -137,10 +138,16 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
     reportMd +=
       `**${lsum.total} items:** ${lsum.confirmed} confirmed · ${lsum.executedClean} executed-clean · ` +
       `${lsum.killed} killed · ${lsum.blocked} blocked · ${lsum.na} not-applicable · ${lsum.pending} pending.\n\n`;
+    // v0.20.0 variants: honest counting — intents vs executions, two
+    // numbers, never merged into one inflated figure.
+    const vc = countVariants(ctx.itemLedger);
+    if (vc.itemsWithVariants > 0) {
+      reportMd += `${variantCountLine(vc)}\n\n`;
+    }
     if (nonCleanItems.length > 0) {
       reportMd += `Non-clean items (with reason):\n\n`;
       for (const v of nonCleanItems) {
-        reportMd += `- **${v.key}** [${v.disposition}] ${v.name}${v.reason ? ` — ${v.reason}` : ""}\n`;
+        reportMd += `- **${v.key}** [${v.disposition}]${variantProgressSuffix(v)} ${v.name}${v.reason ? ` — ${v.reason}` : ""}\n`;
       }
       reportMd += `\n`;
     }

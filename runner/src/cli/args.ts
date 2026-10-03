@@ -70,6 +70,9 @@ Production also caps the per-host rate limit at 2 rps even if configured
 higher. Env alternative: REDTEAM_ENV=staging|production.
 --max-rps <n>: per-host rate limit override (requests/sec). Env
 REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
+--max-variants <n>: per-item payload-variant cap (v0.20.0). Env
+REDTEAM_MAX_VARIANTS. Defaults: 25 staging, 10 production. Caps how many
+curated variant executions one battery item may run — enforced mechanically.
 
 --tier 0|1|2 (v0.17.0 accountability): graduated agent autonomy, enforced
 mechanically in the tool dispatcher. 0 = observe (read-only recon only);

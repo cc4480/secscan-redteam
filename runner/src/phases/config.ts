@@ -20,6 +20,8 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
   localSandbox?: boolean;
   /** Per-host rate limit override (requests/sec). Env REDTEAM_MAX_RPS. Production caps at 2 mechanically. */
   maxRpsPerHost?: number;
+  /** v0.20.0: per-item variant cap override. Env REDTEAM_MAX_VARIANTS. Undefined = env default (25 staging, 10 production). */
+  maxVariantsPerItem?: number;
 } = {}): ResolvedRunnerConfig {
   const mcpToken = opts.mcpToken ?? env["SECSCAN_MCP_TOKEN"];
   if (!mcpToken) {
@@ -65,6 +67,7 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
     dryRunAgents: opts.dryRunAgents ?? false,
     localSandbox: opts.localSandbox ?? env["REDTEAM_LOCAL_SANDBOX"] === "1",
     maxRpsPerHost: opts.maxRpsPerHost ?? (env["REDTEAM_MAX_RPS"] ? Number(env["REDTEAM_MAX_RPS"]) : undefined),
+    maxVariantsPerItem: opts.maxVariantsPerItem ?? (env["REDTEAM_MAX_VARIANTS"] ? Number(env["REDTEAM_MAX_VARIANTS"]) : undefined),
   };
 }
 

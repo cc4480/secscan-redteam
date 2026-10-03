@@ -14,6 +14,7 @@ import { isTargetDistress } from "../safety/index.js";
 import { resolve } from "node:path";
 import { type DispatchResult } from "./types.js";
 import { recordItemAttempt } from "./verdicts.js";
+import { checkVariantCap, recordVariantExecution } from "../variants/index.js";
 import { handleWebTools } from "./web.js";
 import { handleHostTools } from "./host.js";
 import { handleMsfTools } from "./msf.js";
@@ -96,6 +97,13 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
   if (tierDenial) {
     return { result: tierDenial, target: host };
   }
+  // v0.20.0 variants: the per-item variant cap is MECHANICAL. A
+  // variant-tagged call past the cap is denied before any packet — one
+  // item can't spray the target.
+  const variantDenial = checkVariantCap(ctx.itemLedger, args);
+  if (variantDenial) {
+    return { result: variantDenial, target: host };
+  }
   const d = await dispatchToolInner(ctx, role, phase, call);
   if (host) {
     const haltReason = ctx.safety.autoHalt.recordOutcome(host, isTargetDistress(d.result));
@@ -122,10 +130,14 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
     call.name !== "record_finding" &&
     call.name !== "record_killed" &&
     call.name !== "record_item_verdict" &&
+    call.name !== "variant_list" &&
     !/^(DENIED|HALTED|ABORTED|REFUSED)/i.test(d.result) &&
     !d.result.startsWith("probe failed")
   ) {
     recordItemAttempt(ctx, args, phase);
+    // v0.20.0 variants: variant-tagged clean executions advance the item's
+    // expansion; exhaustion settles it to executed-clean with honest counts.
+    recordVariantExecution(ctx, args, phase);
   }
   return d;
 }

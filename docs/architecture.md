@@ -81,6 +81,21 @@ runner/src/
 - **The runner enforces; the model proposes.** Ownership verification, scope,
   denylists, rate limits, kill switch, and tier gates are mechanical in the
   runner — never trusted to prompts.
-- **Public surface (do not break):** 4 CLI commands, 25 flags, 25 agent tool
-  names, 416 battery item IDs, 8 report artifacts, env-var names. The
-  behavior inventory (`/tmp/refactor-inventory.mjs` pattern) must diff empty.
+- **Public surface (do not break):** 4 CLI commands, 25 flags, 26 agent tool
+  names (variant_list added in v0.20.0), 416 battery item IDs, 8 report
+  artifacts, env-var names. The behavior inventory
+  (`/tmp/refactor-inventory.mjs` pattern) must diff empty.
+
+## Payload variants (v0.20.0)
+
+`runner/src/variants/` — curated, mechanical payload libraries per attack
+class (sqli, xss, cmdi, ssti, xxe, traversal, ssrf, redirect, auth, headers).
+`variant_list` (Tier 0 bookkeeping tool) classifies a battery item, opens
+**variant expansion** on its ledger entry, and returns the capped payload
+list. Per-item cap: 25 staging / 10 production (override via
+`--max-variants` / `REDTEAM_MAX_VARIANTS`), enforced mechanically in
+dispatch before any packet. The ledger tracks `variants?: VariantProgress`
+(run/planned/confirmed/closed); an item isn't `executed-clean` until its
+variants are exhausted or the cap is reached. Reports print "416 attack
+intents" and "N variant executions" as two numbers — never merged. See
+`docs/variants.md`.

@@ -12,10 +12,11 @@ import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { syncLiveFindingsToState, writeFindingToRegistry, writeKilledToRegistry } from "./verdicts.js";
+import { closeVariantExpansion, startVariantExpansion } from "../variants/index.js";
 import { optStr } from "./prelude.js";
 
 export async function handleBookkeepingTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
-  if (!["query_registry","update_target_map","record_finding","record_killed","record_item_verdict","abort_engagement"].includes(call.name)) return null;
+  if (!["query_registry","update_target_map","record_finding","record_killed","record_item_verdict","abort_engagement","variant_list"].includes(call.name)) return null;
 if (call.name === "query_registry") {
   const limit = Math.min(Math.max(Number(args["limit"] ?? 5) || 5, 1), 10);
   const hits = queryRegistry(ctx.registry, {
@@ -90,6 +91,10 @@ if (call.name === "record_finding") {
         setDisposition(ctx.itemLedger, fKey, "confirmed", {
           reason: `[${lf.severity}] ${lf.title}`.slice(0, 300),
         });
+        // v0.20.0 variants: a variant-tagged confirmation counts toward the
+        // item's variant progress (supplementary to the confirmed verdict).
+        const fvp = ctx.itemLedger.get(fKey)?.variants;
+        if (fvp && typeof args["variantIndex"] === "number") fvp.confirmed++;
       } catch (e) {
         ctx.events.append({
           phase,
@@ -196,6 +201,51 @@ if (call.name === "record_item_verdict") {
     result: `${key} marked not-applicable: ${evidence.slice(0, 200)}`,
   });
   return { result: `Item ${key} recorded as not-applicable with evidence.`, target: key };
+}
+
+// v0.20.0 payload-variant expansion: curated payload lists per attack
+// class. Tier 0 bookkeeping — returns payloads, never fires. Opening
+// expansion reopens an executed-clean item to pending for deeper testing.
+if (call.name === "variant_list") {
+  if (!ctx.input.fullBattery || ctx.itemLedger.size === 0) {
+    return {
+      result: "Variant libraries are tracked on full-battery engagements only — nothing listed.",
+      target: ctx.domain,
+    };
+  }
+  const rawItem = optStr(args["batteryItem"]) ?? "";
+  const key = resolveItemKey(rawItem, optStr(args["targetProfile"]));
+  if (!key || !ctx.itemLedger.has(key)) {
+    return { result: `REFUSED: batteryItem "${rawItem}" did not resolve to a selected battery item.`, target: ctx.domain };
+  }
+  if (args["closeExpansion"] === true) {
+    return { result: closeVariantExpansion(ctx, key, phase), target: key };
+  }
+  let opened;
+  try {
+    opened = startVariantExpansion(ctx, key, phase);
+  } catch (e) {
+    return { result: `REFUSED: ${(e as Error).message}`, target: ctx.domain };
+  }
+  if (opened.variants.length === 0) {
+    return {
+      result: `${key}: no curated variant library for this item's attack class — probe it directly; the item reconciles normally.`,
+      target: key,
+    };
+  }
+  const lines = opened.variants.map(
+    (vt) => `[${vt.variantIndex}] (${vt.kind}) ${vt.payload} — tests: ${vt.whatItTests}`,
+  );
+  return {
+    result:
+      `Variants for ${key}: ${opened.variants.length} offered ` +
+      `(library ${opened.librarySize}, per-item cap ${opened.cap}, classes: ${opened.classes.join(", ")})` +
+      `${opened.reopened ? " — item reopened from executed-clean for deeper testing" : ""}.\n` +
+      `${lines.join("\n")}\n` +
+      `Execute each via the normal tools with batteryItem="${rawItem}" + variantIndex tagged. ` +
+      `The cap is enforced mechanically; close early with variant_list(closeExpansion: true).`,
+    target: key,
+  };
 }
 
 if (call.name === "abort_engagement") {

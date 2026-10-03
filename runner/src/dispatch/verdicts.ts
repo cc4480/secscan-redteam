@@ -4,6 +4,7 @@
 import { type Ctx, type KilledLive, type LiveFinding } from "../context.js";
 import { type EngagementPhase, type Finding } from "../types.js";
 import { ensureCveEntry, markAttempted, resolveItemKey } from "../coverage/items.js";
+import { hasActiveVariantExpansion } from "../variants/index.js";
 import { extractJsonBlock } from "../util.js";
 import { lookupTechnique } from "../attack.js";
 import { recordConfirmed, recordKilled, saveRegistryFile } from "../registry.js";
@@ -40,6 +41,10 @@ export function recordItemAttempt(
     });
     return;
   }
+  // v0.20.0 variants: while expansion is open for this item, the variant
+  // tracker owns its disposition — a tagged attempt doesn't close it
+  // early. Exhaustion, cap, or close flips it to executed-clean.
+  if (hasActiveVariantExpansion(ctx.itemLedger, key)) return;
   markAttempted(ctx.itemLedger, key);
 }
 

@@ -131,6 +131,13 @@ export interface Ctx {
    */
   itemLedger: Map<string, ItemVerdict>;
   probesUsed: number;
+  /**
+   * v0.20.0 payload-variant expansion: max variant executions per battery
+   * item this engagement (default 25 staging / 10 production; operator
+   * override via --max-variants / REDTEAM_MAX_VARIANTS). Enforced
+   * mechanically in dispatch — one item can't spray.
+   */
+  variantCap: number;
   // -- Shared operation state (the Megazord): one context every agent reads and
   // -- writes. No agent works from a stale or private picture.
   /** Target fingerprint (stack guesses, app type) — parsed from the recon brief. */

@@ -219,4 +219,10 @@ export interface ResolvedRunnerConfig {
    * 2 production).
    */
   maxRpsPerHost?: number;
+  /**
+   * v0.20.0 payload-variant expansion: max variant executions per battery
+   * item. Env REDTEAM_MAX_VARIANTS. Undefined = environment default
+   * (25 staging, 10 production). Enforced mechanically in dispatch.
+   */
+  maxVariantsPerItem?: number;
 }

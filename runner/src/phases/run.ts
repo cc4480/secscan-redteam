@@ -23,6 +23,7 @@ import { reconPhase } from "./recon.js";
 import { exploitPhase } from "./exploit.js";
 import { resolveConfig } from "./config.js";
 import { coordinatorSignOff } from "./signoff.js";
+import { resolveVariantCap } from "../variants/index.js";
 
 export interface RunOptions {
   mcpToken?: string;
@@ -42,6 +43,8 @@ export interface RunOptions {
   registryPath?: string;
   /** Per-host rate limit override (requests/sec). Env REDTEAM_MAX_RPS. Production caps at 2 mechanically. */
   maxRpsPerHost?: number;
+  /** v0.20.0: per-item variant cap override. Env REDTEAM_MAX_VARIANTS. Undefined = env default (25 staging, 10 production). */
+  maxVariantsPerItem?: number;
   dryRunAgents?: boolean;
   /** LOCAL SANDBOX MODE ONLY. See ResolvedRunnerConfig.localSandbox. Default false. */
   localSandbox?: boolean;
@@ -141,6 +144,9 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     // "complete" while any item is still pending.
     itemLedger: input.fullBattery ? buildItemLedger(activeTargets(input)) : new Map(),
     probesUsed: 0,
+    // v0.20.0 payload-variant expansion: per-item cap resolved mechanically
+    // (env default 25 staging / 10 production; --max-variants / REDTEAM_MAX_VARIANTS).
+    variantCap: resolveVariantCap(environment, config.maxVariantsPerItem),
     fingerprint: { host: hosts[0]!, stack: [], appType: "unknown" },
     registry,
     registryPath,

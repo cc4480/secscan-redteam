@@ -137,10 +137,19 @@ export async function main(): Promise<void> {
       console.error(`[runner] bad --max-rps ${JSON.stringify(rpsRaw)}; want a positive number (requests/sec per host)`);
       process.exit(2);
     }
+    // v0.20.0 payload-variant expansion: per-item cap, enforced mechanically.
+    const varIdx = process.argv.indexOf("--max-variants");
+    const varRaw = varIdx >= 0 ? process.argv[varIdx + 1] : undefined;
+    const maxVariants = varRaw === undefined ? undefined : Number(varRaw);
+    if (maxVariants !== undefined && (!Number.isFinite(maxVariants) || maxVariants <= 0)) {
+      console.error(`[runner] bad --max-variants ${JSON.stringify(varRaw)}; want a positive number (variants per battery item)`);
+      process.exit(2);
+    }
     const result = await runEngagement(input, {
       localSandbox: flag("--local-sandbox"),
       dryRunAgents: flag("--dry-run"),
       maxRpsPerHost: maxRps,
+      maxVariantsPerItem: maxVariants,
     });
     console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));
     process.exit(result.status === "complete" ? 0 : 1);
