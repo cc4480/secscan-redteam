@@ -2,9 +2,12 @@
  * Operator actions (v0.22.0): kill switch, reverify, watch triggers.
  *
  * POST /api/engagements/:id/abort — the kill switch. Uses the abort handle
- * registered at launch: terminates in-flight executions, refuses new work,
- * and the next tool dispatch throws HaltError so the engagement unwinds to
- * "halted". 409 when the engagement isn't live in this process.
+ * registered at launch for UI-started runs; for CLI-launched runs it writes
+ * abort.json into the engagement dir, which the running dispatcher picks up
+ * on its next dispatch cycle (v0.25.0 cross-process kill switch). Either
+ * path terminates in-flight executions, refuses new work, and the next tool
+ * dispatch throws HaltError so the engagement unwinds to "halted". 404 when
+ * the engagement id is unknown.
  * POST /api/engagements/:id/escalate — v0.24.0 mid-run tier change. Same
  * rules as the CLI (`redteam-runner escalate`): raising the tier requires a
  * named operator + reason; lowering is logged freely; Tier 2 on production
@@ -19,6 +22,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { UiStore } from "../store.js";
+import { engagementDir } from "../store.js";
+import { readState } from "../../events.js";
+import { writeAbortFile } from "../../safety/index.js";
 import { createReplayer, reverifyBundle, type PocBundle } from "../../proof/index.js";
 import { loadTicketMapping, updateTicketsForReverify } from "../../integrations/index.js";
 import { loadWatchProfile, runWatchCycle } from "../../continuous/index.js";
@@ -27,19 +33,47 @@ import { json, badRequest } from "./http.js";
 
 /** POST /api/engagements/:id/abort { reason? } */
 export function handleAbort(store: UiStore, res: ServerResponse, id: string, body: unknown): void {
+  const reason = typeof (body as { reason?: unknown })?.reason === "string" ? String((body as { reason?: string }).reason).slice(0, 500) : "operator abort from UI";
+  // In-process: engagement launched by this UI server — direct handle.
   const entry = store.get(id);
-  if (!entry?.abort) {
-    json(res, 409, { error: "engagement is not live in this UI process (already finished or started by CLI)" });
+  if (entry?.abort) {
+    try {
+      entry.abort(reason);
+    } catch (err) {
+      json(res, 500, { error: `abort failed: ${(err as Error).message}` });
+      return;
+    }
+    json(res, 200, { ok: true, id, via: "in-process" });
     return;
   }
-  const reason = typeof (body as { reason?: unknown })?.reason === "string" ? String((body as { reason?: string }).reason) : "operator abort from UI";
+  // v0.25.0 cross-process kill switch: CLI-launched engagements have no
+  // abort handle in this process. Write abort.json into the engagement dir
+  // instead — the running dispatcher checks for it on every dispatch cycle
+  // and runs the identical abort sequence (flag, controllers, audit event,
+  // HaltError → "halted"). engagementDir() refuses bad ids and path
+  // traversal; a dir without state.json is not an engagement → 404.
+  const dir = engagementDir(store.engagementsDir, id);
+  if (!dir) {
+    json(res, 404, { error: "unknown engagement" });
+    return;
+  }
   try {
-    entry.abort(reason);
+    writeAbortFile(dir, { requestedAt: new Date().toISOString(), by: "ui-operator", reason });
   } catch (err) {
-    json(res, 500, { error: `abort failed: ${(err as Error).message}` });
+    json(res, 500, { error: `abort signal failed: ${(err as Error).message}` });
     return;
   }
-  json(res, 200, { ok: true, id });
+  const status = readState(dir)?.status ?? "unknown";
+  json(res, 200, {
+    ok: true,
+    id,
+    via: "abort.json",
+    engagementStatus: status,
+    note:
+      status === "running" || status === "authorizing"
+        ? "abort signal written — the running dispatcher acts on its next tool call"
+        : `abort signal written, but the engagement is ${status} — nothing left to stop`,
+  });
 }
 
 interface EscalateBody {

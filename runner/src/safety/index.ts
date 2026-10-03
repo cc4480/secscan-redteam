@@ -49,3 +49,11 @@ export {
   SAFETY_MANIFEST_VERSION,
 } from "./manifest.js";
 export type { SafetyManifest, ManifestInputs } from "./manifest.js";
+
+export {
+  ABORT_FILE_NAME,
+  readAbortFile,
+  writeAbortFile,
+  consumeAbortFile,
+} from "./abortfile.js";
+export type { AbortSignal } from "./abortfile.js";

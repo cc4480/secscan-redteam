@@ -52,10 +52,13 @@ not a public page:
 - **Engagement detail** — four tabs:
   - *Live feed*: the operation feed streaming as Server-Sent Events, with
     phase badges and agent activity. The **kill-switch bar** at the bottom
-    aborts in-flight work immediately: in-flight executions are terminated,
+    aborts in-flight work: in-flight executions are terminated,
     new work is refused, and the next tool dispatch throws `HaltError` so the
     engagement unwinds to `halted` — the exact same path as the coordinator's
-    own `abort_engagement`.
+    own `abort_engagement`. For UI-launched runs this uses the in-process
+    abort handle; for CLI-launched runs the dashboard writes `abort.json`
+    into the engagement dir and the running dispatcher acts on it at its
+    next dispatch cycle (cross-process kill switch, v0.25.0).
   - *Findings*: severity filter, click a row for the PoC bundle (steps,
     canary marker, reverify command).
   - *Coverage*: per-item verdict counts plus the 12-cell battery summary.
@@ -72,7 +75,8 @@ not a public page:
 
 - Engagements launched from the UI run **in the UI process** and return 202
   immediately; progress arrives over SSE. CLI-launched engagements are listed
-  read-only (their abort handle lives in the CLI process, so the kill switch
-  shows only for UI-launched runs).
+  too, and the kill switch works on them: the dashboard writes `abort.json`
+  into the engagement dir, which the running dispatcher picks up on its next
+  tool call (same abort sequence, same `HaltError` unwind to `halted`).
 - `redteam-runner ui` keeps running until Ctrl+C; closing the browser tab does
   not stop a running engagement.

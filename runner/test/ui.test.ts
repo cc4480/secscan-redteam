@@ -9,7 +9,7 @@
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
@@ -171,11 +171,34 @@ describe("abort path", () => {
     assert.equal(reason, "test abort");
   });
 
-  it("409s when the engagement is not live in this process", () => {
-    cannedEngagement("eng-abort-2", "complete");
+  it("writes abort.json for a CLI-launched engagement (not live in this process)", () => {
+    // v0.25.0 cross-process kill switch: no 409 anymore — the UI writes
+    // abort.json and the running dispatcher picks it up on its next cycle.
+    cannedEngagement("eng-abort-2", "running");
     const res = mockRes();
-    handleAbort(store, res as never, "eng-abort-2", {});
-    assert.equal(res.status, 409);
+    handleAbort(store, res as never, "eng-abort-2", { reason: "ui stop" });
+    assert.equal(res.status, 200);
+    const body = JSON.parse(res.body) as { via?: string; engagementStatus?: string };
+    assert.equal(body.via, "abort.json");
+    assert.equal(body.engagementStatus, "running");
+    const marker = JSON.parse(readFileSync(join(tmp, "eng-abort-2", "abort.json"), "utf8")) as {
+      by?: string;
+      reason?: string;
+    };
+    assert.equal(marker.by, "ui-operator");
+    assert.equal(marker.reason, "ui stop");
+  });
+
+  it("404s on unknown engagement id", () => {
+    const res = mockRes();
+    handleAbort(store, res as never, "eng-nope-missing", {});
+    assert.equal(res.status, 404);
+  });
+
+  it("404s on a path-traversal id", () => {
+    const res = mockRes();
+    handleAbort(store, res as never, "../evil", {});
+    assert.equal(res.status, 404);
   });
 });
 

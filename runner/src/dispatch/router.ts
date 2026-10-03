@@ -10,7 +10,7 @@ import { type ActorRole, type EngagementPhase } from "../types.js";
 import { type Ctx, HaltError } from "../context.js";
 import { type ToolCallRequest } from "@secscan/redteam-llm-router";
 import { checkTierAllows, recordExploitStep, readTierFile, TIER_NAMES } from "../accountability/index.js";
-import { isTargetDistress } from "../safety/index.js";
+import { isTargetDistress, readAbortFile, consumeAbortFile } from "../safety/index.js";
 import { resolve } from "node:path";
 import { type DispatchResult } from "./types.js";
 import { recordItemAttempt } from "./verdicts.js";
@@ -101,6 +101,45 @@ export function refreshTierFromDisk(ctx: Ctx, phase: EngagementPhase): void {
   });
 }
 
+/**
+ * v0.25.0: cross-process kill switch. The UI cannot reach into a
+ * CLI-launched engagement's process, so it writes abort.json into the
+ * engagement dir; the dispatcher checks for it here on every dispatch
+ * cycle. When the marker is found, the abort sequence is identical to the
+ * in-process kill switch: set the flag, terminate every in-flight
+ * execution via the registered controllers (shared ctx — covers parallel
+ * tasks), count it for the safety manifest, log abort_engagement, consume
+ * the marker (the audit event is the durable record), and throw HaltError
+ * so the run unwinds to "halted". Exported for tests; dispatchTool calls
+ * it. A missing or corrupt file means "no abort requested" — never a
+ * crash, never a spurious abort.
+ */
+export function checkAbortSignal(ctx: Ctx, phase: EngagementPhase): void {
+  if (ctx.hostKill.aborted) return;
+  const sig = readAbortFile(ctx.events.dir);
+  if (!sig) return;
+  ctx.hostKill.aborted = true;
+  for (const c of ctx.hostKill.controllers) {
+    try {
+      c.abort();
+    } catch {
+      /* best effort */
+    }
+  }
+  ctx.hostKill.controllers.clear();
+  ctx.safety.killSwitchAborts++;
+  ctx.events.append({
+    phase,
+    actor: "coordinator",
+    action: "abort_engagement",
+    result:
+      `ABORTED by operator: ${sig.reason ?? "operator abort"} ` +
+      `(cross-process kill switch; requested ${sig.requestedAt}${sig.by ? ` by ${sig.by}` : ""})`,
+  });
+  consumeAbortFile(ctx.events.dir);
+  throw new HaltError("aborted by operator (kill switch)");
+}
+
 export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   // v0.22.0 UI kill switch: the operator abort is mechanically identical to
   // the coordinator's abort_engagement. In-flight work is already dead
@@ -111,6 +150,13 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
   if (ctx.hostKill.aborted) {
     throw new HaltError("aborted by operator (kill switch)");
   }
+  // v0.25.0 cross-process kill switch: a CLI-launched engagement has no
+  // abort handle inside the UI server process, so the UI writes abort.json
+  // into the engagement dir instead. Check for it on every dispatch — the
+  // abort sequence below is identical to the in-process kill switch
+  // (flag, controllers, audit event), then HaltError unwinds to "halted".
+  // Checked before the rate limiter: an aborted run acquires nothing.
+  checkAbortSignal(ctx, phase);
   const host = toolTargetHost(call);
   const args = call.arguments ?? {};
   if (host) {
