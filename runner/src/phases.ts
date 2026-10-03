@@ -70,6 +70,21 @@ import {
 } from "./safety/index.js";
 import type { TestEnvironment } from "./safety/index.js";
 import {
+  ApprovalLog,
+  checkTierAllows,
+  defaultTier,
+  describeTier,
+  parseTier,
+  recordExploitStep,
+  requireNamedOperator,
+  requireTier2ProductionApproval,
+  resolveOperatorName,
+  tier2ProductionConfirmed,
+  TIER_ENV,
+  TIER2_PROD_CONFIRM_ENV,
+} from "./accountability/index.js";
+import type { ApprovalEntry, AutonomyTier, TierState } from "./accountability/index.js";
+import {
   loadRegistryFile,
   queryRegistry,
   recordConfirmed,
@@ -175,6 +190,16 @@ interface Ctx {
     /** Kill-switch aborts this engagement (operator/coordinator override count). */
     killSwitchAborts: number;
   };
+  /**
+   * v0.17.0 accountability — graduated autonomy, mechanically enforced.
+   * The dispatcher refuses tools above the current tier and enforces the
+   * Tier 1 single-step chain budget per target. Escalation happens only
+   * through escalateTier() with a recorded operator approval — there is no
+   * agent tool that raises the tier.
+   */
+  tier: TierState;
+  /** Append-only approval log (tier declared/escalated, production confirmed…). */
+  approvals: ApprovalLog;
   hosts: string[];
   domain: string;
   excludedNote: string;
@@ -1265,6 +1290,7 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
 
 async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   const host = toolTargetHost(call);
+  const args = call.arguments ?? {};
   if (host) {
     // Auto-halt first: a halted target is refused before any packet AND
     // before waiting on the rate limiter — never hammer, never queue.
@@ -1276,6 +1302,15 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
       };
     }
     await ctx.safety.limiter.acquire(host);
+  }
+  // v0.17.0 accountability: autonomy tiers are MECHANICAL. A tool above the
+  // current tier is refused before any packet, before the rate limiter, and
+  // before the executor — the denial is an event, never silent. There is no
+  // agent path to raise the tier; escalation needs a recorded operator
+  // approval via escalateTier().
+  const tierDenial = checkTierAllows(ctx.tier, call.name, args, host);
+  if (tierDenial) {
+    return { result: tierDenial, target: host };
   }
   const d = await dispatchToolInner(ctx, role, phase, call);
   if (host) {
@@ -1289,6 +1324,10 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
         result: `AUTO-HALT: ${host} — ${haltReason}. Further traffic to this host refused this engagement.`,
       });
     }
+    // v0.17.0 accountability: a successful validated exploit step consumes
+    // the Tier 1 per-target chain budget. Denials, halts, and failures don't.
+    const clean = !/^(DENIED|HALTED)/i.test(d.result) && !d.result.startsWith("probe failed");
+    if (clean) recordExploitStep(ctx.tier, call.name, args, host);
   }
   return d;
 }
@@ -2232,6 +2271,13 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   }
   const parsed = extractJsonBlock(reportMd) as { findings?: Finding[] } | null;
   const findings: Finding[] = Array.isArray(parsed?.findings) ? parsed.findings : [];
+  // v0.17.0 accountability: every finding records the named human
+  // accountable for it. Stamped mechanically by the runner at report time —
+  // the reporter agent cannot set or change it.
+  {
+    const accountable = resolveOperatorName(ctx.input.operatorName, process.env) ?? "(operator name not supplied — set REDTEAM_OPERATOR)";
+    for (const f of findings) f.accountableOperator = accountable;
+  }
   // The unified operation narrative ("Megazord"): the reporter writes it first
   // as plain paragraphs; the runner extracts it for the console header.
   const narrative = extractNarrative(reportMd);
@@ -2430,6 +2476,13 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       },
       zeroDisruption,
       disruptionVerdict: disruptionVerdict(zeroDisruption),
+      // v0.17.0 accountability: the autonomy tier and its approval trail are
+      // part of the safety manifest — buyers see the control boundary.
+      autonomy: {
+        tier: ctx.tier.current,
+        declaredTier: ctx.tier.declared,
+        approvals: ctx.approvals.list(),
+      },
     });
     writeFileSync(join(ctx.events.dir, "safety-manifest.json"), JSON.stringify(safetyManifest, null, 2));
     writeFileSync(join(ctx.events.dir, "safety-manifest.md"), renderSafetyManifestMarkdown(safetyManifest));
@@ -2468,6 +2521,10 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       batteryCoverageNote: batteryLine,
       registry: ctx.registry,
       safety: safetyManifest,
+      // v0.17.0 accountability: the approval log and autonomy tier are part
+      // of the evidence pack — auditors see who approved what, when.
+      approvals: ctx.approvals.list(),
+      autonomyTier: ctx.tier.current,
     });
     writeFileSync(join(ctx.events.dir, "compliance-pack.json"), JSON.stringify(pack, null, 2));
     writeFileSync(join(ctx.events.dir, "compliance-pack.md"), renderCompliancePackMarkdown(pack));
@@ -2481,6 +2538,8 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
         engagementId: ctx.events.engagementId,
         client: ctx.input.client,
         operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"],
+        // v0.17.0 accountability: the letter names the tier the operator approved.
+        tier: ctx.tier.current,
         target: ctx.input.target,
         mode: ctx.input.mode,
         objective: ctx.input.objective,
@@ -2627,12 +2686,36 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   requireGraduation(environment, prodConfirmed);
   const { rps, productionCapApplied } = resolveEffectiveRps(environment, config.maxRpsPerHost);
 
+  // v0.17.0 accountability: autonomy tiers + named human operator.
+  // Tier resolves: explicit input → REDTEAM_TIER → environment default
+  // (staging: Tier 2 chain, production: Tier 1 validate). Tier 2 on
+  // production needs its own explicit operator approval. Production always
+  // needs a NAMED human operator — someone must own the findings.
+  // All fail fast, before the engagement directory is even created.
+  const tier = input.tier ?? parseTier(process.env[TIER_ENV]) ?? defaultTier(environment);
+  const tier2ProdConfirmed = input.confirmTier2Production ?? tier2ProductionConfirmed(process.env);
+  requireTier2ProductionApproval(tier, environment, tier2ProdConfirmed);
+  const operator = resolveOperatorName(input.operatorName, process.env);
+  requireNamedOperator(environment, operator);
+
   const hosts = scopeHosts(input.roe);
   if (hosts.length === 0) throw new Error("[runner] ROE scope produced no parseable hosts — refusing to run.");
 
   const engagementId = opts.engagementId ?? `eng-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
   const dir = join(config.engagementsDir, engagementId);
   const events = new EventLog(dir, engagementId, { target: input.target, mode: input.mode, objective: input.objective });
+
+  // v0.17.0 accountability: the append-only approval log. Tier declared and
+  // production confirmation are recorded here FIRST — before any agent acts.
+  const approvals = new ApprovalLog(dir, engagementId);
+  const operatorLabel = operator ?? "(operator name not supplied — set REDTEAM_OPERATOR)";
+  approvals.append("tier-declared", operatorLabel, `Autonomy ${describeTier(tier)} declared for ${environment} engagement`, undefined, tier);
+  if (environment === "production") {
+    approvals.append("production-confirm", operatorLabel, "Production engagement explicitly confirmed by operator");
+    if (tier === 2) {
+      approvals.append("tier-escalation", operatorLabel, "Tier 2 (chain) on production explicitly approved by operator", 1, 2);
+    }
+  }
 
   // The registry: load, or seed with the v0.3.x secscan.us engagement data on first run.
   const registryPath = config.registryPath;
@@ -2659,6 +2742,9 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
       productionCapApplied,
       killSwitchAborts: 0,
     },
+    // v0.17.0 accountability: graduated autonomy, mechanically enforced.
+    tier: { current: tier, declared: tier, chainSteps: new Map() },
+    approvals,
     hosts,
     domain: hosts[0]!,
     excludedNote: "",
@@ -2681,7 +2767,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     deniedStreak: 0,
   };
 
-  events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
+  events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} tier=${describeTier(tier)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
   // v0.15.0: Slack lifecycle — engagement started (best-effort, never blocking).
   void fireSlack(ctx, { kind: "started" });
 

@@ -12,8 +12,10 @@ import { destructiveDenyList } from "../host-exec/common.js";
 import { piiPatternLabels } from "./pii.js";
 import type { TestEnvironment } from "./graduation.js";
 import type { ZeroDisruptionRecord } from "./disruption.js";
+import type { ApprovalEntry, AutonomyTier } from "../accountability/index.js";
+import { TIER_NAMES, TIER_DESCRIPTIONS } from "../accountability/index.js";
 
-export const SAFETY_MANIFEST_VERSION = "v0.13.0";
+export const SAFETY_MANIFEST_VERSION = "v0.17.0";
 
 /** The mechanical protections — stated as what the RUNNER enforces, not what the agents were told. */
 export const PROTECTIONS_IN_FORCE: string[] = [
@@ -29,6 +31,7 @@ export const PROTECTIONS_IN_FORCE: string[] = [
   "full audit log (every action → events.jsonl with ATT&CK ID; the zero-disruption record is derived from it)",
   "phase sign-off gates (coordinator approves plan→recon→exploit→report; exploit-phase gating for msf_exec run)",
   "staging→production graduation (production requires explicit operator confirmation + tighter rate limits)",
+  "autonomy tiers (Tier 0 observe / Tier 1 validate / Tier 2 chain — tools above the tier refused mechanically in the dispatcher; Tier 1 limited to one validated exploit step per target; escalation needs a recorded operator approval, never silent)",
 ];
 
 /**
@@ -79,6 +82,17 @@ export interface SafetyManifest {
   zeroDisruption: ZeroDisruptionRecord;
   disruptionVerdict: string;
   residualRisks: string[];
+  /**
+   * v0.17.0 accountability: the autonomy tier in force and its approval
+   * trail. A control boundary, stated plainly — never a safety guarantee.
+   */
+  autonomy: {
+    tier: AutonomyTier;
+    tierName: string;
+    tierDescription: string;
+    declaredTier: AutonomyTier;
+    approvals: ApprovalEntry[];
+  };
 }
 
 export interface ManifestInputs {
@@ -97,6 +111,16 @@ export interface ManifestInputs {
   zeroDisruption: ZeroDisruptionRecord;
   disruptionVerdict: string;
   generatedAt?: string;
+  /**
+   * v0.17.0 accountability: tier in force + approval trail. Optional for
+   * backward compatibility — defaults to Tier 2 (chain) declared, no
+   * approvals (the pre-tier manifest shape).
+   */
+  autonomy?: {
+    tier: AutonomyTier;
+    declaredTier: AutonomyTier;
+    approvals: ApprovalEntry[];
+  };
 }
 
 export function buildSafetyManifest(input: ManifestInputs): SafetyManifest {
@@ -134,6 +158,13 @@ export function buildSafetyManifest(input: ManifestInputs): SafetyManifest {
     zeroDisruption: input.zeroDisruption,
     disruptionVerdict: input.disruptionVerdict,
     residualRisks: [...RESIDUAL_RISKS],
+    autonomy: {
+      tier: input.autonomy?.tier ?? 2,
+      tierName: TIER_NAMES[input.autonomy?.tier ?? 2],
+      tierDescription: TIER_DESCRIPTIONS[input.autonomy?.tier ?? 2],
+      declaredTier: input.autonomy?.declaredTier ?? 2,
+      approvals: (input.autonomy?.approvals ?? []).map((a) => ({ ...a })),
+    },
   };
 }
 
@@ -156,6 +187,11 @@ export function renderSafetyManifestMarkdown(m: SafetyManifest): string {
   L.push(`- PII redaction: enabled (${m.piiRedaction.patterns.join(", ")})`);
   L.push(`- Auto-halt: ${m.autoHalt.consecutiveThreshold} consecutive distress or ${Math.round(m.autoHalt.windowFailureRate * 100)}% over last ${m.autoHalt.windowSize} → target halted; halted: ${m.autoHalt.haltedTargets.join(", ") || "(none)"}`);
   L.push(`- Human override: ${m.humanOverride.operator} — ${m.humanOverride.abortPath}`);
+  L.push(`- Autonomy tier: Tier ${m.autonomy.tier} (${m.autonomy.tierName}) — ${m.autonomy.tierDescription}`);
+  if (m.autonomy.declaredTier !== m.autonomy.tier) {
+    L.push(`  (declared Tier ${m.autonomy.declaredTier} at start; escalated mid-engagement — see approval log)`);
+  }
+  L.push(`- Approvals recorded: ${m.autonomy.approvals.length} (see compliance pack §7 for the full log)`);
   L.push(``);
   L.push(`## Zero-disruption record (derived from events.jsonl)`);
   L.push(``);

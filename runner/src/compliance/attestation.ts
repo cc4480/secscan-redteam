@@ -15,11 +15,16 @@
  * letter is a template until a human signs it.
  */
 
+import type { AutonomyTier } from "../accountability/index.js";
+import { TIER_NAMES, TIER_DESCRIPTIONS } from "../accountability/index.js";
+
 export interface AttestationInput {
   engagementId: string;
   client?: string;
   /** Named human operator accountable for the engagement. */
   operator?: string;
+  /** Autonomy tier the operator approved (v0.17.0). */
+  tier?: AutonomyTier;
   /** Issuing organization (the pentest provider). Defaults to a fill-in. */
   issuedBy?: string;
   target: string;
@@ -83,6 +88,14 @@ export function renderAttestationLetter(input: AttestationInput): string {
   L.push(`## Accountability`);
   L.push(``);
   L.push(`Named human operator accountable for this engagement: ${input.operator?.trim() || FILL}`);
+  L.push(``);
+  L.push(`The accountable operator's responsibilities for this engagement:`);
+  L.push(`- Reviewed the findings in this pack and owns their accuracy as reported to the client.`);
+  L.push(
+    `- Approved the autonomy tier: ${input.tier !== undefined ? `Tier ${input.tier} (${TIER_NAMES[input.tier]}) — ${TIER_DESCRIPTIONS[input.tier]}` : FILL} ` +
+      `(the tier bounds what the agent team was allowed to do; it does not imply the operator performed the testing).`,
+  );
+  L.push(`- Authorized the scope above and the rules of engagement under which testing ran.`);
   L.push(``);
   L.push(`---`);
   L.push(``);

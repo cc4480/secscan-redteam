@@ -13,6 +13,7 @@
 export type EngagementMode = "red" | "black";
 
 import type { TargetId } from "./targets/types.js";
+import type { AutonomyTier } from "./accountability/tiers.js";
 
 export type EngagementPhase =
   | "authorize"
@@ -100,6 +101,22 @@ export interface EngagementInput {
    * packet. Set via --confirm-production.
    */
   confirmProduction?: boolean;
+  /**
+   * Autonomy tier (v0.17.0 accountability): 0 = observe (read-only recon),
+   * 1 = validate (single-step validated exploitation, one step per target),
+   * 2 = chain (multi-step attack chains, still non-destructive, no-DoS).
+   * Enforced mechanically in the tool dispatcher — not by prompt.
+   * Unset → environment default (staging: 2, production: 1).
+   * Set via --tier 0|1|2 (or REDTEAM_TIER).
+   */
+  tier?: AutonomyTier;
+  /**
+   * Explicit operator approval for Tier 2 on production. The runner refuses
+   * to start a Tier 2 production engagement without it — fail fast, before
+   * any packet. Set via --confirm-tier2-production (or
+   * REDTEAM_TIER2_PROD_CONFIRM=1).
+   */
+  confirmTier2Production?: boolean;
 }
 
 /** One streamed event. Written to events.jsonl as it happens. */
@@ -143,6 +160,8 @@ export interface Finding {
   fix: string;
   retest: string;
   status: "confirmed" | "killed" | "deferred";
+  /** Named human operator accountable for this finding (v0.17.0). Stamped by the runner at report time. */
+  accountableOperator?: string;
 }
 
 export interface EngagementResult {

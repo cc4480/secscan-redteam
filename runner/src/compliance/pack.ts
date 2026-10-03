@@ -19,6 +19,8 @@
 import type { Finding, OperationPlan, RulesOfEngagement } from "../types.js";
 import type { VulnerabilityRegistry, ConfirmedFinding } from "../registry.js";
 import type { SafetyManifest } from "../safety/index.js";
+import type { ApprovalEntry, AutonomyTier } from "../accountability/index.js";
+import { TIER_NAMES, TIER_DESCRIPTIONS } from "../accountability/index.js";
 import { COMPLIANCE_CONTROLS, lookupControl } from "./controls.js";
 import { controlsForTechnique } from "./mapping.js";
 
@@ -48,6 +50,12 @@ export interface CompliancePackInput {
    * section — the artifact a buyer's security team reviews.
    */
   safety?: SafetyManifest;
+  /**
+   * v0.17.0 accountability: the append-only approval log and the autonomy
+   * tier in force. Defaults: empty log, Tier 2 (chain).
+   */
+  approvals?: ApprovalEntry[];
+  autonomyTier?: AutonomyTier;
 }
 
 export interface PackFinding {
@@ -61,6 +69,8 @@ export interface PackFinding {
   fix: string;
   retest: string;
   status: string;
+  /** Named human operator accountable for this finding (v0.17.0). */
+  accountableOperator: string;
 }
 
 export interface RetestObservation {
@@ -115,6 +125,14 @@ export interface CompliancePack {
    * Present when the runner built it at report time.
    */
   safety?: SafetyManifest;
+  /**
+   * v0.17.0 accountability: the append-only approval log (tier declared,
+   * tier escalations, production confirmation…) and the autonomy tier in
+   * force. Auditors see who approved what, when.
+   */
+  approvals: ApprovalEntry[];
+  autonomyTier: AutonomyTier;
+  autonomyTierName: string;
   honestLimits: string[];
 }
 
@@ -164,6 +182,7 @@ export function buildCompliancePack(input: CompliancePackInput): CompliancePack 
       fix: f.fix,
       retest: f.retest,
       status: f.status,
+      accountableOperator: f.accountableOperator ?? operator,
     };
   });
 
@@ -233,8 +252,12 @@ export function buildCompliancePack(input: CompliancePackInput): CompliancePack 
       "The tester is an AI agent team under mechanical safety rails, not a human penetration tester. Assessors evaluating tester qualification (e.g. PCI DSS 11.4.1's 'qualified' language) should weigh this methodology description directly.",
       "Retest evidence is observational (before/after across engagements), not a certification of remediation.",
       "The safety section states mechanical protections and residual risks honestly — it is not a claim of zero risk.",
+      "Autonomy tiers are a control boundary, not a safety guarantee — they state what the agents were allowed to do, never that the human did the work.",
     ],
     safety: input.safety,
+    approvals: input.approvals ?? [],
+    autonomyTier: input.autonomyTier ?? 2,
+    autonomyTierName: TIER_NAMES[input.autonomyTier ?? 2],
   };
 }
 
@@ -360,6 +383,7 @@ export function renderCompliancePackMarkdown(pack: CompliancePack): string {
       L.push(``);
       L.push(`- ATT&CK: ${f.attackIds.join(", ") || "—"}`);
       L.push(`- Controls: ${f.controls.length > 0 ? f.controls.map((c) => `${c} (${lookupControl(c)?.title ?? ""})`).join("; ") : "(none — no ATT&CK mapping)"}`);
+      L.push(`- Accountable operator: ${f.accountableOperator}`);
       L.push(`- Evidence: ${f.evidence}`);
       L.push(`- Remediation: ${f.fix}`);
       L.push(`- Retest: ${f.retest}`);
@@ -379,6 +403,24 @@ export function renderCompliancePackMarkdown(pack: CompliancePack): string {
   L.push(`## 6. Honest limits`);
   L.push(``);
   for (const h of pack.honestLimits) L.push(`- ${h}`);
+  L.push(``);
+  L.push(`## 7. Autonomy tier & approval log`);
+  L.push(``);
+  L.push(
+    `Autonomy in force: **Tier ${pack.autonomyTier} (${pack.autonomyTierName})** — ${TIER_DESCRIPTIONS[pack.autonomyTier]} ` +
+      `Tiers are a control boundary describing what the agents were allowed to do; they are not a safety guarantee and never imply the human did the work.`,
+  );
+  L.push(``);
+  if (pack.approvals.length === 0) {
+    L.push(`(no approvals recorded)`);
+  } else {
+    L.push(`| Seq | Time | Operator | Kind | Detail |`);
+    L.push(`|---|---|---|---|---|`);
+    for (const a of pack.approvals) {
+      const tierMove = a.fromTier !== undefined || a.toTier !== undefined ? ` [${a.fromTier ?? "?"}→${a.toTier ?? "?"}]` : "";
+      L.push(`| ${a.seq} | ${a.ts} | ${a.operator} | ${a.kind}${tierMove} | ${a.detail} |`);
+    }
+  }
   L.push(``);
   return L.join("\n");
 }

@@ -393,7 +393,9 @@ describe("safety case end-to-end (dry-run engagement)", () => {
   });
 
   it("production with confirmation runs and records it in the manifest", async () => {
-    const res = await runEngagement(input({ environment: "production", confirmProduction: true }), opts());
+    // v0.17.0 accountability: production engagements require a named human
+    // operator — the test names one, as a real operator would.
+    const res = await runEngagement(input({ environment: "production", confirmProduction: true, operatorName: "test-operator" }), opts());
     assert.equal(res.status, "complete");
     const m = JSON.parse(readFileSync(join(dir, res.engagementId, "safety-manifest.json"), "utf8"));
     assert.equal(m.environment, "production");

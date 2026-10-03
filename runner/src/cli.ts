@@ -21,6 +21,8 @@ import { dirname, join, resolve } from "node:path";
 import { createReplayer, reverifyBundle, type PocBundle } from "./proof/index.js";
 import { loadTicketMapping, updateTicketsForReverify } from "./integrations/index.js";
 import { runWatchCycle, watchLoop } from "./continuous/index.js";
+import { parseTier } from "./accountability/index.js";
+import type { AutonomyTier } from "./accountability/index.js";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -41,7 +43,7 @@ function flag(name: string): boolean {
 
 function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--local-sandbox] [--dry-run]
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--tier 0|1|2] [--confirm-tier2-production] [--operator "<name>"] [--local-sandbox] [--dry-run]
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
@@ -83,6 +85,17 @@ Production also caps the per-host rate limit at 2 rps even if configured
 higher. Env alternative: REDTEAM_ENV=staging|production.
 --max-rps <n>: per-host rate limit override (requests/sec). Env
 REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
+
+--tier 0|1|2 (v0.17.0 accountability): graduated agent autonomy, enforced
+mechanically in the tool dispatcher. 0 = observe (read-only recon only);
+1 = validate (single-step validated exploitation, one step per target —
+chaining refused); 2 = chain (multi-step attack chains, still
+non-destructive, no-DoS). Default: 2 on staging, 1 on production. Env
+alternative: REDTEAM_TIER=0|1|2. Tier 2 on production additionally requires
+--confirm-tier2-production (or REDTEAM_TIER2_PROD_CONFIRM=1) — without it the
+runner refuses to start. Production engagements also require a named human
+operator (--operator "<name>" or REDTEAM_OPERATOR) — someone must own the
+findings, the tier, and the scope.
 
   redteam-runner reverify --bundle <poc/F-1.json> [--scope <host>...] [--execute] [--out <dir>]
     # v0.14.0 mechanical retest: re-executes a PoC bundle's steps against the
@@ -160,6 +173,17 @@ function buildInput(): EngagementInput {
     }
     environment = v === "staging" ? "staging" : "production";
   }
+  // v0.17.0 accountability: graduated autonomy tiers, mechanically enforced.
+  let tier: AutonomyTier | undefined;
+  const tierArg = arg("--tier");
+  if (tierArg !== undefined) {
+    try {
+      tier = parseTier(tierArg);
+    } catch (err) {
+      console.error(`[runner] ${(err as Error).message}`);
+      process.exit(2);
+    }
+  }
   return {
     target: target!,
     mode: mode!,
@@ -170,6 +194,9 @@ function buildInput(): EngagementInput {
     targets,
     environment,
     confirmProduction: flag("--confirm-production"),
+    tier,
+    confirmTier2Production: flag("--confirm-tier2-production"),
+    operatorName: arg("--operator"),
   };
 }
 

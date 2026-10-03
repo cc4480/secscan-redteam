@@ -182,3 +182,31 @@ Full suite: 201/201 runner, 17/17 auth-gate, typecheck clean.
   deployment and diff the results — the resident-adversary loop.
 - Credential-less AD CS: explore LDAPS channel binding / signing enforcement
   reporting as part of the ad_enum surface.
+
+## Buyer gates — DELIVERED (v0.12.0 → v0.17.0)
+
+One task at a time, each fully completed before the next — the enterprise
+buying gates from the competitive brief, built into the runner:
+
+- **v0.12.0 compliance-mapped reporting** — every finding mapped to PCI DSS
+  4.0.1 / SOC 2 / ISO 27001 controls; documented methodology QSAs demand;
+  retest evidence; an attestation letter mechanically prevented from
+  overclaiming. `docs/compliance.md`.
+- **v0.13.0 production safety case** — per-target rate limits, PII
+  redaction, staging→production graduation, per-target auto-halt, and a
+  machine-readable safety manifest with a zero-disruption record and
+  honestly stated residual risks. `docs/safety.md`.
+- **v0.14.0 proof-of-exploitation evidence** — structured PoC bundles
+  derived mechanically from the audit log, a re-verify mode, and recorded
+  negative proof. `docs/proof.md`.
+- **v0.15.0 buyer integrations** — Jira/ServiceNow ticketing, Slack
+  lifecycle, SIEM export, and the retest loop.
+- **v0.16.0 continuous testing** — watch profiles, rolling baselines, drift
+  detection.
+- **v0.17.0 accountability + autonomy tiers** — graduated autonomy (Tier 0
+  observe / Tier 1 validate / Tier 2 chain) enforced mechanically in the
+  tool dispatcher; Tier 1 limited to one validated exploit step per target;
+  Tier 2 on production needs explicit operator approval; production
+  engagements refuse to start without a named human operator; every finding
+  stamped with its accountable operator; append-only approval log embedded
+  in the safety manifest and the compliance pack (§7). `docs/accountability.md`.
