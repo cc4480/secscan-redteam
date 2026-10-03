@@ -116,6 +116,28 @@ export function saveRegistryFile(path: string, reg: VulnerabilityRegistry): void
   writeFileSync(path, JSON.stringify(reg, null, 2));
 }
 
+/**
+ * Atomic read-modify-write transaction on the registry file (v0.23.0).
+ *
+ * The whole transaction is synchronous start-to-finish, and synchronous code
+ * in Node is never preempted — so within one process, two concurrent
+ * engagements (e.g. two UI-launched runs) can never silently lose each
+ * other's verdicts, the way a load-at-start / blind-save-at-verdict pattern
+ * did. The mutator runs against the freshly-loaded file, so IDs and dedupe
+ * checks always see current state.
+ *
+ * Known limitation: this guards one process. Two separate OS processes
+ * writing the same registry file can still race — that remains the SQLite
+ * migration trigger documented on the registry barrel.
+ */
+export function transactRegistryFile<T>(path: string, fn: (reg: VulnerabilityRegistry) => T): T {
+  mkdirSync(dirname(path), { recursive: true });
+  const reg = loadRegistryFile(path) ?? emptyRegistry();
+  const out = fn(reg);
+  writeFileSync(path, JSON.stringify(reg, null, 2));
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Seed: the v0.3.x secscan.us engagement (2026-10-01). The registry is born
 // with real, evidence-backed intelligence — 10 killed hypotheses and 4

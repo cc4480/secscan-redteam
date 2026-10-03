@@ -7,7 +7,7 @@ import { ensureCveEntry, markAttempted, resolveItemKey } from "../coverage/items
 import { hasActiveVariantExpansion } from "../variants/index.js";
 import { extractJsonBlock } from "../util.js";
 import { lookupTechnique } from "../attack.js";
-import { recordConfirmed, recordKilled, saveRegistryFile } from "../registry.js";
+import { recordConfirmed, recordKilled, transactRegistryFile } from "../registry.js";
 import { redactPii } from "../safety/index.js";
 import { resolve } from "node:path";
 import { optStr } from "./prelude.js";
@@ -80,38 +80,46 @@ export function syncLiveFindingsToState(ctx: Ctx): void {
 export function writeFindingToRegistry(ctx: Ctx, lf: LiveFinding): void {
   const vulnClass = lf.vulnClass ?? "unclassified";
   const payloadPattern = lf.payload ?? "(see evidence)";
-  const dupe = ctx.registry.confirmed.some(
-    (e) => e.engagementId === ctx.events.engagementId && e.vulnClass === vulnClass && e.payloadPattern === payloadPattern,
-  );
-  if (dupe) return;
-  recordConfirmed(ctx.registry, {
-    vulnClass,
-    technique: lookupTechnique(lf.attackId)?.name ?? lf.attackId,
-    attackId: lf.attackId,
-    target: ctx.fingerprint,
-    payloadPattern,
-    evidenceRef: `${ctx.events.engagementId}/events.jsonl`,
-    engagementId: ctx.events.engagementId,
-    severity: coerceSeverity(lf.severity),
+  // v0.23.0: atomic transaction — dedupe and ID assignment run against the
+  // freshly-loaded file, so two concurrent engagements never lose each
+  // other's verdicts. The created entry is mirrored into the in-memory
+  // registry so in-engagement queries keep working.
+  const created = transactRegistryFile(ctx.registryPath, (reg) => {
+    const dupe = reg.confirmed.some(
+      (e) => e.engagementId === ctx.events.engagementId && e.vulnClass === vulnClass && e.payloadPattern === payloadPattern,
+    );
+    if (dupe) return null;
+    return recordConfirmed(reg, {
+      vulnClass,
+      technique: lookupTechnique(lf.attackId)?.name ?? lf.attackId,
+      attackId: lf.attackId,
+      target: ctx.fingerprint,
+      payloadPattern,
+      evidenceRef: `${ctx.events.engagementId}/events.jsonl`,
+      engagementId: ctx.events.engagementId,
+      severity: coerceSeverity(lf.severity),
+    });
   });
-  saveRegistryFile(ctx.registryPath, ctx.registry);
+  if (created) ctx.registry.confirmed.push(created);
 }
 
 /** Write a killed hypothesis to the registry (deduped per engagement) and persist. */
 export function writeKilledToRegistry(ctx: Ctx, kl: KilledLive): void {
-  const dupe = ctx.registry.killed.some(
-    (e) => e.engagementId === ctx.events.engagementId && e.hypothesis === kl.hypothesis,
-  );
-  if (dupe) return;
-  recordKilled(ctx.registry, {
-    hypothesis: kl.hypothesis,
-    killingObservation: kl.killingObservation,
-    attackId: kl.attackId,
-    vulnClass: kl.vulnClass,
-    target: ctx.fingerprint,
-    engagementId: ctx.events.engagementId,
+  const created = transactRegistryFile(ctx.registryPath, (reg) => {
+    const dupe = reg.killed.some(
+      (e) => e.engagementId === ctx.events.engagementId && e.hypothesis === kl.hypothesis,
+    );
+    if (dupe) return null;
+    return recordKilled(reg, {
+      hypothesis: kl.hypothesis,
+      killingObservation: kl.killingObservation,
+      attackId: kl.attackId,
+      vulnClass: kl.vulnClass,
+      target: ctx.fingerprint,
+      engagementId: ctx.events.engagementId,
+    });
   });
-  saveRegistryFile(ctx.registryPath, ctx.registry);
+  if (created) ctx.registry.killed.push(created);
 }
 
 /** Merge the exploiter's final VERDICTS JSON block into shared state + registry (backstop for verdicts never recorded live). */

@@ -99,3 +99,25 @@ dispatch before any packet. The ledger tracks `variants?: VariantProgress`
 variants are exhausted or the cap is reached. Reports print "418 attack
 intents" and "N variant executions" as two numbers — never merged. See
 `docs/variants.md`.
+
+## Concurrency (v0.23.0)
+
+The UI can launch multiple engagements in one process (`POST
+/api/engagements` runs detached). Two guarantees hold for concurrent runs:
+
+- **Audit-log sequencing is per-engagement.** `EventLog` owns a private
+  sequence counter seeded from its own `state.json` on open; the old
+  module-global counter corrupted `seq` numbering when two runs interleaved.
+  On-disk format is unchanged (append-only JSONL with `seq`).
+- **Registry verdicts are atomic.** Every verdict persists via
+  `transactRegistryFile` — a synchronous read-modify-write, which Node can
+  never preempt mid-transaction. The old load-at-start / blind-save-at-verdict
+  pattern silently lost the first writer's entries; the end-of-run blind save
+  was removed for the same reason.
+
+Known limitation: this covers one process. Two separate OS processes writing
+the same `registry.json` can still race — the SQLite migration trigger stands.
+Other module-global counters were audited: `phases/tasks.ts` taskCounter
+(globally unique IDs, cosmetic only), `host-exec/nfs/rpc.ts` xidCounter
+(RPC transaction IDs, random init), `nuclei/prereq.ts` probeCache
+(idempotent binary probe) — none leak engagement state.

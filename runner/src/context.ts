@@ -152,7 +152,7 @@ export interface Ctx {
   // -- writes. No agent works from a stale or private picture.
   /** Target fingerprint (stack guesses, app type) — parsed from the recon brief. */
   fingerprint: TargetFingerprint;
-  /** The persistent vulnerability registry (loaded at start, saved at end). */
+  /** The persistent vulnerability registry (loaded at start; verdicts transact atomically as they land — v0.23.0). */
   registry: VulnerabilityRegistry;
   registryPath: string;
   /** Registry entries surfaced to this engagement (deduped). */

@@ -12,10 +12,11 @@
  * similar targets before?") and writes back every verdict. It compounds with
  * every engagement — that compounding is the moat.
  *
- * Storage: a single versioned JSON file (engagements/registry.json). The
- * runner is single-process per engagement and the watcher runs jobs
- * sequentially, so read-modify-write is safe. If concurrent writers ever
- * arrive, migrate this to SQLite (the schema maps 1:1 to tables).
+ * Storage: a single versioned JSON file (engagements/registry.json). Verdict
+ * writes go through transactRegistryFile — a synchronous read-modify-write,
+ * so concurrent engagements in one process (e.g. two UI-launched runs) can
+ * never silently lose each other's entries. If writers ever span OS
+ * processes, migrate this to SQLite (the schema maps 1:1 to tables).
  */
 export * from "./registry/store.js";
 export * from "./registry/query.js";

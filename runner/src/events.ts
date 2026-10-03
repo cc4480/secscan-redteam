@@ -35,12 +35,17 @@ export interface LiveState {
   blockedReason?: string;
 }
 
-let seqCounter = 0;
-
 export class EventLog {
   readonly dir: string;
   readonly engagementId: string;
   private state: LiveState;
+  /**
+   * v0.23.0: per-instance sequence counter. Previously module-global, which
+   * corrupted seq numbering when two engagements ran concurrently in one
+   * process (e.g. two UI-launched runs interleaving appends). Each log owns
+   * its counter, seeded from its own file state on open.
+   */
+  private seq = 0;
 
   constructor(
     dir: string,
@@ -78,11 +83,12 @@ export class EventLog {
       dir: string;
       engagementId: string;
       state: LiveState;
+      seq: number;
     };
     log.dir = dir;
     log.engagementId = raw.engagementId;
     log.state = raw;
-    seqCounter = raw.eventCount;
+    log.seq = raw.eventCount;
     return log as unknown as EventLog;
   }
 
@@ -91,7 +97,7 @@ export class EventLog {
   ): EngagementEvent {
     const ev: EngagementEvent = {
       ts: new Date().toISOString(),
-      seq: ++seqCounter,
+      seq: ++this.seq,
       engagementId: this.engagementId,
       ...partial,
     };

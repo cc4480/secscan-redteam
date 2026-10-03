@@ -240,7 +240,9 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     void fireSlack(ctx, { kind: "halted", reason });
     return { engagementId, status: "halted", blockedReason: reason, findings: events.snapshot.findings };
   } finally {
-    // The registry always persists — every verdict recorded live is already in it.
-    saveRegistryFile(registryPath, registry);
+    // v0.23.0: no blind save here. Every verdict persists atomically via
+    // transactRegistryFile at write time; a whole-file save of this
+    // engagement's in-memory copy would silently clobber verdicts transacted
+    // by a concurrent engagement. The in-memory registry mirrors the file.
   }
 }
