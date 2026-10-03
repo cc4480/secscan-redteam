@@ -10,7 +10,7 @@ import { HostExecutor } from "../host-exec/index.js";
 import { McpClient } from "../mcp.js";
 import { MsfExecutor } from "../msf/index.js";
 import { NucleiExecutor } from "../nuclei/index.js";
-import { TargetAutoHalt, TargetRateLimiter, describeEnvironment, parseEnvironment, productionConfirmed, requireGraduation, resolveEffectiveRps } from "../safety/index.js";
+import { TargetAutoHalt, TargetRateLimiter, describeEnvironment, parseEnvironment, productionConfirmed, requireGraduation, resolveEffectiveRps, resolveLogRotationConfig } from "../safety/index.js";
 import { type VulnerabilityRegistry, loadRegistryFile, saveRegistryFile, seedRegistry } from "../registry.js";
 import { WebProber } from "../prober.js";
 import { activeTargets } from "../targets.js";
@@ -46,6 +46,15 @@ export interface RunOptions {
   maxRpsPerHost?: number;
   /** v0.20.0: per-item variant cap override. Env REDTEAM_MAX_VARIANTS. Undefined = env default (25 staging, 10 production). */
   maxVariantsPerItem?: number;
+  /**
+   * v0.26.0: log-rotation overrides. CLI --log-max-bytes / --log-max-archives,
+   * env REDTEAM_LOG_MAX_BYTES / REDTEAM_LOG_MAX_ARCHIVES. Undefined = env,
+   * then defaults (50 MiB, 5 archives). events.jsonl and engagement.md
+   * rotate together when the cap is hit; the fresh file leads with a
+   * `log_rotated` audit event so the audit trail stays resolvable.
+   */
+  maxLogBytes?: number;
+  maxLogArchives?: number;
   dryRunAgents?: boolean;
   /** LOCAL SANDBOX MODE ONLY. See ResolvedRunnerConfig.localSandbox. Default false. */
   localSandbox?: boolean;
@@ -102,7 +111,13 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
 
   const engagementId = opts.engagementId ?? `eng-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
   const dir = join(config.engagementsDir, engagementId);
-  const events = new EventLog(dir, engagementId, { target: input.target, mode: input.mode, objective: input.objective });
+  // v0.26.0: log rotation — CLI/env overrides, then env defaults. events.jsonl
+  // and engagement.md rotate together when the cap is hit (see EventLog).
+  const rotation = resolveLogRotationConfig(process.env, {
+    maxLogBytes: opts.maxLogBytes,
+    maxLogArchives: opts.maxLogArchives,
+  });
+  const events = new EventLog(dir, engagementId, { target: input.target, mode: input.mode, objective: input.objective }, rotation);
 
   // v0.17.0 accountability: the append-only approval log. Tier declared and
   // production confirmation are recorded here FIRST — before any agent acts.

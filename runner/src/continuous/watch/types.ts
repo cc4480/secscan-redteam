@@ -24,6 +24,13 @@ export interface WatchCycleOptions {
   reverifyFn?: ReverifyFn;
   /** Per-host rate limit override, passed through to runEngagement. */
   maxRpsPerHost?: number;
+  /**
+   * v0.26.0: log-rotation overrides (CLI --log-max-bytes / --log-max-archives),
+   * passed through to runEngagement. Env REDTEAM_LOG_* and the profile's
+   * logRetention fill in below these.
+   */
+  maxLogBytes?: number;
+  maxLogArchives?: number;
 }
 
 export type WatchCycleStatus = "complete" | "refused" | "error";

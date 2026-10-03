@@ -10,9 +10,10 @@
  */
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { EngagementEvent, EngagementMode, EngagementPhase, EngagementStatus, Finding, OperationPlan } from "./types.js";
 import type { BatteryCategory } from "./battery.js";
+import { maybeRotateLog, type LogRotationConfig } from "./safety/rotation.js";
 
 export interface LiveState {
   engagementId: string;
@@ -46,14 +47,23 @@ export class EventLog {
    * its counter, seeded from its own file state on open.
    */
   private seq = 0;
+  /**
+   * v0.26.0: log rotation. The first seq number living in the CURRENT
+   * events.jsonl (1 for a fresh log, N+1 after a rotation archived seqs
+   * 1..N). Lets the `log_rotated` audit event name the archived range.
+   */
+  private rotationBase = 1;
+  private readonly rotation?: LogRotationConfig;
 
   constructor(
     dir: string,
     engagementId: string,
     init: { target: string; mode: EngagementMode; objective: string },
+    rotation?: LogRotationConfig,
   ) {
     this.dir = dir;
     this.engagementId = engagementId;
+    this.rotation = rotation;
     mkdirSync(dir, { recursive: true });
     const now = new Date().toISOString();
     this.state = {
@@ -93,6 +103,44 @@ export class EventLog {
   }
 
   append(
+    partial: Omit<EngagementEvent, "ts" | "seq" | "engagementId">,
+  ): EngagementEvent {
+    this.rotateIfNeeded();
+    return this.writeEvent(partial);
+  }
+
+  /**
+   * v0.26.0: rotate events.jsonl (and engagement.md alongside it) when the
+   * log exceeds the rotation cap. The fresh file leads with a `log_rotated`
+   * audit event naming the archive and its seq range, so PoC bundles'
+   * `auditSeq` references stay resolvable. Seq numbers stay continuous
+   * across rotations — the audit trail is unbroken.
+   */
+  private rotateIfNeeded(): void {
+    if (!this.rotation) return;
+    const outcome = maybeRotateLog(join(this.dir, "events.jsonl"), this.rotation, {
+      firstSeq: this.rotationBase,
+      lastSeq: this.seq,
+    });
+    if (!outcome.rotated) return;
+    const mdOutcome = maybeRotateLog(join(this.dir, "engagement.md"), this.rotation);
+    if (mdOutcome.rotated) {
+      writeFileSync(
+        join(this.dir, "engagement.md"),
+        `# Engagement ${this.engagementId}\n\n| Time | Phase | Actor | Action | Result |\n|------|-------|-------|--------|--------|\n` +
+          `| ${new Date().toISOString()} | ${this.state.phase} | runner | log rotated | prior rows archived to ${basename(mdOutcome.archivePath!)} |\n`,
+      );
+    }
+    this.rotationBase = this.seq + 1;
+    this.writeEvent({
+      phase: this.state.phase,
+      actor: "runner",
+      action: "log_rotated",
+      result: `events.jsonl rotated to ${basename(outcome.archivePath!)} (seq ${outcome.firstSeq}-${outcome.lastSeq}); engagement.md rotated alongside`,
+    });
+  }
+
+  private writeEvent(
     partial: Omit<EngagementEvent, "ts" | "seq" | "engagementId">,
   ): EngagementEvent {
     const ev: EngagementEvent = {

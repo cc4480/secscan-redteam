@@ -26,13 +26,41 @@ export function flag(name: string): boolean {
   return process.argv.includes(name);
 }
 
+/**
+ * v0.26.0: --log-max-bytes <n> / --log-max-archives <n> — log-rotation
+ * overrides for `start` and `watch`. Env REDTEAM_LOG_MAX_BYTES /
+ * REDTEAM_LOG_MAX_ARCHIVES. Fail fast with a clear message on bad values.
+ */
+export function parseLogRotationArgs(): { maxLogBytes?: number; maxLogArchives?: number } {
+  const out: { maxLogBytes?: number; maxLogArchives?: number } = {};
+  const bytesRaw = arg("--log-max-bytes");
+  if (bytesRaw !== undefined) {
+    const n = Number(bytesRaw);
+    if (!Number.isInteger(n) || n <= 0) {
+      console.error(`[runner] bad --log-max-bytes ${JSON.stringify(bytesRaw)}; want a positive integer (bytes per log file before rotation)`);
+      process.exit(2);
+    }
+    out.maxLogBytes = n;
+  }
+  const archRaw = arg("--log-max-archives");
+  if (archRaw !== undefined) {
+    const n = Number(archRaw);
+    if (!Number.isInteger(n) || n <= 0) {
+      console.error(`[runner] bad --log-max-archives ${JSON.stringify(archRaw)}; want a positive integer (archives kept per log file)`);
+      process.exit(2);
+    }
+    out.maxLogArchives = n;
+  }
+  return out;
+}
+
 export function usage(): never {
   console.error(`Usage:
   redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--tier 0|1|2] [--confirm-tier2-production] [--operator "<name>"] [--local-sandbox] [--dry-run]
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
-  redteam-runner watch --profile <profile.json> [--once] [--trigger "<change ref>"] [--max-rps <n>]
+  redteam-runner watch --profile <profile.json> [--once] [--trigger "<change ref>"] [--max-rps <n>] [--log-max-bytes <n>] [--log-max-archives <n>]
     # v0.16.0 continuous testing: run the profile's engagement on its
     # cadence, detect drift vs the rolling baseline, alert on new
     # critical/high findings. --once runs a single cycle and exits
@@ -80,6 +108,13 @@ REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
 --max-variants <n>: per-item payload-variant cap (v0.20.0). Env
 REDTEAM_MAX_VARIANTS. Defaults: 25 staging, 10 production. Caps how many
 curated variant executions one battery item may run — enforced mechanically.
+--log-max-bytes <n> / --log-max-archives <n> (v0.26.0): log-rotation
+overrides. Env REDTEAM_LOG_MAX_BYTES / REDTEAM_LOG_MAX_ARCHIVES. Defaults:
+50 MiB per log file, 5 archives kept. When events.jsonl exceeds the cap it
+is archived (immutable, chmod 444) and a log_rotated audit event names the
+archive + its seq range; engagement.md rotates alongside, and watch mode's
+history.jsonl rotates under the same policy. A watch profile may also set
+logRetention.maxBytes / logRetention.maxArchives (CLI/env override it).
 
 --tier 0|1|2 (v0.17.0 accountability): graduated agent autonomy, enforced
 mechanically in the tool dispatcher. 0 = observe (read-only recon only);

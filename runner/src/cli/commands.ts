@@ -11,7 +11,7 @@ import { runWatchCycle, watchLoop } from "../continuous/index.js";
 import { startUiServer } from "../ui/index.js";
 import { describeEscalation, escalateEngagement } from "../accountability/index.js";
 import { tier2ProductionConfirmed } from "../accountability/index.js";
-import { arg, argAll, buildInput, flag, usage } from "./args.js";
+import { arg, argAll, buildInput, flag, parseLogRotationArgs, usage } from "./args.js";
 
 async function runReverify(): Promise<void> {
   const bundlePath = arg("--bundle");
@@ -98,7 +98,7 @@ async function runWatchCli(profilePath: string): Promise<void> {
   // A triggered run is always a single cycle, tagged with the change ref —
   // this is the CI/CD hook: wire the pipeline webhook to this command.
   if (once || trigger) {
-    const result = await runWatchCycle({ profilePath, once: true, trigger, maxRpsPerHost });
+    const result = await runWatchCycle({ profilePath, once: true, trigger, maxRpsPerHost, ...parseLogRotationArgs() });
     const drift = result.drift;
     console.log(
       JSON.stringify(
@@ -126,7 +126,7 @@ async function runWatchCli(profilePath: string): Promise<void> {
   console.log(`[runner] continuous watch: ${profilePath} — Ctrl+C to stop`);
   const ctrl = new AbortController();
   process.on("SIGINT", () => ctrl.abort());
-  await watchLoop({ profilePath, maxRpsPerHost }, ctrl.signal);
+  await watchLoop({ profilePath, maxRpsPerHost, ...parseLogRotationArgs() }, ctrl.signal);
 }
 
 /**
@@ -183,6 +183,7 @@ export async function main(): Promise<void> {
       dryRunAgents: flag("--dry-run"),
       maxRpsPerHost: maxRps,
       maxVariantsPerItem: maxVariants,
+      ...parseLogRotationArgs(),
     });
     console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));
     process.exit(result.status === "complete" ? 0 : 1);

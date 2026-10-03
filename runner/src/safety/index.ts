@@ -57,3 +57,14 @@ export {
   consumeAbortFile,
 } from "./abortfile.js";
 export type { AbortSignal } from "./abortfile.js";
+
+export {
+  LOG_ROTATION_VERSION,
+  DEFAULT_LOG_MAX_BYTES,
+  DEFAULT_LOG_MAX_ARCHIVES,
+  LOG_MAX_BYTES_ENV,
+  LOG_MAX_ARCHIVES_ENV,
+  resolveLogRotationConfig,
+  maybeRotateLog,
+} from "./rotation.js";
+export type { LogRotationConfig, RotationOutcome, SeqRange } from "./rotation.js";

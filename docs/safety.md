@@ -49,6 +49,10 @@ A safety case with no residual risks is marketing. Ours:
 4. PII redaction is pattern-based — novel shapes or PII inside encoded blobs may pass through.
 5. The destructive denylist matches command *text*; novel formulations are caught only if agent prompts hold.
 6. Credential material lives in *your* environment/vault — we redact it everywhere we can see, but can't protect your handling of it.
+7. Log archives are pruned per the retention policy — a PoC bundle's
+   `auditSeq` reference stays resolvable only while its archive is
+   retained. Size the caps to your compliance retention window
+   (see `docs/continuous.md` — Log retention).
 
 ## Operator responsibilities
 

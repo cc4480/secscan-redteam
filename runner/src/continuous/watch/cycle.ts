@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WatchProfile } from "../profile.js";
+import { resolveLogRotationConfig } from "../../safety/rotation.js";
 import {
   alertSeverities,
   checkScopeFresh,
@@ -64,6 +65,13 @@ export async function runWatchCycle(opts: WatchCycleOptions): Promise<WatchCycle
   const runsDir = join(home, "runs");
   const baselinePath = join(home, "baseline.json");
 
+  // v0.26.0: log rotation — CLI flags > env > profile logRetention > defaults.
+  // Covers the watch home's history.jsonl and this cycle's engagement logs.
+  const rotation = resolveLogRotationConfig(env, {
+    maxLogBytes: opts.maxLogBytes ?? profile.logRetention?.maxBytes,
+    maxLogArchives: opts.maxLogArchives ?? profile.logRetention?.maxArchives,
+  });
+
   // Fail closed on stale authorization — before any packet, every cycle.
   const fresh = checkScopeFresh(profile, now);
   if (!fresh.ok) {
@@ -74,7 +82,7 @@ export async function runWatchCycle(opts: WatchCycleOptions): Promise<WatchCycle
       mode: profile.engagement.mode,
       reason: `watch refused: ${fresh.reason}`,
     });
-    appendHistory(home, { ts: now.toISOString(), status: "refused", reason: fresh.reason, trigger });
+    appendHistory(home, { ts: now.toISOString(), status: "refused", reason: fresh.reason, trigger }, rotation);
     return { status: "refused", reason: fresh.reason };
   }
 
@@ -87,17 +95,19 @@ export async function runWatchCycle(opts: WatchCycleOptions): Promise<WatchCycle
       engagementsDir: runsDir,
       engagementId,
       maxRpsPerHost: opts.maxRpsPerHost,
+      maxLogBytes: rotation.maxBytes,
+      maxLogArchives: rotation.maxArchives,
     });
   } catch (err) {
     const reason = `engagement threw: ${(err as Error).message}`;
-    appendHistory(home, { ts: now.toISOString(), status: "error", engagementId, reason, trigger });
+    appendHistory(home, { ts: now.toISOString(), status: "error", engagementId, reason, trigger }, rotation);
     return { status: "error", engagementId, reason };
   }
   const runDir = join(runsDir, engagementId);
 
   if (result.status !== "complete") {
     const reason = `engagement ${result.status}: ${result.blockedReason ?? "no reason recorded"}`;
-    appendHistory(home, { ts: now.toISOString(), status: "error", engagementId, reason, trigger });
+    appendHistory(home, { ts: now.toISOString(), status: "error", engagementId, reason, trigger }, rotation);
     return { status: "error", engagementId, engagementStatus: result.status, reason };
   }
 
@@ -185,7 +195,7 @@ export async function runWatchCycle(opts: WatchCycleOptions): Promise<WatchCycle
     reopened: drift.reopened.length,
     remediated: drift.remediated.length,
     needsReview: drift.needsReview.length,
-  });
+  }, rotation);
 
   return { status: "complete", engagementId, engagementStatus: result.status, drift };
 }

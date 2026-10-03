@@ -44,6 +44,18 @@ export interface WatchCadence {
 
 export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
 
+/**
+ * v0.26.0: per-profile log-retention overrides for the watch home's
+ * history.jsonl (and the cycle engagements' logs). CLI --log-max-bytes /
+ * --log-max-archives and the REDTEAM_LOG_* env vars override these.
+ */
+export interface WatchLogRetention {
+  /** Rotate once a log exceeds this many bytes. Positive integer. */
+  maxBytes?: number;
+  /** Archives to keep per log file. Positive integer. */
+  maxArchives?: number;
+}
+
 export interface WatchProfile {
   version: 1;
   /** Short slug, used in engagement IDs and the baseline file. */
@@ -63,6 +75,13 @@ export interface WatchProfile {
    * through the engagement's normal integration step.
    */
   alertSeverities?: AlertSeverity[];
+  /**
+   * v0.26.0: log-retention overrides for this profile's history.jsonl and
+   * its cycle engagements. Optional; CLI flags and REDTEAM_LOG_* env vars
+   * override these, and everything falls back to the 50 MiB / 5-archive
+   * defaults. Without a cap, a daily-cadence profile grows disk forever.
+   */
+  logRetention?: WatchLogRetention;
 }
 
 const ALERT_SEVERITIES: AlertSeverity[] = ["critical", "high", "medium", "low", "info"];
@@ -109,6 +128,16 @@ export function loadWatchProfile(profilePath: string): WatchProfile {
       fail(path, `"alertSeverities" must be a subset of ${ALERT_SEVERITIES.join(", ")}`);
     }
   }
+  const lr = p["logRetention"] as Record<string, unknown> | undefined;
+  if (lr !== undefined) {
+    if (typeof lr !== "object" || Array.isArray(lr)) fail(path, `"logRetention" must be an object`);
+    for (const key of ["maxBytes", "maxArchives"] as const) {
+      const v = lr[key];
+      if (v !== undefined && (!Number.isInteger(v) || (v as number) <= 0)) {
+        fail(path, `"logRetention.${key}" must be a positive integer`);
+      }
+    }
+  }
   return {
     version: 1,
     name,
@@ -127,6 +156,13 @@ export function loadWatchProfile(profilePath: string): WatchProfile {
     cadence: { intervalHours: cad["intervalHours"] as number },
     scopeValidUntil: p["scopeValidUntil"] as string,
     alertSeverities: p["alertSeverities"] as AlertSeverity[] | undefined,
+    logRetention:
+      lr === undefined
+        ? undefined
+        : {
+            maxBytes: lr["maxBytes"] as number | undefined,
+            maxArchives: lr["maxArchives"] as number | undefined,
+          },
   };
 }
 

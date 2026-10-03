@@ -18,6 +18,7 @@ import {
 import type { HttpFn } from "../../integrations/index.js";
 import type { EngagementInput } from "../../types.js";
 import type { DriftReport, ReverifyFn } from "../drift.js";
+import { maybeRotateLog, type LogRotationConfig } from "../../safety/rotation.js";
 
 export function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "watch";
@@ -119,9 +120,30 @@ export function appendSection(filePath: string, body: string): void {
   }
 }
 
-export function appendHistory(home: string, line: Record<string, unknown>): void {
+/**
+ * v0.26.0: history.jsonl is the watch home's append-only audit trail (one
+ * line per cycle). It rotates under the profile's log-retention config so
+ * an indefinite watch loop can't exhaust the runner host's disk.
+ */
+export function appendHistory(home: string, line: Record<string, unknown>, rotation?: LogRotationConfig): void {
   try {
-    appendFileSync(join(home, "history.jsonl"), JSON.stringify(line) + "\n");
+    const path = join(home, "history.jsonl");
+    if (rotation) {
+      try {
+        const outcome = maybeRotateLog(path, rotation);
+        if (outcome.rotated) {
+          appendFileSync(
+            path,
+            JSON.stringify({ ts: new Date().toISOString(), status: "log_rotated", archive: outcome.archivePath }) + "\n",
+          );
+        }
+      } catch (err) {
+        // Rotation is fail-closed by design — surface it loudly (the cycle
+        // itself stays best-effort, but disk growth must never be silent).
+        console.error(`[watch] history rotation failed: ${(err as Error).message}`);
+      }
+    }
+    appendFileSync(path, JSON.stringify(line) + "\n");
   } catch {
     // best-effort only
   }
