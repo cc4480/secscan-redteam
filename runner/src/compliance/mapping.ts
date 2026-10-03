@@ -1,7 +1,7 @@
 /**
  * ATT&CK technique → compliance control mapping (v0.12.0).
  *
- * Every ATT&CK technique ID used across the 416-item battery maps to ≥1
+ * Every ATT&CK technique ID used across the 418-item battery maps to ≥1
  * control. The mapping goes through ATT&CK deliberately: the runner already
  * tags every finding with ATT&CK IDs, so the compliance evidence pack gets
  * its control coverage mechanically instead of by hand-waving.

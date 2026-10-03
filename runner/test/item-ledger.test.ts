@@ -49,7 +49,7 @@ describe("buildItemLedger", () => {
     let expected = 0;
     for (const t of FULL_BATTERY_TARGETS) expected += TARGET_PROFILES[t].battery.length;
     assert.equal(ledger.size, expected);
-    assert.ok(expected >= 416, `expected >= 416 items, got ${expected}`);
+    assert.ok(expected >= 416, `expected >= 418 items, got ${expected}`);
     // spot-check keys
     assert.ok(ledger.has("secscan:SS-001"));
     assert.ok(ledger.has("seclayer:SL-080"));

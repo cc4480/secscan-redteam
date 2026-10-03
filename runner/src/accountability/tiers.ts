@@ -118,16 +118,21 @@ const TIER1_TOOLS = new Set([
 ]);
 
 /**
- * Minimum tier for a tool call. Two tools are argument-sensitive:
+ * Minimum tier for a tool call. Three tools are argument-sensitive:
  *  - scan_url: passive scan is Tier 0; aggressive=true runs the active test
  *    tier (injection, XSS, SSRF) → Tier 1.
  *  - msf_exec: search/suggest never fire → Tier 1; run fires exploits → Tier 2.
+ *  - nuclei_exec: templates never fires (local template listing) → Tier 1;
+ *    run executes templates against the target → Tier 2.
  */
 export function toolMinTier(toolName: string, args: Record<string, unknown> = {}): AutonomyTier {
   if (toolName === "scan_url") {
     return args["aggressive"] === true ? 1 : 0;
   }
   if (toolName === "msf_exec") {
+    return args["action"] === "run" ? 2 : 1;
+  }
+  if (toolName === "nuclei_exec") {
     return args["action"] === "run" ? 2 : 1;
   }
   if (TIER0_TOOLS.has(toolName)) return 0;

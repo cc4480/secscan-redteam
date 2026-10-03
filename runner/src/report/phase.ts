@@ -21,6 +21,7 @@ import { batteryStatusLine } from "../coverage/cells.js";
 import { PocBundle } from "../proof/index.js";
 import { resolveOperatorName } from "../accountability/index.js";
 import { countVariants, variantCountLine, variantProgressSuffix } from "../variants/index.js";
+import { nucleiCountLine } from "../nuclei/index.js";
 import { buildProofSection } from "./proof.js";
 import { buildIntegrationsSection } from "./integrations.js";
 import { writeSafetyArtifacts } from "./safety.js";
@@ -125,6 +126,11 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
   }
   // Runner-computed facts are appended deterministically — never trusted to the model.
   reportMd += `\n\n---\n\n## Battery coverage (runner-computed)\n\n${batteryLine}\n`;
+  // v0.21.0 nuclei: honest counting — template executions are variant-level
+  // checks, printed whenever nuclei ran (not only full-battery), reported
+  // separately from intents, never merged.
+  const ncAny = nucleiCountLine(ctx.nuclei);
+  if (ncAny) reportMd += `\n${ncAny}\n`;
   const pocBundleMap = new Map<string, PocBundle>();
   reportMd += buildProofSection(ctx, findings, pocBundleMap);
   // v0.18.0 per-item verdicts: the item reconciliation section — every

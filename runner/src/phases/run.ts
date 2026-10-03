@@ -9,6 +9,7 @@ import { EventLog } from "../events.js";
 import { HostExecutor } from "../host-exec/index.js";
 import { McpClient } from "../mcp.js";
 import { MsfExecutor } from "../msf/index.js";
+import { NucleiExecutor } from "../nuclei/index.js";
 import { TargetAutoHalt, TargetRateLimiter, describeEnvironment, parseEnvironment, productionConfirmed, requireGraduation, resolveEffectiveRps } from "../safety/index.js";
 import { type VulnerabilityRegistry, loadRegistryFile, saveRegistryFile, seedRegistry } from "../registry.js";
 import { WebProber } from "../prober.js";
@@ -115,6 +116,8 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     prober: deps.prober ?? new WebProber({ scopeHosts: hosts, minDelayMs: config.probeDelayMs, allowPrivateHosts: config.localSandbox }),
     hostExecutor: deps.hostExecutor ?? new HostExecutor(),
     msfExecutor: deps.msfExecutor ?? new MsfExecutor(),
+    nucleiExecutor: deps.nucleiExecutor ?? new NucleiExecutor(),
+    nuclei: { templateExecutions: 0, templatesRun: 0, findings: 0 },
     hostKill: { aborted: false, controllers: new Set() },
     // v0.13.0 safety case: mechanical protections, armed from engagement start.
     safety: {

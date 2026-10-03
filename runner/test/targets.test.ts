@@ -17,6 +17,7 @@ import {
   NEEDS_HUMAN_OPERATOR,
   NEEDS_KERBEROS_TICKET,
   NEEDS_MSFRPCD,
+  NEEDS_NUCLEI,
   NEEDS_PRIVILEGED_CLIENT,
   TARGET_PREFIXES,
   activeTargets,
@@ -131,7 +132,7 @@ describe("target profile integrity", () => {
 });
 
 describe("host-exec tooling scoping (v0.10.0, extended v0.11.0)", () => {
-  it("no cell is fully blocked; 9 items carry honest prerequisites (nothing plan-only)", () => {
+  it("no cell is fully blocked; 11 items carry honest prerequisites (nothing plan-only)", () => {
     const remaining: string[] = [];
     for (const id of ["windows", "linux"] as TargetId[]) {
       const profile = TARGET_PROFILES[id];
@@ -139,13 +140,14 @@ describe("host-exec tooling scoping (v0.10.0, extended v0.11.0)", () => {
         // v0.10.0: every cell is probe-able — tools exist for all items.
         // v0.11.0: the 6 CVE exploit-validation items need msfrpcd, but
         // every cell still has probe-able items, so no cell is fully blocked.
+        // v0.21.0: same for the 2 nuclei template items.
         assert.equal(targetCellBlocked(profile, c), false, `${id}:${c} probe-able`);
       }
       for (const b of profile.battery) {
         if (b.needs) remaining.push(`${id}:${b.id} [${b.needs}]`);
       }
     }
-    assert.equal(remaining.length, 9, `9 prerequisite items remain (got ${remaining.join(", ")})`);
+    assert.equal(remaining.length, 11, `11 prerequisite items remain (got ${remaining.join(", ")})`);
     assert.deepEqual(
       remaining.sort(),
       [
@@ -153,13 +155,15 @@ describe("host-exec tooling scoping (v0.10.0, extended v0.11.0)", () => {
         `linux:LX-107 [${NEEDS_MSFRPCD}]`,
         `linux:LX-108 [${NEEDS_MSFRPCD}]`,
         `linux:LX-109 [${NEEDS_MSFRPCD}]`,
+        `linux:LX-110 [${NEEDS_NUCLEI}]`,
         `windows:WS-064 [${NEEDS_KERBEROS_TICKET}]`,
         `windows:WS-065 [${NEEDS_HUMAN_OPERATOR}]`,
         `windows:WS-105 [${NEEDS_MSFRPCD}]`,
         `windows:WS-106 [${NEEDS_MSFRPCD}]`,
         `windows:WS-107 [${NEEDS_MSFRPCD}]`,
+        `windows:WS-108 [${NEEDS_NUCLEI}]`,
       ].sort(),
-      "the honest remainder: ticket material, human operator, privileged client, msfrpcd",
+      "the honest remainder: ticket material, human operator, privileged client, msfrpcd, nuclei",
     );
     // The v0.9.0 marker is fully retired.
     for (const id of ["windows", "linux"] as TargetId[]) {
@@ -453,7 +457,7 @@ describe("full-battery coverage mechanics", () => {
     assert.ok(report.includes("3 categories × 4 targets"), "12-cell header");
     assert.ok(report.includes("12/12 cells probed"), "all 12 cells probed");
     assert.ok(
-      report.includes("Full battery complete: all 12 cells probed or honestly blocked; all 416 battery items carry a verdict."),
+      report.includes("Full battery complete: all 12 cells probed or honestly blocked; all 418 battery items carry a verdict."),
       "completion line with item reconciliation",
     );
     assert.ok(!report.includes("NOT COVERED"), "no missing cells or pending items");
@@ -467,7 +471,7 @@ describe("full-battery coverage mechanics", () => {
     }
     // v0.18.0: the ledger reconciles every item.
     const verdicts = JSON.parse(readFileSync(join(dir, res.engagementId, "item-verdicts.json"), "utf8"));
-    assert.equal(verdicts.length, 416, "all 416 static items in the ledger");
+    assert.equal(verdicts.length, 418, "all 418 static items in the ledger");
     assert.equal(
       verdicts.filter((v: { disposition: string }) => v.disposition === "pending").length,
       0,

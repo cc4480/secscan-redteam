@@ -18,6 +18,7 @@ import { type EngagementInput, type OperationPlan, type ResolvedRunnerConfig } f
 import { type BatteryCategory } from "./battery.js";
 import { type TargetId } from "./targets.js";
 import { MsfExecutor } from "./msf/index.js";
+import { NucleiExecutor } from "./nuclei/index.js";
 import { type ItemVerdict } from "./coverage/items.js";
 
 export interface RunnerDeps {
@@ -30,6 +31,8 @@ export interface RunnerDeps {
   hostExecutor?: HostExecutor;
   /** Injectable for tests (default: real MsfExecutor against the operator's msfrpcd). */
   msfExecutor?: MsfExecutor;
+  /** Injectable for tests (default: real NucleiExecutor against the operator's nuclei binary). */
+  nucleiExecutor?: NucleiExecutor;
 }
 
 /** One entry in the shared target map (recon-written, whole-team-read). */
@@ -74,6 +77,13 @@ export interface Ctx {
   hostExecutor: HostExecutor;
   /** Metasploit bridge — every call flows through the msf safety policy. */
   msfExecutor: MsfExecutor;
+  /** Nuclei bridge — every call flows through the nuclei safety policy. */
+  nucleiExecutor: NucleiExecutor;
+  /**
+   * v0.21.0 honest counting: nuclei template executions are variant-level
+   * checks, tracked separately from the 418 intents (never merged).
+   */
+  nuclei: { templateExecutions: number; templatesRun: number; findings: number };
   /**
    * Kill switch: coordinator abort sets `aborted` and aborts every registered
    * controller, terminating in-flight host executions across all parallel

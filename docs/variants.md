@@ -2,7 +2,7 @@
 
 ## The honest answer to "tens of thousands of attacks"
 
-Our battery has 416 attack **intents** — one item per distinct attacker
+Our battery has 418 attack **intents** — one item per distinct attacker
 intent. Competitors reach "tens of thousands" by executing **variants**:
 payload mutations, parameter combinations, encoding bypasses. This module
 gives us that depth honestly:
@@ -13,7 +13,7 @@ gives us that depth honestly:
   matrices. Mechanical data, never LLM-invented at runtime.
 - **Same rails**: variants dispatch through the same tools, rate limiter,
   denylists, safety rails, and proof bundles as parent items.
-- **Honest counting**: reports print TWO numbers — "416 attack intents"
+- **Honest counting**: reports print TWO numbers — "418 attack intents"
   and "N variant executions" — never merged into one inflated figure.
 
 ## How it works
@@ -70,7 +70,7 @@ reconcile normally.
 The report's reconciliation section prints, e.g.:
 
 > Variant executions: 137 across 12 items (3 confirmed via variants).
-> Intents (416) and executions are counted separately — never merged.
+> Intents (418) and executions are counted separately — never merged.
 
 We refuse to print a single merged "553 attacks" figure. That is the
 entire point.

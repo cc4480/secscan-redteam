@@ -210,3 +210,41 @@ buying gates from the competitive brief, built into the runner:
   engagements refuse to start without a named human operator; every finding
   stamped with its accountable operator; append-only approval log embedded
   in the safety manifest and the compliance pack (§7). `docs/accountability.md`.
+
+## Nuclei bridge — DELIVERED (v0.21.0)
+
+**Status:** the Nuclei bridge is built, tested, and live in
+`runner/src/nuclei/`. Competitors reach "tens of thousands of attacks"
+largely via template libraries; the bridge gives the runner the same
+reach — ProjectDiscovery Nuclei's ~10,000+ community templates, resolved
+at runtime from the operator's local checkout, **never hardcoded** — with
+the runner's safety discipline and honest counting.
+
+**What landed:**
+
+1. **`nuclei_exec` agent tool** — two actions: `templates` (list/select by
+   id, tag, severity, CVE — recon-safe, touches no target, never fires),
+   `run` (execute selected templates against ONE scope-checked host).
+   **Run is exploit-phase-only and Tier 2, enforced mechanically** —
+   `templates` is Tier 1.
+2. **Subprocess runner** (`nuclei/runner.ts`) — argv built from structured
+   options (no shell, ever); JSONL output parsed leniently (bad lines
+   counted, not fatal); child killed on abort (kill switch) and on
+   timeout; injectable spawn for tests.
+3. **Policy** (`nuclei/policy.ts`) — dos-tagged templates refused when
+   requested AND `-exclude-tags dos` appended to every run argv (T1499
+   stays excluded); template updates never flaggable mid-engagement;
+   explicit id lists truncated runner-side.
+4. **Dedupe** (`nuclei/mapping.ts`) — a finding confirmed by both a
+   battery item and a template is ONE finding with two evidence sources;
+   template-only findings become runtime instances under the new
+   methodology items WS-108 / LX-110 (`[needs: nuclei binary]`).
+5. **Honest counting** (`nuclei/reporting.ts`) — the report prints three
+   separate numbers (418 intents, N variant executions, M nuclei template
+   executions), never merged into one inflated figure.
+
+**Operator prerequisite:** nuclei binary installed +
+`nuclei -update-templates` run by the operator before the engagement
+(optional `REDTEAM_NUCLEI_BIN` / `REDTEAM_NUCLEI_TEMPLATES` /
+`REDTEAM_NUCLEI_TIMEOUT_S`). Fail closed with setup instructions.
+`docs/nuclei.md`.

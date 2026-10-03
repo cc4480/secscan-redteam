@@ -1,7 +1,7 @@
 /**
  * Honest variant counting for reports (v0.20.0).
  *
- * The anti-AI-washing posture: "416 attack intents" and "N variant
+ * The anti-AI-washing posture: "418 attack intents" and "N variant
  * executions" are reported as TWO numbers, never merged into one
  * inflated "attacks" figure. A competitor-style single number is
  * exactly what we refuse to print.

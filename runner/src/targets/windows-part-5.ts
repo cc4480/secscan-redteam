@@ -7,7 +7,7 @@
  */
 
 import type { TargetBatteryItem } from "./types.js";
-import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD } from "./types.js";
+import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI } from "./types.js";
 
 export const WINDOWS_PART_5: TargetBatteryItem[] = [
   // ============================================ EDR / AV AWARENESS
@@ -159,5 +159,20 @@ export const WINDOWS_PART_5: TargetBatteryItem[] = [
     brief: "Auxiliary scanner findings cross-validated; module ranks sanity-checked.",
     owasp: "CIS-v8-4.4", attackId: "T1595.002", needs: NEEDS_MSFRPCD,
     what: "Cross-validate auxiliary-module findings (smb_enumshares, rdp scanners, etc.) against direct host-exec evidence (smb_exec, winrm_probe, rdp_auth) — two independent observations before a finding. Sanity-check module ranks against observed behavior; a high-rank module that fails silently is reported as a coverage note, not a finding.",
+  },
+  // ------------------------------------------------- TEMPLATE-BASED CHECKS
+  // (v0.21.0, Nuclei bridge). Same dynamic methodology as the Metasploit
+  // bridge: the operator's local Nuclei template checkout (~10k community
+  // templates) is resolved at runtime, never hardcoded. nuclei_exec
+  // templates selects (recon-safe); nuclei_exec run executes against ONE
+  // scope-checked host in the exploit phase. Findings overlapping a battery
+  // item are ONE finding with two evidence sources; template-only findings
+  // become runtime instances under WS-108.
+  {
+    id: "WS-108", category: "functionality", name: "Template-based checks via Nuclei",
+    brief: "Nuclei templates selected and executed against in-scope hosts; overlaps deduped.",
+    owasp: "CIS-v8-4.4", attackId: "T1595.002", needs: NEEDS_NUCLEI,
+    what: "Use nuclei_exec templates (recon-safe, no target touched) to select templates by id/tag/severity/CVE from the operator's local checkout, then nuclei_exec run in the exploit phase against ONE scope-checked host per run. dos-tagged templates are refused by policy on every run; the target URL is runner-built from the scope-checked host. Tag attackId T1595.002. A finding overlapping an existing battery item is recorded ONCE with both evidence sources; template-only findings become runtime instances under this item.",
+    blackNote: "Narrow template selection (id/CVE-specific first); stop on first defender signal.",
   },
 ];

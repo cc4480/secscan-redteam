@@ -1,7 +1,7 @@
 /**
  * Payload-variant expansion types (v0.20.0).
  *
- * The 416 battery items are distinct attacker INTENTS. Competitors reach
+ * The 418 battery items are distinct attacker INTENTS. Competitors reach
  * "tens of thousands of attacks" by executing variants of each intent.
  * This module gives us honest variant depth: curated, reviewed payload
  * libraries — mechanical, never LLM-invented at runtime — each variant a

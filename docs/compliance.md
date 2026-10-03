@@ -32,7 +32,7 @@ The full control catalog lives in `runner/src/compliance/controls.ts`.
 ## How coverage works
 
 Every finding carries MITRE ATT&CK technique IDs. The compliance module
-maps each technique ID used by the 416-item battery to the controls it
+maps each technique ID used by the 418-item battery to the controls it
 evidences (`runner/src/compliance/mapping.ts`), so control coverage is
 computed mechanically from the findings — not hand-waved. The test suite
 asserts **zero unmapped technique IDs** and **zero invented control IDs**.

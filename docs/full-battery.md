@@ -13,12 +13,14 @@ adversary would actually see them. Not a sample. Not a representative subset.
 
 - **SecScan: 120 attack items** (SS-001…SS-120) — validation 34, logic 58, functionality 28
 - **SecLayer: 80 attack items** (SL-001…SL-080) — logic 25, validation 28, functionality 27
-- **Windows: 107 attack items** (WS-001…WS-107) — validation 65, logic 24, functionality 18
-- **Linux: 109 attack items** (LX-001…LX-109) — validation 61, logic 29, functionality 19
-- **416 total static items**, each one a distinct attacker intent with a concrete target:
+- **Windows: 108 attack items** (WS-001…WS-108) — validation 65, logic 24, functionality 19
+- **Linux: 110 attack items** (LX-001…LX-110) — validation 61, logic 29, functionality 20
+- **418 total static items**, each one a distinct attacker intent with a concrete target:
   the actual endpoint, flow, mechanism, or parameter, and the exact abuse —
   **plus dynamic per-CVE runtime instances** from the Metasploit bridge
-  (see below): each CVE validated becomes its own report instance.
+  (see below): each CVE validated becomes its own report instance —
+  **plus template-based runtime instances** from the Nuclei bridge
+  (WS-108 / LX-110 methodology items).
 
 ## Methodology: surface × technique
 
@@ -93,7 +95,7 @@ delivered track.
 
 ## CVE exploit validation: the Metasploit bridge (v0.11.0)
 
-The 416-item battery covers technique *classes* — what Metasploit's
+The 418-item battery covers technique *classes* — what Metasploit's
 auxiliary and post modules do, mapped to ATT&CK. What it cannot hardcode is
 Metasploit's ~2,000 **CVE-specific exploits**. The bridge (`runner/src/msf/`,
 agent tool `msf_exec`) closes that gap dynamically — no CVE list is baked

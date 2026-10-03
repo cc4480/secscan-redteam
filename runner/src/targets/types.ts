@@ -54,6 +54,12 @@ export const NEEDS_PRIVILEGED_CLIENT = "privileged test client";
  * msfrpcd is reachable; otherwise they report under Honest limits.
  */
 export const NEEDS_MSFRPCD = "msfrpcd";
+/**
+ * v0.21.0 prerequisite: the operator's Nuclei binary + template checkout
+ * (REDTEAM_NUCLEI_BIN or nuclei on PATH). Template-bridge items execute
+ * when the binary is present; otherwise they report under Honest limits.
+ */
+export const NEEDS_NUCLEI = "nuclei binary";
 
 export interface TargetBatteryItem {
   /** SS-001… / SL-001… — unique per target, zero-padded, ordered by surface. */

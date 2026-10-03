@@ -254,7 +254,7 @@ describe("honest counting", () => {
     v.variants!.confirmed = 2;
     const c = countVariants(ctx.itemLedger);
     assert.equal(c.intents, ctx.itemLedger.size);
-    assert.ok(c.intents >= 416);
+    assert.ok(c.intents >= 418);
     assert.equal(c.variantExecutions, 9);
     assert.equal(c.variantConfirmed, 2);
     assert.equal(c.itemsWithVariants, 1);

@@ -37,14 +37,14 @@
 import type { BatteryCategory } from "../battery.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "../battery.js";
 import type { TargetBatteryItem, TargetId, TargetKind, TargetProfile } from "./types.js";
-import { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId } from "./types.js";
+import { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId } from "./types.js";
 import { SECSCAN_PROFILE } from "./secscan.js";
 import { SECLAYER_PROFILE } from "./seclayer.js";
 import { WINDOWS_PROFILE } from "./windows.js";
 import { LINUX_PROFILE } from "./linux.js";
 
 export type { TargetBatteryItem, TargetId, TargetKind, TargetProfile };
-export { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId };
+export { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId };
 
 export const TARGET_PROFILES: Record<TargetId, TargetProfile> = {
   secscan: SECSCAN_PROFILE,

@@ -18,13 +18,14 @@ import { checkVariantCap, recordVariantExecution } from "../variants/index.js";
 import { handleWebTools } from "./web.js";
 import { handleHostTools } from "./host.js";
 import { handleMsfTools } from "./msf.js";
+import { handleNucleiTools } from "./nuclei.js";
 import { handleMcpTools } from "./mcp.js";
 import { handleBookkeepingTools } from "./bookkeeping.js";
 async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   const args = call.arguments ?? {};
   ctx.actions++;
 
-  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleMcpTools, handleBookkeepingTools];
+  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleNucleiTools, handleMcpTools, handleBookkeepingTools];
   for (const h of handlers) {
     const r = await h(ctx, role, phase, call, args);
     if (r) return r;
@@ -54,12 +55,16 @@ const RATE_LIMITED_TOOLS = new Set([
   "ssh_agent_audit",
   "nfs_enum",
   "msf_exec",
+  "nuclei_exec",
 ]);
 
 /** Best-effort target host for a tool call — undefined when the tool has no target traffic. */
 function toolTargetHost(call: ToolCallRequest): string | undefined {
   if (!RATE_LIMITED_TOOLS.has(call.name)) return undefined;
   const args = call.arguments as Record<string, unknown> | undefined ?? {};
+  // v0.21.0: nuclei_exec templates is local-only (reads the operator's
+  // template checkout) — no target traffic, so no limiter/halt applies.
+  if (call.name === "nuclei_exec" && args["action"] !== "run") return undefined;
   const direct = typeof args["host"] === "string" ? (args["host"] as string).trim().toLowerCase() : "";
   if (direct) return direct;
   const url = typeof args["url"] === "string" ? (args["url"] as string) : "";
@@ -131,6 +136,9 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
     call.name !== "record_killed" &&
     call.name !== "record_item_verdict" &&
     call.name !== "variant_list" &&
+    // v0.21.0: nuclei template listing is recon for the methodology item —
+    // only `run` executions mark the item attempted.
+    !(call.name === "nuclei_exec" && (call.arguments as Record<string, unknown> | undefined)?.["action"] !== "run") &&
     !/^(DENIED|HALTED|ABORTED|REFUSED)/i.test(d.result) &&
     !d.result.startsWith("probe failed")
   ) {

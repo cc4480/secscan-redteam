@@ -8,7 +8,7 @@ per-item contract that closes that gap.
 ## The ledger
 
 Every full-battery engagement opens an **item ledger**: one entry per
-selected battery item (416 static items across the four target profiles,
+selected battery item (418 static items across the four target profiles,
 plus dynamic per-CVE runtime instances created by `msf_exec`). Each entry
 carries exactly one disposition:
 

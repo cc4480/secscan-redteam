@@ -51,7 +51,7 @@ runner/src/
 ├── context.ts           # Ctx, RunnerDeps, HaltError
 ├── coverage/
 │   ├── cells.ts         # batteryStatusLine, sharedStateDigest
-│   └── items.ts         # per-item ledger (416 battery items)
+│   └── items.ts         # per-item ledger (418 battery items)
 ├── targets/             # 4 target batteries (secscan, seclayer, windows, linux) — split by category
 ├── host-exec/
 │   ├── executor.ts      # HostExecutor FACADE (thin wrappers; public surface unchanged)
@@ -82,7 +82,7 @@ runner/src/
   denylists, rate limits, kill switch, and tier gates are mechanical in the
   runner — never trusted to prompts.
 - **Public surface (do not break):** 4 CLI commands, 25 flags, 26 agent tool
-  names (variant_list added in v0.20.0), 416 battery item IDs, 8 report
+  names (variant_list added in v0.20.0), 418 battery item IDs, 8 report
   artifacts, env-var names. The behavior inventory
   (`/tmp/refactor-inventory.mjs` pattern) must diff empty.
 
@@ -96,6 +96,6 @@ list. Per-item cap: 25 staging / 10 production (override via
 `--max-variants` / `REDTEAM_MAX_VARIANTS`), enforced mechanically in
 dispatch before any packet. The ledger tracks `variants?: VariantProgress`
 (run/planned/confirmed/closed); an item isn't `executed-clean` until its
-variants are exhausted or the cap is reached. Reports print "416 attack
+variants are exhausted or the cap is reached. Reports print "418 attack
 intents" and "N variant executions" as two numbers — never merged. See
 `docs/variants.md`.
