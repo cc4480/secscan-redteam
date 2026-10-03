@@ -16,6 +16,7 @@ import {
   HOST_EXEC_TOOLING,
   NEEDS_HUMAN_OPERATOR,
   NEEDS_KERBEROS_TICKET,
+  NEEDS_MSFRPCD,
   NEEDS_PRIVILEGED_CLIENT,
   TARGET_PREFIXES,
   activeTargets,
@@ -129,28 +130,36 @@ describe("target profile integrity", () => {
   });
 });
 
-describe("host-exec tooling scoping (v0.10.0)", () => {
-  it("no cell is fully blocked; exactly 3 items carry honest prerequisites (nothing plan-only)", () => {
+describe("host-exec tooling scoping (v0.10.0, extended v0.11.0)", () => {
+  it("no cell is fully blocked; 9 items carry honest prerequisites (nothing plan-only)", () => {
     const remaining: string[] = [];
     for (const id of ["windows", "linux"] as TargetId[]) {
       const profile = TARGET_PROFILES[id];
       for (const c of BATTERY_CATEGORIES) {
-        // v0.10.0: every cell is probe-able — tools exist for all 410 items.
+        // v0.10.0: every cell is probe-able — tools exist for all items.
+        // v0.11.0: the 6 CVE exploit-validation items need msfrpcd, but
+        // every cell still has probe-able items, so no cell is fully blocked.
         assert.equal(targetCellBlocked(profile, c), false, `${id}:${c} probe-able`);
       }
       for (const b of profile.battery) {
         if (b.needs) remaining.push(`${id}:${b.id} [${b.needs}]`);
       }
     }
-    assert.equal(remaining.length, 3, `3 prerequisite items remain (got ${remaining.join(", ")})`);
+    assert.equal(remaining.length, 9, `9 prerequisite items remain (got ${remaining.join(", ")})`);
     assert.deepEqual(
       remaining.sort(),
       [
         `linux:LX-041 [${NEEDS_PRIVILEGED_CLIENT}]`,
+        `linux:LX-107 [${NEEDS_MSFRPCD}]`,
+        `linux:LX-108 [${NEEDS_MSFRPCD}]`,
+        `linux:LX-109 [${NEEDS_MSFRPCD}]`,
         `windows:WS-064 [${NEEDS_KERBEROS_TICKET}]`,
         `windows:WS-065 [${NEEDS_HUMAN_OPERATOR}]`,
+        `windows:WS-105 [${NEEDS_MSFRPCD}]`,
+        `windows:WS-106 [${NEEDS_MSFRPCD}]`,
+        `windows:WS-107 [${NEEDS_MSFRPCD}]`,
       ].sort(),
-      "the honest remainder: ticket material, human operator, privileged client",
+      "the honest remainder: ticket material, human operator, privileged client, msfrpcd",
     );
     // The v0.9.0 marker is fully retired.
     for (const id of ["windows", "linux"] as TargetId[]) {

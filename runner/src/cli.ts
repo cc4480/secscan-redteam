@@ -66,7 +66,11 @@ Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
 REDTEAM_SSH_PASSWORD / REDTEAM_SSH_KEY / REDTEAM_SSH_KEY_PATH;
 REDTEAM_SMB_USER + REDTEAM_SMB_PASSWORD (+ optional REDTEAM_SMB_DOMAIN);
 REDTEAM_WINRM_USER + REDTEAM_WINRM_PASSWORD. Test accounts only, via
-environment or Secure Vault — never in code, never logged.`);
+environment or Secure Vault — never in code, never logged.
+Metasploit bridge (v0.11.0, CVE exploit validation): REDTEAM_MSFRPC_USER +
+REDTEAM_MSFRPC_PASS (+ optional REDTEAM_MSFRPC_HOST / REDTEAM_MSFRPC_PORT /
+REDTEAM_MSFRPC_TLS=0). Requires the operator's msfrpcd running
+(msfrpcd -P <pass> -U <user> -a 127.0.0.1 -p 55553 -S) — fail closed otherwise.`);
   process.exit(2);
 }
 

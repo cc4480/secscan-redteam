@@ -14,5 +14,8 @@
     "llm-router",
     "auth-gate",
     "runner"
-  ]
+  ],
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.3"
+  }
 }

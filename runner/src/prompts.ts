@@ -266,6 +266,15 @@ Never attempt to bypass the gate; attempting it ends the engagement.
 - Prefer read-only enumeration first (service lists, registry reads, permission bits, version strings). State-changing proof uses benign canaries only, then cleans up.
 - Tag every host call with \`category\`, \`attackId\`, \`targetProfile\` ("linux" for ssh_exec, "windows" for smb_exec/winrm_exec), and the battery item ID in your hypothesis.
 
+## Metasploit bridge — CVE-specific exploit validation (Windows/Linux targets)
+- \`msf_exec\` reaches Metasploit's ~2,000 CVE-specific exploits without hardcoding CVEs. Three actions:
+  - \`search\` — query the module database (msf search syntax: \`cve:CVE-2021-44228\`, \`type:exploit platform:windows smb\`). Recon-safe, never fires.
+  - \`suggest\` — hand a detected service + version string; get RANKED candidate modules back. MAPPING ONLY — candidates go to the COORDINATOR for approval. This is the recon→module-mapping step (WS-105 / LX-107).
+  - \`run\` — fire ONE exploit/auxiliary module. EXPLOIT PHASE ONLY (the runner refuses it in recon — the recon→exploit sign-off IS the approval gate). The payload is ALWAYS a generic single-command payload running the RUNNER-BUILT canary (\`echo REDTEAM-MARKER-*\`); the marker echoing back is the validation. You never choose the command.
+- POLICY (mechanical, not advisory): dos modules refused (T1499 stays excluded), destructive modules refused, only generic cmd payloads, stray sessions stopped by hygiene, in-scope hosts only, kill switch destroys the running console.
+- Requires the operator's msfrpcd: REDTEAM_MSFRPC_USER / REDTEAM_MSFRPC_PASS (host/port/TLS optional). If msfrpcd is unreachable the tool fails closed with setup instructions — report it under Honest limits, don't work around it.
+- Tag runs with a real ATT&CK \`attackId\` (T1190 for exploit validation — the coordinator rejects anything else) and put the CVE in the \`cve\` field, so each validated CVE reconciles in the report as its own instance (WS-106 / LX-108).
+
 ## Payload discipline
 - Never repeat a failed payload verbatim — mutate with stated intent.
 - Prefer oracle-style proof: reflected canary tokens, time differentials, response anomalies.

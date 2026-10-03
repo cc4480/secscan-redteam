@@ -67,6 +67,7 @@ import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "./battery.js";
 import type { BatteryCategory } from "./battery.js";
 import { activeTargets, HOST_EXEC_TOOLING, inferTargetProfile, isTargetId, targetCellStatus, TARGET_PROFILES } from "./targets.js";
 import type { TargetId } from "./targets.js";
+import { MsfExecutor } from "./msf/index.js";
 
 export interface RunnerDeps {
   verify?: (domain: string, cfg: { endpoint: string; token: string }) => Promise<boolean>;
@@ -76,6 +77,8 @@ export interface RunnerDeps {
   prober?: ProberLike;
   /** Injectable for tests (default: real HostExecutor with real transports). */
   hostExecutor?: HostExecutor;
+  /** Injectable for tests (default: real MsfExecutor against the operator's msfrpcd). */
+  msfExecutor?: MsfExecutor;
 }
 
 /** One entry in the shared target map (recon-written, whole-team-read). */
@@ -116,6 +119,8 @@ interface Ctx {
   prober: ProberLike;
   /** Host execution (ssh/smb/winrm) — every call flows through the safety core. */
   hostExecutor: HostExecutor;
+  /** Metasploit bridge — every call flows through the msf safety policy. */
+  msfExecutor: MsfExecutor;
   /**
    * Kill switch: coordinator abort sets `aborted` and aborts every registered
    * controller, terminating in-flight host executions across all parallel
@@ -458,6 +463,57 @@ const NFS_ENUM_TOOL: JsonSchemaTool = {
 };
 
 const HOST_TOOLS = [SSH_EXEC_TOOL, SMB_EXEC_TOOL, WINRM_EXEC_TOOL, WINRM_PROBE_TOOL, RDP_AUTH_TOOL, RDP_SHADOW_PREP_TOOL, SMB_PTH_TOOL, AD_ENUM_TOOL, KRB_PTT_TOOL, SSH_AGENT_AUDIT_TOOL, NFS_ENUM_TOOL];
+
+/**
+ * Metasploit bridge (v0.11.0) — CVE-specific exploit validation.
+ *
+ * The 410-item battery covers technique CLASSES; msf_exec reaches the
+ * ~2,000 CVE-SPECIFIC exploits without hardcoding CVEs:
+ *  - search:  query the module database (msf search syntax: cve:, type:, platform:, name:)
+ *  - suggest: recon hands a detected service/version → ranked candidate modules
+ *             for COORDINATOR APPROVAL (this action never fires anything)
+ *  - run:     fire ONE exploit/auxiliary module with a benign canary marker as
+ *             the ONLY payload action (generic cmd payload, `echo REDTEAM-MARKER-*`;
+ *             the echo IS the validation). EXPLOIT PHASE ONLY — the
+ *             recon→exploit coordinator sign-off is the approval gate, enforced
+ *             mechanically below. dos modules and destructive modules are
+ *             refused by policy; only generic single-command payloads run.
+ *
+ * Requires the operator's msfrpcd (REDTEAM_MSFRPC_USER/PASS; see policy.ts
+ * setup instructions) — fail closed when unreachable. In-scope hosts only
+ * (runner-enforced), kill-switch aborts a running module (console destroyed),
+ * stray sessions are stopped by hygiene, secrets redacted everywhere.
+ * attackId is ALWAYS a real ATT&CK ID (T1190 for exploit validation — the
+ * coordinator rejects anything else); the CVE goes in the `cve` field and is
+ * named in the result, so per-CVE instances reconcile in the report like any
+ * other battery item.
+ */
+const MSF_EXEC_TOOL: JsonSchemaTool = {
+  name: "msf_exec",
+  description:
+    "Metasploit bridge: CVE-specific exploit validation (Windows/Linux host targets). Actions: 'search' (module database query, recon-safe), 'suggest' (service+version → ranked candidate modules for coordinator approval — never fires), 'run' (ONE exploit/auxiliary module with a benign canary marker as the only payload; EXPLOIT PHASE ONLY, after coordinator sign-off). Policy: dos/destructive modules refused, only generic single-command payloads, marker command is runner-built, stray sessions stopped. Requires msfrpcd (REDTEAM_MSFRPC_* env). In-scope hosts only (runner-enforced). Include attackId (a real ATT&CK ID such as 'T1190' — the coordinator rejects anything else), the CVE in 'cve', category, targetProfile ('windows'|'linux' — never inferred), hypothesis.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["search", "suggest", "run"] },
+      host: { type: "string" },
+      query: { type: "string" },
+      service: { type: "string" },
+      version: { type: "string" },
+      cve: { type: "string" },
+      platform: { type: "string", enum: ["windows", "linux"] },
+      moduleType: { type: "string", enum: ["exploit", "auxiliary"] },
+      module: { type: "string" },
+      options: { type: "object", additionalProperties: { type: "string" } },
+      payload: { type: "string" },
+      attackId: { type: "string" },
+      category: { type: "string", enum: ["logic", "functionality", "validation"] },
+      targetProfile: { type: "string", enum: ["windows", "linux"] },
+      hypothesis: { type: "string" },
+    },
+    required: ["action", "host", "category"],
+  },
+};
 const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
   name: "query_registry",
   description:
@@ -542,8 +598,8 @@ const ABORT_TOOL: JsonSchemaTool = {
     required: ["reason"],
   },
 };
-const RECON_TOOLS = [...MCP_TOOLS, ...HOST_TOOLS, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
-const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, ...HOST_TOOLS, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
+const RECON_TOOLS = [...MCP_TOOLS, ...HOST_TOOLS, MSF_EXEC_TOOL, QUERY_REGISTRY_TOOL, UPDATE_TARGET_MAP_TOOL];
+const EXPLOIT_TOOLS = [...READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL, ...HOST_TOOLS, MSF_EXEC_TOOL, QUERY_REGISTRY_TOOL, RECORD_FINDING_TOOL, RECORD_KILLED_TOOL];
 /** The coordinator's command tools: no probes, only command authority. */
 const COMMAND_TOOLS = [ABORT_TOOL];
 
@@ -866,6 +922,109 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
       }
       const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
       return { result: `${res.summary}.${out}`, attackId, target: host };
+    } finally {
+      ctx.hostKill.controllers.delete(ctrl);
+    }
+  }
+
+  // -- Metasploit bridge (v0.11.0): msf_exec --------------------------------
+  // search/suggest are recon-safe (never fire); run is EXPLOIT PHASE ONLY —
+  // the recon→exploit coordinator sign-off is the approval gate, enforced
+  // mechanically here (not by prompt). Same contract as host tools: ROE
+  // technique check, pinned targetProfile, coverage counting, kill-switch
+  // controller, DENIED/ABORTED mapping. Per-CVE instances (attackId like
+  // "MSF-CVE-2021-44228" is NOT a valid attackId — the coordinator rejects
+  // anything that isn't a real ATT&CK ID (lookupTechnique). Per-CVE instances
+  // travel in the `cve` field and are named in the result; they reconcile
+  // against coverage via the category, and the module + CVE are named in the
+  // result so the report lists them like any other battery item.
+  if (call.name === "msf_exec") {
+    const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
+    const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
+    const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
+    if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
+      return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") };
+    }
+    const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+    if (!isTargetId(rawTp) || (rawTp !== "windows" && rawTp !== "linux")) {
+      return {
+        result: `DENIED: msf_exec requires targetProfile "windows"|"linux" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
+        attackId,
+        target: String(args["host"] ?? ""),
+      };
+    }
+    const action = args["action"] === "run" ? "run" : args["action"] === "suggest" ? "suggest" : "search";
+    if (action === "run" && phase !== "exploit") {
+      return {
+        result: `DENIED: msf_exec run fires exploits — allowed in the exploit phase only, after the recon→exploit coordinator sign-off (candidate modules from 'suggest' go to the coordinator for approval first). Current phase: ${phase}.`,
+        attackId,
+        target: String(args["host"] ?? ""),
+      };
+    }
+    const host = String(args["host"] ?? "");
+    ctx.probesUsed++;
+    if (category) {
+      ctx.coverage.add(category);
+      if (ctx.input.fullBattery) {
+        let set = ctx.targetCoverage.get(rawTp as TargetId);
+        if (!set) {
+          set = new Set();
+          ctx.targetCoverage.set(rawTp as TargetId, set);
+        }
+        set.add(category);
+      }
+      ctx.events.updateState({
+        batteryCoverage: {
+          logic: ctx.coverage.has("logic") ? 1 : 0,
+          functionality: ctx.coverage.has("functionality") ? 1 : 0,
+          validation: ctx.coverage.has("validation") ? 1 : 0,
+        },
+      });
+    }
+    const ctrl = new AbortController();
+    ctx.hostKill.controllers.add(ctrl);
+    try {
+      if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
+      const exec = ctx.msfExecutor;
+      exec.killSwitch = ctx.hostKill;
+      const t = { host, scopeHosts: ctx.hosts, signal: ctrl.signal };
+      const platform = args["platform"] === "linux" ? "linux" : args["platform"] === "windows" ? "windows" : rawTp === "linux" ? "linux" : "windows";
+      const res =
+        action === "search"
+          ? await exec.search({ ...t, query: optStr(args["query"]), cve: optStr(args["cve"]), service: optStr(args["service"]), platform })
+          : action === "suggest"
+            ? await exec.suggest({
+                ...t,
+                service: optStr(args["service"]),
+                version: optStr(args["version"]),
+                cve: optStr(args["cve"]),
+                platform,
+              })
+            : await exec.run({
+                ...t,
+                moduleType: args["moduleType"] === "auxiliary" ? "auxiliary" : "exploit",
+                module: String(args["module"] ?? ""),
+                options:
+                  args["options"] && typeof args["options"] === "object"
+                    ? Object.fromEntries(
+                        Object.entries(args["options"] as Record<string, unknown>)
+                          .filter(([, v]) => typeof v === "string")
+                          .map(([k, v]) => [k, v as string]),
+                      )
+                    : undefined,
+                payload: optStr(args["payload"]),
+                // Runner-generated canary — the agent never chooses the marker.
+                marker: `${Date.now().toString(36)}${Math.floor(Math.random() * 0xffffff).toString(16)}`,
+              });
+      if (/kill switch/i.test(res.summary)) {
+        return { result: `ABORTED by coordinator kill switch — engagement halting. ${res.summary}`, attackId, target: host };
+      }
+      if (res.refused) {
+        return { result: `DENIED by msf safety policy: ${res.refused}`, attackId, target: host };
+      }
+      const cveTag = /^CVE-\d{4}-\d{4,7}$/i.test(String(args["cve"] ?? "")) ? ` [${String(args["cve"]).toUpperCase()}]` : "";
+      const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
+      return { result: `${res.summary}.${cveTag}${out}`, attackId, target: host };
     } finally {
       ctx.hostKill.controllers.delete(ctrl);
     }
@@ -2058,6 +2217,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     mcp: deps.mcp ?? new McpClient({ endpoint: config.mcpEndpoint, token: config.mcpToken }),
     prober: deps.prober ?? new WebProber({ scopeHosts: hosts, minDelayMs: config.probeDelayMs, allowPrivateHosts: config.localSandbox }),
     hostExecutor: deps.hostExecutor ?? new HostExecutor(),
+    msfExecutor: deps.msfExecutor ?? new MsfExecutor(),
     hostKill: { aborted: false, controllers: new Set() },
     hosts,
     domain: hosts[0]!,

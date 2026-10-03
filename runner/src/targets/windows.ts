@@ -31,7 +31,7 @@
  */
 
 import type { TargetBatteryItem, TargetProfile } from "./types.js";
-import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET } from "./types.js";
+import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD } from "./types.js";
 
 const WINDOWS_BATTERY: TargetBatteryItem[] = [
   // ============================================ RECON — SMB / SHARES
@@ -686,6 +686,33 @@ const WINDOWS_BATTERY: TargetBatteryItem[] = [
     brief: "DC backups accessible — ntds.dit extraction path via backup media?",
     owasp: "CIS-v8-4.4",
     what: "Audit where domain controller system-state backups are stored and which principals can read them — the backup-side ntds.dit extraction path. STORAGE AND PERMISSION AUDIT ONLY — no backup mounted, no database touched; the access finding is the deliverable.",
+  },
+  // ------------------------------------------------- CVE EXPLOIT VALIDATION
+  // (v0.11.0, Metasploit bridge). The battery above covers technique
+  // CLASSES; these items cover CVE-SPECIFIC exploits WITHOUT hardcoding
+  // CVEs: recon detects a service/version → msf_exec suggest maps it to
+  // candidate modules → the coordinator approves → msf_exec run fires ONE
+  // module with a benign canary marker as the only payload action. Each
+  // CVE validated at runtime becomes a per-CVE instance (attackId
+  // "MSF-CVE-…") that reconciles against coverage via its category.
+  {
+    id: "WS-105", category: "logic", name: "CVE → Metasploit module mapping",
+    brief: "Detected service/version mapped to candidate CVE exploit modules for coordinator approval.",
+    owasp: "CIS-v8-4.4", attackId: "T1190", needs: NEEDS_MSFRPCD,
+    what: "For every versioned service detected during recon (SMB, RDP, WinRM, HTTP, LDAP…), run msf_exec suggest with the service and version string and present the ranked candidate exploit modules to the coordinator for approval. Mapping only — nothing fires. Methodology item: each CVE approved downstream becomes its own runtime instance.",
+  },
+  {
+    id: "WS-106", category: "functionality", name: "CVE exploit validation via Metasploit",
+    brief: "Coordinator-approved CVE modules fired with benign canary marker payloads.",
+    owasp: "CIS-v8-4.4", attackId: "T1190", needs: NEEDS_MSFRPCD,
+    what: "For each coordinator-approved candidate from WS-105, run msf_exec run in the exploit phase: ONE module, generic cmd payload executing ONLY the runner-built canary marker (echo REDTEAM-MARKER-*). The marker echoing back IS the validation — command execution achieved. dos/destructive modules are refused by policy; stray sessions are stopped by hygiene. Tag attackId T1190 and put the CVE in the cve field — each validated CVE is recorded as its own report instance.",
+    blackNote: "One module per CVE; lowest-rank-sufficient module first; stop on first defender signal.",
+  },
+  {
+    id: "WS-107", category: "validation", name: "Metasploit auxiliary validation rigor",
+    brief: "Auxiliary scanner findings cross-validated; module ranks sanity-checked.",
+    owasp: "CIS-v8-4.4", attackId: "T1595.002", needs: NEEDS_MSFRPCD,
+    what: "Cross-validate auxiliary-module findings (smb_enumshares, rdp scanners, etc.) against direct host-exec evidence (smb_exec, winrm_probe, rdp_auth) — two independent observations before a finding. Sanity-check module ranks against observed behavior; a high-rank module that fails silently is reported as a coverage note, not a finding.",
   },
 ];
 

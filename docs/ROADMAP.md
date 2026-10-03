@@ -110,6 +110,68 @@ prerequisites — see below; nothing is plan-only anymore).
 - **Timeouts + output caps** — 30s default timeout, 8KB output cap (no bulk
   exfiltration through the tool).
 
+## Metasploit bridge — DELIVERED (v0.11.0)
+
+**Status:** the Metasploit bridge is built, tested, and live in
+`runner/src/msf/`. The 410-item battery covers technique *classes*
+(ATT&CK-mapped); the bridge closes the CVE-*specific* gap — Metasploit's
+~2,000 weaponized exploits — **without hardcoding 2,000 CVEs**. The
+methodology is dynamic: recon detects a service/version → `msf_exec
+suggest` maps it to ranked candidate modules → the coordinator approves →
+`msf_exec run` fires ONE module with a benign canary marker as the only
+payload action. Six new battery items anchor the methodology (WS-105…107,
+LX-107…109, `[needs: msfrpcd]`); each CVE validated at runtime becomes a
+per-CVE instance (attackId T1190 + `cve` field, e.g. CVE-2017-0144) that
+reconciles against coverage via its category and is named in the report
+like any other battery item.
+
+**What landed:**
+
+1. **msfrpc client** (`msf/protocol.ts`, `msf/client.ts`) — MessagePack
+   over HTTP(S) to the operator's msfrpcd (`@msgpack/msgpack`); auth.login,
+   module.search, console-based module execution WITH output capture (the
+   evidence for "command execution achieved"), session hygiene. Fail closed
+   with setup instructions when msfrpcd is unreachable.
+2. **`msf_exec` agent tool** (wired in `phases.ts` alongside the host-exec
+   tools) — three actions: `search` (module database query, recon-safe),
+   `suggest` (service+version → ranked candidates for coordinator approval —
+   never fires), `run` (ONE exploit/auxiliary module, benign canary marker
+   only). **Run is exploit-phase-only, enforced mechanically** — the
+   recon→exploit coordinator sign-off IS the approval gate.
+3. **Payload/module policy** (`msf/policy.ts`) — mechanical backstop:
+   - only generic single-command payloads (`cmd/<platform>/generic`) — no
+     Meterpreter, no shells, no sessions; the command is ALWAYS the
+     runner-built `echo REDTEAM-MARKER-*` (never agent-supplied) and
+     additionally passes the destructive-command denylist;
+   - dos modules refused (T1499 stays excluded per standing ROE, no
+     exceptions), destructive modules refused (disk wipers, ransomware
+     patterns, firmware/boot destruction);
+   - attackIds on msf calls must be real ATT&CK IDs (the coordinator
+     rejects anything else) — CVEs travel in the `cve` field.
+4. **Recon integration** (`msf/suggest.ts`) — CVE extraction from banner
+   text, service-alias normalization, most-specific-first query building
+   (`cve:` exact → service fuzzy), policy filtering BEFORE the agent ever
+   sees candidates (denied modules are named as refused, never hidden).
+5. **Safety core** (`msf/executor.ts`) — kill switch → exact-hostname ROE
+   scope → module/payload policy → vault credentials → execution with
+   timeout; abort destroys the console (that IS the kill switch for a
+   running module); stray sessions are stopped by hygiene; every secret
+   redacted from every string that leaves.
+
+**Operator prerequisite:** Metasploit Framework installed +
+`msfrpcd -P <pass> -U <user> -a 127.0.0.1 -p 55553 -S` running;
+`REDTEAM_MSFRPC_USER` / `REDTEAM_MSFRPC_PASS` (+ optional
+`REDTEAM_MSFRPC_HOST` / `REDTEAM_MSFRPC_PORT` / `REDTEAM_MSFRPC_TLS`) in
+the environment or Secure Vault. Fail closed with setup instructions
+otherwise — the 6 methodology items report under Honest limits.
+
+**Tests:** 21 new tests in `runner/test/msf.test.ts` against a fake msfrpcd
+speaking the real MessagePack wire protocol (auth failure fail-closed,
+scope denial before any request, secret redaction, kill-switch abort
+destroys the console mid-run, dos/meterpreter denylist refusals, suggest
+ranking, marker-echo validation, phases wiring incl. exploit-phase gating).
+Full suite: 201/201 runner, 17/17 auth-gate, typecheck clean.
+
 ## Beyond
 
 - Console: surface the 12-cell coverage (✓/⊘/…) and the unified Megazord

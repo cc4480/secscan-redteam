@@ -29,7 +29,7 @@
  */
 
 import type { TargetBatteryItem, TargetProfile } from "./types.js";
-import { NEEDS_PRIVILEGED_CLIENT } from "./types.js";
+import { NEEDS_MSFRPCD, NEEDS_PRIVILEGED_CLIENT } from "./types.js";
 
 const LINUX_BATTERY: TargetBatteryItem[] = [
   // ============================================ RECON — HOST ENUMERATION
@@ -696,6 +696,31 @@ const LINUX_BATTERY: TargetBatteryItem[] = [
     owasp: "WSTG-CONF", attackId: "T1018",
     what: "Map the host's lateral-movement surface via host execution: known_hosts entries, shared private keys, SSH CA trust, and NFS/SMB mounts pointing at other in-scope hosts. Paths are DOCUMENTED as a map — lateral movement is never executed beyond authorized test-account logins.",
     blackNote: "Build the map from config files only; no connection attempts to neighboring hosts.",
+  },
+  // ------------------------------------------------- CVE EXPLOIT VALIDATION
+  // (v0.11.0, Metasploit bridge). Same dynamic methodology as WS-105…107:
+  // recon detects a service/version → msf_exec suggest → coordinator
+  // approves → msf_exec run fires ONE module with the benign canary marker.
+  // Each CVE validated at runtime becomes a per-CVE instance (attackId
+  // "MSF-CVE-…") reconciling against coverage via its category.
+  {
+    id: "LX-107", category: "logic", name: "CVE → Metasploit module mapping",
+    brief: "Detected service/version mapped to candidate CVE exploit modules for coordinator approval.",
+    owasp: "CIS-v8-4.4", attackId: "T1190", needs: NEEDS_MSFRPCD,
+    what: "For every versioned service detected during recon (SSH, HTTP, FTP, NFS, SMB…), run msf_exec suggest with the service and version string and present the ranked candidate exploit modules to the coordinator for approval. Mapping only — nothing fires. Methodology item: each CVE approved downstream becomes its own runtime instance.",
+  },
+  {
+    id: "LX-108", category: "functionality", name: "CVE exploit validation via Metasploit",
+    brief: "Coordinator-approved CVE modules fired with benign canary marker payloads.",
+    owasp: "CIS-v8-4.4", attackId: "T1190", needs: NEEDS_MSFRPCD,
+    what: "For each coordinator-approved candidate from LX-107, run msf_exec run in the exploit phase: ONE module, generic cmd payload executing ONLY the runner-built canary marker (echo REDTEAM-MARKER-*). The marker echoing back IS the validation — command execution achieved. dos/destructive modules are refused by policy; stray sessions are stopped by hygiene. Tag attackId T1190 and put the CVE in the cve field — each validated CVE is recorded as its own report instance.",
+    blackNote: "One module per CVE; lowest-rank-sufficient module first; stop on first defender signal.",
+  },
+  {
+    id: "LX-109", category: "validation", name: "Metasploit auxiliary validation rigor",
+    brief: "Auxiliary scanner findings cross-validated; module ranks sanity-checked.",
+    owasp: "CIS-v8-4.4", attackId: "T1595.002", needs: NEEDS_MSFRPCD,
+    what: "Cross-validate auxiliary-module findings (ssh_enumusers, http scanners, etc.) against direct host-exec evidence (ssh_exec version checks, banner reads) — two independent observations before a finding. Sanity-check module ranks against observed behavior; a high-rank module that fails silently is reported as a coverage note, not a finding.",
   },
 ];
 
