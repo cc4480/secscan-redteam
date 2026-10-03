@@ -16,6 +16,9 @@ import { enqueueEngagement, runEngagement, watchQueue } from "./index.js";
 import type { EngagementInput, EngagementMode, RulesOfEngagement } from "./types.js";
 import { isTargetId } from "./targets.js";
 import type { TargetId } from "./targets.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { createReplayer, reverifyBundle, type PocBundle } from "./proof/index.js";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -69,6 +72,15 @@ Production also caps the per-host rate limit at 2 rps even if configured
 higher. Env alternative: REDTEAM_ENV=staging|production.
 --max-rps <n>: per-host rate limit override (requests/sec). Env
 REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
+
+  redteam-runner reverify --bundle <poc/F-1.json> [--scope <host>...] [--execute] [--out <dir>]
+    # v0.14.0 mechanical retest: re-executes a PoC bundle's steps against the
+    # target. Without --execute: prints the replay plan only (no traffic).
+    # With --execute: requires --scope (exact hosts; enforced mechanically),
+    # replays ssh_exec/winrm_exec/msf_exec steps with a FRESH canary marker
+    # (credentials resolve from env, never from the bundle), and reports
+    # reproduced | not-reproduced | target-changed. Exit: 0 reproduced,
+    # 1 not-reproduced, 2 target-changed.
 
 Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
 Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
@@ -147,6 +159,62 @@ function buildInput(): EngagementInput {
   };
 }
 
+async function runReverify(): Promise<void> {
+  const bundlePath = arg("--bundle");
+  if (!bundlePath || !existsSync(bundlePath)) {
+    console.error(`[runner] reverify needs --bundle <poc/F-1.json> (file not found: ${bundlePath ?? "(missing)"})`);
+    process.exit(3);
+  }
+  let bundle: PocBundle;
+  try {
+    bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as PocBundle;
+  } catch (err) {
+    console.error(`[runner] bad bundle JSON: ${(err as Error).message}`);
+    process.exit(3);
+  }
+  if (bundle.version !== 1 || !Array.isArray(bundle.steps)) {
+    console.error(`[runner] not a v1 PoC bundle: ${bundlePath}`);
+    process.exit(3);
+  }
+  const execute = flag("--execute");
+  console.log(`[runner] PoC ${bundle.bundleId} — ${bundle.findingId}: ${bundle.title}`);
+  console.log(`[runner] validation tier: ${bundle.validationTier}; proves: ${bundle.proves}`);
+  console.log(`[runner] steps:`);
+  for (const s of bundle.steps) {
+    console.log(
+      `  seq ${s.seq} ${s.tool}${s.target ? ` @ ${s.target}` : ""} :: ${s.command.slice(0, 120)} ` +
+        `[${s.validation}${s.replay ? "" : ", not replayable"}]`,
+    );
+  }
+  if (!execute) {
+    console.log(`[runner] plan only (no --execute): no traffic sent. Re-run with --execute --scope <host> to re-verify.`);
+    return;
+  }
+  const scopes = argAll("--scope");
+  if (scopes.length === 0) {
+    console.error(`[runner] --execute requires --scope <host> (exact hosts; enforced mechanically)`);
+    process.exit(3);
+  }
+  const killSwitch = { aborted: false };
+  process.on("SIGINT", () => {
+    killSwitch.aborted = true;
+    console.error(`\n[runner] SIGINT — kill switch set; in-flight step will abort`);
+  });
+  const report = await reverifyBundle(bundle, createReplayer({ scope: scopes, killSwitch }));
+  const outDir = arg("--out") ?? dirname(resolve(bundlePath));
+  mkdirSync(outDir, { recursive: true });
+  const outPath = join(outDir, `${bundle.findingId}.reverify-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  writeFileSync(outPath, JSON.stringify(report, null, 2));
+  console.log(`[runner] verdict: ${report.verdict}`);
+  console.log(`[runner] ${report.summary}`);
+  for (const s of report.steps) {
+    console.log(`  seq ${s.seq} ${s.tool}: ${s.replayed ? (s.ok ? "ok" : "FAILED") : "skipped"} — ${s.note.slice(0, 160)}`);
+  }
+  console.log(`[runner] ${report.registryNote}`);
+  console.log(`[runner] report written: ${outPath}`);
+  process.exit(report.verdict === "reproduced" ? 0 : report.verdict === "target-changed" ? 2 : 1);
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "start") {
@@ -178,6 +246,10 @@ async function main(): Promise<void> {
     const ctrl = new AbortController();
     process.on("SIGINT", () => ctrl.abort());
     await watchQueue(queueDir, {}, 10_000, ctrl.signal);
+    return;
+  }
+  if (cmd === "reverify") {
+    await runReverify();
     return;
   }
   usage();
