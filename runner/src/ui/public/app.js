@@ -174,7 +174,8 @@ async function viewDetail(id) {
     <button data-tab="compliance">Compliance</button>
   </div>
   <div id="tab-body"></div>
-  ${detail.live ? `<div class="killbar"><strong>Kill switch</strong><span class="muted small">aborts in-flight work immediately</span><button class="danger" id="kill" style="margin-left:auto">Abort engagement</button></div>` : ""}`;
+  ${detail.live ? `<div class="killbar"><strong>Kill switch</strong><span class="muted small">aborts in-flight work immediately</span><button class="danger" id="kill" style="margin-left:auto">Abort engagement</button></div>` : ""}
+  ${detail.live ? `<div class="killbar"><strong>Autonomy tier</strong><span class="muted small">change mid-run — recorded operator approval</span><button id="escalate" style="margin-left:auto">Change tier</button></div>` : ""}`;
 
   const setTab = (tab) => {
     $$("#dtabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -196,6 +197,39 @@ async function viewDetail(id) {
       setTab("live");
     } catch (err) {
       confirmModal("Abort failed", `<p style="color:var(--red)">${esc(err.message)}</p>`, "Close", false);
+    }
+  };
+  const escalateBtn = $("#escalate");
+  if (escalateBtn) escalateBtn.onclick = async () => {
+    const tier = prompt("New autonomy tier (0 observe · 1 validate · 2 chain):", "2");
+    if (tier === null) return;
+    if (!["0", "1", "2"].includes(tier.trim())) {
+      confirmModal("Bad tier", "<p>Want 0, 1, or 2.</p>", "Close", false);
+      return;
+    }
+    const operator = prompt("Operator name (recorded in the approval log):", "");
+    if (operator === null) return;
+    if (!operator.trim()) {
+      confirmModal("Operator required", "<p>A named operator is required — someone must own the tier change.</p>", "Close", false);
+      return;
+    }
+    const reason = prompt("Reason (required when RAISING the tier):", "");
+    if (reason === null) return;
+    const ok = await confirmModal("Change tier?",
+      `<p>Set autonomy to <strong>Tier ${esc(tier.trim())}</strong> by <strong>${esc(operator.trim())}</strong>.</p>` +
+      (tier.trim() === "2" ? `<p>On <strong>production</strong> this also counts as your explicit Tier-2 approval.</p>` : "") +
+      `<p class="muted small">The running dispatcher picks it up on its next tool call — no restart. The approval lands in approvals.jsonl and the audit log.</p>`,
+      "Change tier", true);
+    if (!ok) return;
+    try {
+      const r = await api.post(`/api/engagements/${encodeURIComponent(id)}/escalate`, {
+        tier: tier.trim(), operator: operator.trim(), reason: reason.trim(),
+        confirmTier2Production: tier.trim() === "2",
+      });
+      confirmModal("Tier changed", `<p>${esc(r.message || `Tier ${r.fromTier} → ${r.toTier}`)}</p>`, "Close", false);
+      setTab("live");
+    } catch (err) {
+      confirmModal("Tier change failed", `<p style="color:var(--red)">${esc(err.message)}</p>`, "Close", false);
     }
   };
   setTab("live");

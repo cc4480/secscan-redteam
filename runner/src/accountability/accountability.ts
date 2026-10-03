@@ -12,10 +12,11 @@
  *    production confirmation, scope renewal) appended to an
  *    append-only-per-engagement log (approvals.jsonl), with who/what/when.
  *    The log is embedded in the compliance pack and the safety manifest.
- *  - `escalateTier`: the ONLY path to raise the tier mid-engagement. It
- *    requires an operator name + reason, records the approval FIRST, then
- *    moves the tier. There is no agent tool that calls this — escalation is
- *    an operator act, never a silent agent decision.
+ *  - `escalateTier`: the ONLY path to change the tier mid-engagement. Raising
+ *    it requires an operator name + reason; lowering it is allowed freely but
+ *    still logged. The approval is recorded FIRST, then the tier moves. There
+ *    is no agent tool that calls this — a tier change is an operator act,
+ *    never a silent agent decision.
  *
  * Honesty: tiers describe what the agents MAY do, never imply the human did
  * the work. The accountability record adds who supervised and approved.
@@ -26,7 +27,7 @@ import { join } from "node:path";
 import type { AutonomyTier } from "./tiers.js";
 import { TIER_NAMES } from "./tiers.js";
 
-export type ApprovalKind = "tier-declared" | "tier-escalation" | "production-confirm" | "scope-renewal";
+export type ApprovalKind = "tier-declared" | "tier-escalation" | "tier-de-escalation" | "production-confirm" | "scope-renewal";
 
 export interface ApprovalEntry {
   seq: number;
@@ -63,7 +64,8 @@ export function requireNamedOperator(environment: "staging" | "production", oper
 
 export interface EscalationApproval {
   operator: string;
-  reason: string;
+  /** Required when raising the tier; optional when lowering it. */
+  reason?: string;
 }
 
 /**
@@ -128,13 +130,14 @@ export class ApprovalLog {
 }
 
 /**
- * The ONLY path to raise the tier mid-engagement. Requires a named operator
- * and a reason; records the approval BEFORE moving the tier. There is no
- * agent tool that calls this — escalation is an operator act.
+ * The ONLY path to change the tier mid-engagement. Raising the tier requires
+ * a named operator and a reason; the approval is recorded BEFORE the tier
+ * moves. Lowering the tier mid-run is harmless (it only shrinks what agents
+ * may do), so it is allowed freely — but it is still logged with the
+ * operator's name. There is no agent tool that calls this — a tier change is
+ * an operator act, never a silent agent decision.
  *
- * Returns the recorded approval entry. Refuses no-op or downward moves
- * (lowering the tier mid-run is a fresh engagement decision, not an
- * escalation).
+ * Returns the recorded approval entry. Refuses no-op moves.
  */
 export function escalateTier(
   state: { current: AutonomyTier },
@@ -144,23 +147,26 @@ export function escalateTier(
 ): ApprovalEntry {
   const operator = (approval.operator ?? "").trim();
   if (!operator) {
-    throw new Error("[accountability] tier escalation requires a named operator — refusing anonymous escalation.");
+    throw new Error("[accountability] tier change requires a named operator — refusing anonymous tier change.");
   }
-  const reason = (approval.reason ?? "").trim();
-  if (!reason) {
-    throw new Error("[accountability] tier escalation requires a recorded reason — refusing unexplained escalation.");
-  }
-  if (toTier <= state.current) {
+  if (toTier === state.current) {
     throw new Error(
-      `[accountability] escalation moves UP only (current Tier ${state.current}, requested Tier ${toTier}). ` +
-        `Lowering the tier mid-run is a new engagement decision, not an escalation.`,
+      `[accountability] tier is already ${state.current} (${TIER_NAMES[state.current]}) — no-op tier change refused.`,
     );
   }
+  const up = toTier > state.current;
+  const reason = (approval.reason ?? "").trim();
+  if (up && !reason) {
+    throw new Error("[accountability] raising the tier requires a recorded reason — refusing unexplained escalation.");
+  }
   const fromTier = state.current;
+  const kind: ApprovalKind = up ? "tier-escalation" : "tier-de-escalation";
   const entry = log.append(
-    "tier-escalation",
+    kind,
     operator,
-    `Tier escalated ${fromTier} (${TIER_NAMES[fromTier]}) → ${toTier} (${TIER_NAMES[toTier]}): ${reason}`,
+    up
+      ? `Tier escalated ${fromTier} (${TIER_NAMES[fromTier]}) → ${toTier} (${TIER_NAMES[toTier]}): ${reason}`
+      : `Tier lowered ${fromTier} (${TIER_NAMES[fromTier]}) → ${toTier} (${TIER_NAMES[toTier]}) by ${operator}${reason ? `: ${reason}` : ""}`,
     fromTier,
     toTier,
   );

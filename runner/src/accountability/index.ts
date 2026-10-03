@@ -33,3 +33,14 @@ export {
   OPERATOR_ENV,
 } from "./accountability.js";
 export type { ApprovalEntry, ApprovalKind, EscalationApproval } from "./accountability.js";
+
+export { readTierFile, writeTierFile, TIER_FILE_NAME } from "./tierfile.js";
+export type { TierFile } from "./tierfile.js";
+
+export {
+  escalateEngagement,
+  describeEscalation,
+  resolveEngagementsDir,
+  isSafeEngagementId,
+} from "./escalate.js";
+export type { EscalateRequest, EscalateResult } from "./escalate.js";

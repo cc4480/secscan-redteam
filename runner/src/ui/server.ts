@@ -18,7 +18,7 @@ import { handleLaunch, handleList, handleDetail } from "./routes/engagements.js"
 import { handleFeed } from "./routes/feed.js";
 import { handleFindings, handleProof } from "./routes/findings.js";
 import { handleCoverage, handleCompliance } from "./routes/coverage.js";
-import { handleAbort, handleReverify, handleJob, handleWatchProfiles, handleWatchTrigger } from "./routes/actions.js";
+import { handleAbort, handleEscalate, handleReverify, handleJob, handleWatchProfiles, handleWatchTrigger } from "./routes/actions.js";
 import { json, notFound, readJsonBody } from "./routes/http.js";
 import type { UiServerOptions } from "./types.js";
 
@@ -144,6 +144,10 @@ async function route(store: UiStore, token: string, req: IncomingMessage, res: S
     if (seg[1] === "engagements" && seg[2] && seg[3] === "abort" && method === "POST") {
       const body = await readJsonBody(req).catch(() => ({}));
       return handleAbort(store, res, decodeURIComponent(seg[2]!), body);
+    }
+    if (seg[1] === "engagements" && seg[2] && seg[3] === "escalate" && method === "POST") {
+      const body = await readJsonBody(req).catch(() => ({}));
+      return handleEscalate(store, res, decodeURIComponent(seg[2]!), body);
     }
     if (seg[1] === "engagements" && seg[2] && seg[3] === "findings" && method === "GET") {
       return handleFindings(store, res, decodeURIComponent(seg[2]!));

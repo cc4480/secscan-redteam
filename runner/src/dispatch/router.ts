@@ -9,7 +9,7 @@
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import { type Ctx, HaltError } from "../context.js";
 import { type ToolCallRequest } from "@secscan/redteam-llm-router";
-import { checkTierAllows, recordExploitStep } from "../accountability/index.js";
+import { checkTierAllows, recordExploitStep, readTierFile, TIER_NAMES } from "../accountability/index.js";
 import { isTargetDistress } from "../safety/index.js";
 import { resolve } from "node:path";
 import { type DispatchResult } from "./types.js";
@@ -78,6 +78,29 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
   return undefined;
 }
 
+/**
+ * v0.24.0: mid-run tier changes. The operator may raise/lower the tier via
+ * `redteam-runner escalate` or the UI; both rewrite tier.json in the
+ * engagement dir (atomically). The dispatcher re-reads it before every tier
+ * check so the new tier takes effect without restarting the engagement.
+ * The change lands in the audit log — never silent. A missing or corrupt
+ * file means "no change". Exported for tests; dispatchTool calls it.
+ */
+export function refreshTierFromDisk(ctx: Ctx, phase: EngagementPhase): void {
+  const tf = readTierFile(ctx.events.dir);
+  if (!tf || tf.tier === ctx.tier.current) return;
+  const from = ctx.tier.current;
+  ctx.tier.current = tf.tier;
+  ctx.events.append({
+    phase,
+    actor: "runner",
+    action: "tier_changed",
+    result:
+      `Autonomy tier changed mid-run: Tier ${from} (${TIER_NAMES[from]}) → Tier ${tf.tier} (${TIER_NAMES[tf.tier]})` +
+      `${tf.by ? ` by ${tf.by}` : ""}${tf.reason ? ` — ${tf.reason}` : ""}. Recorded in approvals.jsonl; no restart needed.`,
+  });
+}
+
 export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   // v0.22.0 UI kill switch: the operator abort is mechanically identical to
   // the coordinator's abort_engagement. In-flight work is already dead
@@ -105,8 +128,11 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
   // v0.17.0 accountability: autonomy tiers are MECHANICAL. A tool above the
   // current tier is refused before any packet, before the rate limiter, and
   // before the executor — the denial is an event, never silent. There is no
-  // agent path to raise the tier; escalation needs a recorded operator
-  // approval via escalateTier().
+  // agent path to raise the tier; mid-run changes arrive only via tier.json,
+  // written by `redteam-runner escalate` or the UI with a recorded operator
+  // approval (escalateTier()).
+  // v0.24.0: pick up operator tier changes without restarting the engagement.
+  refreshTierFromDisk(ctx, phase);
   const tierDenial = checkTierAllows(ctx.tier, call.name, args, host);
   if (tierDenial) {
     return { result: tierDenial, target: host };

@@ -41,6 +41,13 @@ export function usage(): never {
     # webhook to this command). Without --once/--trigger, loops on the
     # profile's cadence.intervalHours until Ctrl+C. Every cycle re-checks
     # scopeValidUntil — expired authorization refuses to run, fail closed.
+  redteam-runner escalate --engagement <id> --tier <0|1|2> --operator "<name>" [--reason "<text>"] [--confirm-tier2-production] [--engagements-dir <dir>]
+    # v0.24.0 mid-run tier change: records the operator approval in
+    # approvals.jsonl and rewrites tier.json; a running engagement picks
+    # the new tier up on its next tool dispatch (no restart). Raising the
+    # tier requires --reason; lowering it is logged freely. Tier 2 on a
+    # production engagement additionally needs --confirm-tier2-production
+    # (or REDTEAM_TIER2_PROD_CONFIRM=1). Agents can never call this.
 
 --full-battery (or --target secscan+seclayer): ONE unified engagement running the
 target-specific batteries (3 categories × selected targets). The coordinator

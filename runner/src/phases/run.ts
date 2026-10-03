@@ -1,7 +1,7 @@
 /**
  * runEngagement entry point + RunOptions (v0.19.0 refactor — extracted from phases.ts).
  */
-import { ApprovalLog, TIER_ENV, defaultTier, describeTier, parseTier, requireNamedOperator, requireTier2ProductionApproval, resolveOperatorName, tier2ProductionConfirmed } from "../accountability/index.js";
+import { ApprovalLog, TIER_ENV, defaultTier, describeTier, parseTier, requireNamedOperator, requireTier2ProductionApproval, resolveOperatorName, tier2ProductionConfirmed, writeTierFile } from "../accountability/index.js";
 import { type BatteryCategory } from "../battery.js";
 import { type Ctx, HaltError, type RunnerDeps } from "../context.js";
 import { type EngagementInput, type EngagementResult, type ResolvedRunnerConfig } from "../types.js";
@@ -115,6 +115,11 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
       approvals.append("tier-escalation", operatorLabel, "Tier 2 (chain) on production explicitly approved by operator", 1, 2);
     }
   }
+
+  // v0.24.0: tier.json — the mid-run tier signal. The dispatcher re-reads it
+  // before every tier check; `redteam-runner escalate` and the UI rewrite it
+  // (atomically) when the operator changes the tier. No new network surface.
+  writeTierFile(dir, { tier, declared: tier, environment, updatedAt: new Date().toISOString() });
 
   // The registry: load, or seed with the v0.3.x secscan.us engagement data on first run.
   const registryPath = config.registryPath;

@@ -1,5 +1,5 @@
 /**
- * redteam-runner CLI commands: start, queue, watch, reverify.
+ * redteam-runner CLI commands: start, queue, watch, reverify, escalate, ui.
  */
 
 import { enqueueEngagement, runEngagement, watchQueue } from "../index.js";
@@ -9,6 +9,8 @@ import { createReplayer, reverifyBundle, type PocBundle } from "../proof/index.j
 import { loadTicketMapping, updateTicketsForReverify } from "../integrations/index.js";
 import { runWatchCycle, watchLoop } from "../continuous/index.js";
 import { startUiServer } from "../ui/index.js";
+import { describeEscalation, escalateEngagement } from "../accountability/index.js";
+import { tier2ProductionConfirmed } from "../accountability/index.js";
 import { arg, argAll, buildInput, flag, usage } from "./args.js";
 
 async function runReverify(): Promise<void> {
@@ -127,6 +129,36 @@ async function runWatchCli(profilePath: string): Promise<void> {
   await watchLoop({ profilePath, maxRpsPerHost }, ctrl.signal);
 }
 
+/**
+ * v0.24.0: mid-run tier change. Records the operator approval in
+ * approvals.jsonl and rewrites tier.json; a running engagement's dispatcher
+ * picks the new tier up on its next tool call. Raising the tier requires a
+ * named operator and a reason; lowering it is logged freely. Tier 2 on a
+ * production engagement additionally needs --confirm-tier2-production
+ * (or REDTEAM_TIER2_PROD_CONFIRM=1). There is no agent tool for this.
+ */
+async function runEscalate(): Promise<void> {
+  const engagementId = arg("--engagement");
+  if (!engagementId) {
+    console.error(`[runner] escalate needs --engagement <id>`);
+    process.exit(2);
+  }
+  try {
+    const result = escalateEngagement({
+      engagementsDir: arg("--engagements-dir"),
+      engagementId,
+      toTier: arg("--tier") ?? "",
+      operator: arg("--operator"),
+      reason: arg("--reason"),
+      tier2ProdConfirmed: flag("--confirm-tier2-production") || tier2ProductionConfirmed(),
+    });
+    console.log(describeEscalation(result));
+  } catch (err) {
+    console.error(`[runner] escalate failed: ${(err as Error).message}`);
+    process.exit(2);
+  }
+}
+
 export async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "start") {
@@ -189,6 +221,10 @@ export async function main(): Promise<void> {
     const engagementsDir = arg("--engagements-dir");
     // startUiServer keeps the event loop alive; it prints the token itself.
     await startUiServer({ port, listen, engagementsDir });
+    return;
+  }
+  if (cmd === "escalate") {
+    await runEscalate();
     return;
   }
   usage();

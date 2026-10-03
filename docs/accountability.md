@@ -25,12 +25,24 @@ Enforcement lives in the tool dispatcher (`dispatchTool` in
 - At Tier 1, successful validated exploit steps consume a per-target budget
   of one. Further steps name the re-approval path (Tier 2,
   operator-approved).
-- There is **no agent tool that raises the tier**. Escalation happens only
-  through `escalateTier()` with a named operator + reason, and the approval
-  is recorded *before* the tier moves.
+- There is **no agent tool that raises the tier**. Mid-run tier changes happen
+  only through the operator surfaces — `redteam-runner escalate` (CLI) or
+  the "Change tier" action on the live engagement view (UI,
+  `POST /api/engagements/:id/escalate`). Both funnel into `escalateTier()`
+  with the same rules: raising the tier requires a named operator + reason,
+  the approval is recorded *before* the tier moves, and lowering the tier
+  mid-run is allowed freely but still logged with the operator's name.
+- The new tier reaches the running engagement **without a restart**: the
+  operator surfaces rewrite `tier.json` in the engagement directory
+  (atomically), and the dispatcher re-reads it before every tier check,
+  emitting a `tier_changed` audit event. The approval lands in
+  `approvals.jsonl`; the final tier + the escalation trail are reflected in
+  the safety manifest.
 
 Defaults: **staging → Tier 2** (full battery), **production → Tier 1**
-(careful validation). Override with `--tier 0|1|2` (or `REDTEAM_TIER`).
+(careful validation). Override with `--tier 0|1|2` (or `REDTEAM_TIER`); change
+mid-run with `redteam-runner escalate --engagement <id> --tier <0|1|2>
+--operator "<name>" --reason "<text>"`.
 
 ## Tier 2 on production
 
@@ -56,7 +68,8 @@ findings, the tier, and the scope. The operator is:
 ## Approval log
 
 Every approval is appended to `approvals.jsonl` (append-only, one file per
-engagement): tier declared, tier escalations, production confirmations.
+engagement): tier declared, tier escalations, tier de-escalations,
+production confirmations.
 Each entry carries sequence, timestamp, engagement id, operator, kind, and
 detail. The log is embedded in the safety manifest and rendered as §7 of
 the compliance evidence pack — auditors see who approved what, when.

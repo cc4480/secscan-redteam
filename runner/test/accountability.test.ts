@@ -227,18 +227,24 @@ describe("escalateTier", () => {
     assert.equal(listed.length, 1);
     assert.equal(listed[0]!.detail, e.detail);
   });
-  it("refuses anonymous or unexplained escalation", () => {
+  it("refuses anonymous or unexplained up-escalation", () => {
     const log = new ApprovalLog(dir, "eng-1");
     const state = { current: 0 as AutonomyTier };
     assert.throws(() => escalateTier(state, 1, log, { operator: " ", reason: "x" }), /named operator/);
     assert.throws(() => escalateTier(state, 1, log, { operator: "op", reason: " " }), /recorded reason/);
     assert.equal(state.current, 0, "tier unchanged after refused escalation");
   });
-  it("refuses no-op and downward moves", () => {
+  it("refuses no-op moves but allows logged de-escalation", () => {
     const log = new ApprovalLog(dir, "eng-1");
     const state = { current: 1 as AutonomyTier };
-    assert.throws(() => escalateTier(state, 1, log, { operator: "op", reason: "x" }), /moves UP only/);
-    assert.throws(() => escalateTier(state, 0, log, { operator: "op", reason: "x" }), /moves UP only/);
+    assert.throws(() => escalateTier(state, 1, log, { operator: "op", reason: "x" }), /no-op tier change refused/);
+    const entry = escalateTier(state, 0, log, { operator: "op" });
+    assert.equal(state.current, 0, "tier lowered");
+    assert.equal(entry.kind, "tier-de-escalation");
+    assert.equal(entry.operator, "op");
+    assert.equal(entry.fromTier, 1);
+    assert.equal(entry.toTier, 0);
+    assert.throws(() => escalateTier(state, 2, log, { operator: " ", reason: "x" }), /named operator/, "down-tier still needs a name");
   });
 });
 

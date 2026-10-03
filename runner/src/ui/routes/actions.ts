@@ -5,6 +5,11 @@
  * registered at launch: terminates in-flight executions, refuses new work,
  * and the next tool dispatch throws HaltError so the engagement unwinds to
  * "halted". 409 when the engagement isn't live in this process.
+ * POST /api/engagements/:id/escalate — v0.24.0 mid-run tier change. Same
+ * rules as the CLI (`redteam-runner escalate`): raising the tier requires a
+ * named operator + reason; lowering is logged freely; Tier 2 on production
+ * needs explicit confirmation. The running dispatcher picks the new tier up
+ * on its next tool call — no restart.
  * POST /api/reverify — plan or execute a PoC bundle replay (mirrors the
  * CLI's reverify command; execution runs as a background job).
  * GET/POST /api/watch — list watch profiles in a dir; trigger one cycle.
@@ -17,6 +22,7 @@ import type { UiStore } from "../store.js";
 import { createReplayer, reverifyBundle, type PocBundle } from "../../proof/index.js";
 import { loadTicketMapping, updateTicketsForReverify } from "../../integrations/index.js";
 import { loadWatchProfile, runWatchCycle } from "../../continuous/index.js";
+import { describeEscalation, escalateEngagement } from "../../accountability/index.js";
 import { json, badRequest } from "./http.js";
 
 /** POST /api/engagements/:id/abort { reason? } */
@@ -34,6 +40,47 @@ export function handleAbort(store: UiStore, res: ServerResponse, id: string, bod
     return;
   }
   json(res, 200, { ok: true, id });
+}
+
+interface EscalateBody {
+  tier?: unknown;
+  operator?: unknown;
+  reason?: unknown;
+  confirmTier2Production?: unknown;
+}
+
+/**
+ * POST /api/engagements/:id/escalate { tier, operator, reason?, confirmTier2Production? }
+ * v0.24.0: mid-run tier change with the CLI's exact rules. Raising the tier
+ * requires a named operator + reason; lowering is logged freely; Tier 2 on
+ * production needs explicit confirmation. The running dispatcher picks the
+ * new tier up on its next tool call — no restart. Works for CLI-started
+ * engagements too (the signal is tier.json on disk, not the UI's live map).
+ */
+export function handleEscalate(store: UiStore, res: ServerResponse, id: string, body: unknown): void {
+  const b = (body ?? {}) as EscalateBody;
+  try {
+    const result = escalateEngagement({
+      engagementsDir: store.engagementsDir,
+      engagementId: id,
+      toTier: typeof b.tier === "string" || typeof b.tier === "number" ? String(b.tier) : "",
+      operator: typeof b.operator === "string" ? b.operator : undefined,
+      reason: typeof b.reason === "string" ? b.reason : undefined,
+      tier2ProdConfirmed: b.confirmTier2Production === true,
+    });
+    json(res, 200, {
+      ok: true,
+      engagementId: result.engagementId,
+      fromTier: result.fromTier,
+      toTier: result.toTier,
+      operator: result.operator,
+      engagementStatus: result.engagementStatus,
+      approvalSeq: result.approvalSeq,
+      message: describeEscalation(result),
+    });
+  } catch (err) {
+    badRequest(res, (err as Error).message);
+  }
 }
 
 interface ReverifyBody {
