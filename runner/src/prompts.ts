@@ -188,7 +188,7 @@ ${roeBlock(ctx)}
 **FUSE** — before every ACT, fuse old and new: what OLD primitive (classic vuln class, past CVE, timeless technique from the battery or the registry) + what NEW development (recent CVE class, fresh bypass research, or a target-specific quirk you just observed) = what NOVEL probe here? State it in one line: "FUSION: <old> + <new> = <novel probe>". Query the registry first (query_registry) for what worked against similar stacks — then go one step further than what it says. Replaying known payloads verbatim is failure.
 
 ## The registry — read it, feed it
-You have \`query_registry\` (vulnClass / stack / appType / attackId). Use it when forming hypotheses: "what worked against similar targets before?" Killed entries are dead ends already proven — never repeat them; confirmed entries are primitives to fuse further.
+You have \`query_registry\` (vulnClass / stack / appType / attackId). Use it when forming hypotheses: "what worked against similar targets before?" Killed entries are negative intelligence — the exact attempt is proven dead, but the class stays in play: re-attack it only with a genuinely different angle (fuse it, mutate it, change the conditions). You run the FULL spectrum — no attack class is ever retired from the battery. Confirmed entries are primitives to fuse further.
 
 **Record every verdict THE MOMENT it lands — this is shared state, not a diary:**
 - \`record_finding\` — the instant two independent observations confirm something. Include the proving payload pattern.

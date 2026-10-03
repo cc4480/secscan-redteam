@@ -210,7 +210,7 @@ const READ_TOOLS = MCP_TOOLS.filter((t) => t.name !== "scan_url");
 const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
   name: "query_registry",
   description:
-    "Query the persistent vulnerability registry: what was CONFIRMED against similar targets (payload patterns to fuse further) and what was KILLED (dead ends — never repeat them). Call BEFORE forming hypotheses. Args: vulnClass, stack (comma-separated hints), appType, attackId, limit.",
+    "Query the persistent vulnerability registry: what was CONFIRMED against similar targets (payload patterns to fuse further) and what was KILLED (negative intelligence — the exact attempt died; re-attack the class only with a different angle, never the identical probe). Call BEFORE forming hypotheses. Args: vulnClass, stack (comma-separated hints), appType, attackId, limit.",
   parameters: {
     type: "object",
     properties: {
@@ -268,7 +268,7 @@ const RECORD_FINDING_TOOL: JsonSchemaTool = {
 const RECORD_KILLED_TOOL: JsonSchemaTool = {
   name: "record_killed",
   description:
-    "Record a KILLED hypothesis the moment it dies (what was tried + the killing observation). Negative knowledge — the registry ensures no future engagement repeats this dead end. Args: hypothesis, killingObservation, attackId?, vulnClass?, payload? (what was tried).",
+    "Record a KILLED hypothesis the moment it dies (what was tried + the killing observation). Negative knowledge — recorded so future engagements attack smarter, not narrower: the exact attempt is dead, the class stays in play. Args: hypothesis, killingObservation, attackId?, vulnClass?, payload? (what was tried).",
   parameters: {
     type: "object",
     properties: {
@@ -438,7 +438,7 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     const lines = hits.map((h) =>
       h.kind === "confirmed"
         ? `[CONFIRMED] ${h.vulnClass} (${h.attackId ?? "?"} ${h.technique}) — payload: ${h.payloadPattern} — ${h.engagementId} ${h.date}`
-        : `[KILLED — do not repeat] ${h.hypothesis} — killing observation: ${h.killingObservation} — ${h.engagementId} ${h.date}`,
+        : `[KILLED — exact attempt dead; class still in play with a different angle] ${h.hypothesis} — killing observation: ${h.killingObservation} — ${h.engagementId} ${h.date}`,
     );
     return { result: `Registry hits (${hits.length}):\n${lines.join("\n")}`, target: "registry" };
   }
@@ -498,7 +498,7 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
     ctx.killedLive.push(kl);
     writeKilledToRegistry(ctx, kl);
     return {
-      result: "Killed hypothesis recorded to shared state + registry — this dead end will never be repeated by any future engagement.",
+      result: "Killed hypothesis recorded to shared state + registry as negative intelligence — future engagements keep the full spectrum; the exact attempt is dead, the class stays in play.",
       attackId: kl.attackId,
       target: ctx.domain,
     };
