@@ -4,6 +4,21 @@
 import { type ResolvedRunnerConfig } from "../types.js";
 import { join } from "node:path";
 
+/**
+ * Parse an env-provided positive number at config-parse time (v0.28.0).
+ * Mirrors the rotation config precedent: fail fast with a message naming
+ * the exact variable instead of dying later on NaN deep inside a
+ * constructor or limiter.
+ */
+function parseEnvPositiveNumber(raw: string | undefined, name: string): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`[runner] bad ${name}=${JSON.stringify(raw)}; want a positive number`);
+  }
+  return n;
+}
+
 export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
   mcpToken?: string;
   deepseekApiKey?: string;
@@ -66,8 +81,8 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
       (env["REDTEAM_HOME"] ? join(env["REDTEAM_HOME"], "engagements", "registry.json") : join(process.cwd(), "engagements", "registry.json")),
     dryRunAgents: opts.dryRunAgents ?? false,
     localSandbox: opts.localSandbox ?? env["REDTEAM_LOCAL_SANDBOX"] === "1",
-    maxRpsPerHost: opts.maxRpsPerHost ?? (env["REDTEAM_MAX_RPS"] ? Number(env["REDTEAM_MAX_RPS"]) : undefined),
-    maxVariantsPerItem: opts.maxVariantsPerItem ?? (env["REDTEAM_MAX_VARIANTS"] ? Number(env["REDTEAM_MAX_VARIANTS"]) : undefined),
+    maxRpsPerHost: opts.maxRpsPerHost ?? parseEnvPositiveNumber(env["REDTEAM_MAX_RPS"], "REDTEAM_MAX_RPS"),
+    maxVariantsPerItem: opts.maxVariantsPerItem ?? parseEnvPositiveNumber(env["REDTEAM_MAX_VARIANTS"], "REDTEAM_MAX_VARIANTS"),
   };
 }
 

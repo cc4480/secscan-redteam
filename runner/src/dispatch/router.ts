@@ -159,6 +159,19 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
   checkAbortSignal(ctx, phase);
   const host = toolTargetHost(call);
   const args = call.arguments ?? {};
+  // v0.17.0 accountability: autonomy tiers are MECHANICAL. A tool above the
+  // current tier is refused before any packet and before the rate limiter —
+  // v0.28.0: the tier check was moved ahead of limiter.acquire so a refused
+  // call consumes no rate token and waits on nothing. The denial is an
+  // event, never silent. There is no agent path to raise the tier; mid-run
+  // changes arrive only via tier.json, written by `redteam-runner escalate`
+  // or the UI with a recorded operator approval (escalateTier()).
+  // v0.24.0: pick up operator tier changes without restarting the engagement.
+  refreshTierFromDisk(ctx, phase);
+  const tierDenial = checkTierAllows(ctx.tier, call.name, args, host);
+  if (tierDenial) {
+    return { result: tierDenial, target: host };
+  }
   if (host) {
     // Auto-halt first: a halted target is refused before any packet AND
     // before waiting on the rate limiter — never hammer, never queue.
@@ -170,18 +183,6 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
       };
     }
     await ctx.safety.limiter.acquire(host);
-  }
-  // v0.17.0 accountability: autonomy tiers are MECHANICAL. A tool above the
-  // current tier is refused before any packet, before the rate limiter, and
-  // before the executor — the denial is an event, never silent. There is no
-  // agent path to raise the tier; mid-run changes arrive only via tier.json,
-  // written by `redteam-runner escalate` or the UI with a recorded operator
-  // approval (escalateTier()).
-  // v0.24.0: pick up operator tier changes without restarting the engagement.
-  refreshTierFromDisk(ctx, phase);
-  const tierDenial = checkTierAllows(ctx.tier, call.name, args, host);
-  if (tierDenial) {
-    return { result: tierDenial, target: host };
   }
   // v0.20.0 variants: the per-item variant cap is MECHANICAL. A
   // variant-tagged call past the cap is denied before any packet — one

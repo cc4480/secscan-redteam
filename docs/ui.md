@@ -27,6 +27,9 @@ The server prints a random 64-hex **UI token** to the terminal on startup. Enter
 it once on the login page (it is stored in an `HttpOnly` `SameSite=Strict`
 cookie); API clients can use `Authorization: Bearer <token>` instead.
 `REDTEAM_UI_TOKEN` sets your own token. The token is never written to disk.
+(v0.28.0) A custom token must be at least 16 characters and not a common
+password — the server refuses to start with a weak one. Unset the variable
+to get a strong random token generated at startup.
 
 ## Security
 

@@ -13,7 +13,7 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { UiStore } from "./store.js";
-import { authCookie, generateToken, isAuthorized, UI_COOKIE } from "./auth.js";
+import { authCookie, generateToken, isAuthorized, tokensEqual, assertStrongToken, UI_COOKIE } from "./auth.js";
 import { handleLaunch, handleList, handleDetail } from "./routes/engagements.js";
 import { handleFeed } from "./routes/feed.js";
 import { handleFindings, handleProof } from "./routes/findings.js";
@@ -94,7 +94,7 @@ async function route(store: UiStore, token: string, req: IncomingMessage, res: S
       });
       presented = new URLSearchParams(raw).get("token") ?? undefined;
     }
-    if (presented && presented === token) {
+    if (presented && tokensEqual(presented, token)) {
       res.writeHead(303, { "Set-Cookie": authCookie(token), Location: "/" });
       res.end();
     } else {
@@ -190,7 +190,12 @@ export interface UiServerHandle {
 export async function startUiServer(opts: UiServerOptions = {}): Promise<UiServerHandle> {
   const port = opts.port ?? 8787;
   const listen = opts.listen ?? "127.0.0.1";
-  const token = process.env["REDTEAM_UI_TOKEN"] || generateToken();
+  // v0.28.0: an explicitly-set REDTEAM_UI_TOKEN must clear a strength
+  // floor — this console drives live pentest tooling. Fail fast at
+  // startup rather than running with "password". Unset = strong random.
+  const explicitToken = process.env["REDTEAM_UI_TOKEN"];
+  if (explicitToken) assertStrongToken(explicitToken);
+  const token = explicitToken || generateToken();
   const store = new UiStore(opts.engagementsDir);
 
   const server = createServer((req, res) => {

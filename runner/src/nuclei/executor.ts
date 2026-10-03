@@ -13,6 +13,7 @@
  * ROE scope check (before any packet) → template/tag policy. Injectable
  * spawn + binary probe make everything testable with a fake binary.
  */
+import { basename } from "node:path";
 import { validateHostTarget, redactSecrets } from "../host-exec/common.js";
 import {
   resolveNucleiBinary,
@@ -180,7 +181,9 @@ export function parseTemplateList(stdout: string): NucleiTemplateInfo[] {
   for (const line of stdout.split("\n")) {
     const p = line.trim();
     if (!p || p.startsWith("[")) continue;
-    const id = p.split("/").pop()?.replace(/\.ya?ml$/, "") ?? p;
+    // basename handles Windows separators too (nuclei -tl output may carry
+    // backslash paths when the binary runs on Windows).
+    const id = basename(p.replace(/\\/g, "/")).replace(/\.ya?ml$/, "") || p;
     out.push({ id, path: p });
   }
   return out;

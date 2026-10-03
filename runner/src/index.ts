@@ -22,9 +22,11 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { readEvents, readState, type LiveState } from "./events.js";
 import { runEngagement, type RunOptions } from "./phases.js";
+import { isTargetId, type TargetId } from "./targets.js";
+import { parseTier } from "./accountability/index.js";
 import type { EngagementEvent, EngagementInput, EngagementResult } from "./types.js";
 
 export { runEngagement, resolveConfig } from "./phases.js";
@@ -182,6 +184,42 @@ function listJobs(queueDir: string): string[] {
 }
 
 /**
+ * Validate a queue-dropped job file at intake (v0.28.0). Mirrors the checks
+ * cli/args.ts buildInput() and the UI launch route enforce, so a malformed
+ * job fails fast at the queue — naming the file and the reason — instead
+ * of dying deep inside runEngagement. Throws on the first problem found.
+ */
+export function validateQueueInput(raw: unknown): EngagementInput {
+  const b = raw as Record<string, unknown>;
+  if (!b || typeof b !== "object") throw new Error("job is not an object");
+  if (typeof b.target !== "string" || !b.target.trim()) throw new Error("target is required");
+  if (b.mode !== "red" && b.mode !== "black") throw new Error("mode must be red|black");
+  if (typeof b.objective !== "string" || !b.objective.trim()) throw new Error("objective is required");
+  const roe = b.roe as Record<string, unknown> | undefined;
+  const scope = roe?.scope;
+  if (!Array.isArray(scope) || scope.length === 0 || !scope.every((s) => typeof s === "string" && s.trim())) {
+    throw new Error("roe.scope is required (non-empty array of exact hosts)");
+  }
+  let targets: TargetId[] | undefined;
+  if (b.targets !== undefined) {
+    if (!Array.isArray(b.targets)) throw new Error("targets must be an array");
+    const bad = (b.targets as unknown[]).filter((t) => typeof t !== "string" || !isTargetId(t));
+    if (bad.length > 0) throw new Error(`bad targets ${JSON.stringify(bad)}; want subset of secscan,seclayer,windows,linux`);
+    targets = b.targets as TargetId[];
+  }
+  let tier: 0 | 1 | 2 | undefined;
+  if (b.tier !== undefined) tier = parseTier(String(b.tier)) as 0 | 1 | 2;
+  let environment: "staging" | "production" | undefined;
+  if (b.environment !== undefined) {
+    if (b.environment !== "staging" && b.environment !== "production") {
+      throw new Error("environment must be staging|production");
+    }
+    environment = b.environment;
+  }
+  return b as unknown as EngagementInput;
+}
+
+/**
  * Watch the queue dir and run engagements as they arrive. Long-running;
  * resolve only on abort. Each job file is moved to <queue>/done/ afterwards.
  */
@@ -196,10 +234,19 @@ export async function watchQueue(
     if (signal?.aborted) return;
     for (const jobFile of listJobs(queueDir)) {
       if (signal?.aborted) return;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(jobFile, "utf8"));
+      } catch {
+        console.error(`[runner] queue: ${basename(jobFile)} is not valid JSON — moved to done/`);
+        renameSync(jobFile, join(queueDir, "done", `bad-${Date.now()}.json`));
+        continue;
+      }
       let input: EngagementInput;
       try {
-        input = JSON.parse(readFileSync(jobFile, "utf8")) as EngagementInput;
+        input = validateQueueInput(raw);
       } catch (err) {
+        console.error(`[runner] queue: ${basename(jobFile)} rejected: ${(err as Error).message} — moved to done/`);
         renameSync(jobFile, join(queueDir, "done", `bad-${Date.now()}.json`));
         continue;
       }
@@ -208,7 +255,7 @@ export async function watchQueue(
       } catch {
         // runEngagement records halt/block internally; never let one job kill the watcher.
       }
-      renameSync(jobFile, join(queueDir, "done", jobFile.split("/").pop()!));
+      renameSync(jobFile, join(queueDir, "done", basename(jobFile)));
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }

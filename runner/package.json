@@ -29,5 +29,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "type": "module",
-  "version": "0.22.0"
+  "version": "0.22.0",
+  "engines": {
+    "node": ">=20"
+  }
 }

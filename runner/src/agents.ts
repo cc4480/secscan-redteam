@@ -89,8 +89,11 @@ export async function agentLoop(
       if (res.text) notes.push(res.text);
       // The thinking trace is first-class observability: it lands in the
       // event feed (and the console) alongside the visible reply.
+      // v0.28.0: redact before the audit log — reasoning may echo secrets or
+      // PII the upstream input redaction missed.
       const thought = res.reasoning ? `\n[thinking] ${res.reasoning.slice(0, 600)}` : "";
-      ctx.events.append({ phase, actor: role, action: "reasoning", result: `${res.text.slice(0, 500)}${thought}`.slice(0, 1200) });
+      const reasoningText = redactPii(`${res.text.slice(0, 500)}${thought}`.slice(0, 1200));
+      ctx.events.append({ phase, actor: role, action: "reasoning", result: reasoningText });
     }
     if (!res.toolCalls || res.toolCalls.length === 0) {
       const followUp = opts.onIdle?.();
