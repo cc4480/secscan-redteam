@@ -24,10 +24,10 @@
   "name": "@secscan/redteam-runner",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && rm -rf dist/ui/public && mkdir -p dist/ui/public && cp -r src/ui/public/. dist/ui/public/",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "type": "module",
-  "version": "0.21.0"
+  "version": "0.22.0"
 }

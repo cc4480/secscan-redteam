@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { createReplayer, reverifyBundle, type PocBundle } from "../proof/index.js";
 import { loadTicketMapping, updateTicketsForReverify } from "../integrations/index.js";
 import { runWatchCycle, watchLoop } from "../continuous/index.js";
+import { startUiServer } from "../ui/index.js";
 import { arg, argAll, buildInput, flag, usage } from "./args.js";
 
 async function runReverify(): Promise<void> {
@@ -175,6 +176,19 @@ export async function main(): Promise<void> {
   }
   if (cmd === "reverify") {
     await runReverify();
+    return;
+  }
+  if (cmd === "ui") {
+    const portRaw = arg("--port");
+    const port = portRaw === undefined ? 8787 : Number(portRaw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      console.error(`[runner] bad --port ${JSON.stringify(portRaw)}; want 1-65535`);
+      process.exit(2);
+    }
+    const listen = arg("--listen");
+    const engagementsDir = arg("--engagements-dir");
+    // startUiServer keeps the event loop alive; it prints the token itself.
+    await startUiServer({ port, listen, engagementsDir });
     return;
   }
   usage();

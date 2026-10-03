@@ -97,6 +97,16 @@ findings, the tier, and the scope.
     # reproduced | not-reproduced | target-changed. Exit: 0 reproduced,
     # 1 not-reproduced, 2 target-changed.
 
+  redteam-runner ui [--port 8787] [--listen <addr>] [--engagements-dir <dir>]
+    # v0.22.0 web console: loopback-only (127.0.0.1) token-authenticated
+    # dashboard wired directly to these same CLI code paths — launch
+    # engagements, stream the operation feed, browse findings with proof
+    # bundles, inspect coverage and compliance packs, trigger watch cycles,
+    # and hit the kill switch. The startup token is printed to the terminal
+    # and required on every request. --listen overrides the loopback bind
+    # and prints a warning. Env: REDTEAM_UI_TOKEN (use your own token),
+    # REDTEAM_HOME or engagements default like the CLI.
+
 Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
 Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
 REDTEAM_SSH_PASSWORD / REDTEAM_SSH_KEY / REDTEAM_SSH_KEY_PATH;

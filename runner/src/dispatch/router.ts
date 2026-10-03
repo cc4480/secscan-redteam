@@ -7,7 +7,7 @@
  * autonomy-tier enforcement, all mechanical.
  */
 import { type ActorRole, type EngagementPhase } from "../types.js";
-import { type Ctx } from "../context.js";
+import { type Ctx, HaltError } from "../context.js";
 import { type ToolCallRequest } from "@secscan/redteam-llm-router";
 import { checkTierAllows, recordExploitStep } from "../accountability/index.js";
 import { isTargetDistress } from "../safety/index.js";
@@ -79,6 +79,15 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
 }
 
 export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
+  // v0.22.0 UI kill switch: the operator abort is mechanically identical to
+  // the coordinator's abort_engagement. In-flight work is already dead
+  // (controllers aborted when the flag was set); the next tool call throws
+  // HaltError so the engagement unwinds to "halted" instead of spinning on
+  // preflight refusals. Nothing sets hostKill.aborted and continues — the
+  // coordinator's own abort sets it and throws immediately after.
+  if (ctx.hostKill.aborted) {
+    throw new HaltError("aborted by operator (kill switch)");
+  }
   const host = toolTargetHost(call);
   const args = call.arguments ?? {};
   if (host) {

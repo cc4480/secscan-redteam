@@ -50,6 +50,20 @@ export interface RunOptions {
   /** LOCAL SANDBOX MODE ONLY. See ResolvedRunnerConfig.localSandbox. Default false. */
   localSandbox?: boolean;
   deps?: RunnerDeps;
+  /**
+   * v0.22.0 UI kill switch: called with the operator abort handle once the
+   * engagement context exists (synchronously, before authorizePhase). The
+   * handle triggers the kill switch exactly as the coordinator's
+   * abort_engagement does — in-flight executions terminate, new work is
+   * refused, and the next tool dispatch throws HaltError so the engagement
+   * unwinds to "halted".
+   */
+  onCtxReady?: (handle: OperatorAbortHandle) => void;
+}
+
+/** Operator abort handle handed to the UI server (v0.22.0). */
+export interface OperatorAbortHandle {
+  abort: (reason: string) => void;
 }
 
 export async function runEngagement(input: EngagementInput, opts: RunOptions = {}): Promise<EngagementResult> {
@@ -162,6 +176,34 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   };
 
   events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} tier=${describeTier(tier)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
+  // v0.22.0 UI kill switch: hand the operator abort handle to whoever is
+  // driving this engagement (the UI server registers it for the kill-switch
+  // button). Fires synchronously here — before any agent acts — so the
+  // handle is always available while the engagement is live.
+  if (opts.onCtxReady) {
+    opts.onCtxReady({
+      abort: (reason: string) => {
+        ctx.hostKill.aborted = true;
+        for (const c of ctx.hostKill.controllers) {
+          try {
+            c.abort();
+          } catch {
+            /* best effort */
+          }
+        }
+        ctx.hostKill.controllers.clear();
+        ctx.safety.killSwitchAborts++;
+        ctx.events.append({
+          phase: ctx.events.snapshot.phase,
+          // Actor "coordinator": the kill-switch abort carries coordinator-level
+          // authority; the result records that it came from the operator console.
+          actor: "coordinator",
+          action: "abort_engagement",
+          result: `ABORTED by operator: ${reason.slice(0, 500)}`,
+        });
+      },
+    });
+  }
   // v0.15.0: Slack lifecycle — engagement started (best-effort, never blocking).
   void fireSlack(ctx, { kind: "started" });
 
