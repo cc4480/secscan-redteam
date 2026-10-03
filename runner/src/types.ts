@@ -86,6 +86,20 @@ export interface EngagementInput {
    * Defaults to all four (secscan, seclayer, windows, linux).
    */
   targets?: TargetId[];
+  /**
+   * Test environment for staging→production graduation (v0.13.0 safety case).
+   * "staging" (default): full battery, configured rate limits. "production":
+   * requires explicit operator confirmation (confirmProduction or
+   * REDTEAM_PROD_CONFIRM=1) and caps the per-host rate limit mechanically.
+   * Set via --env staging|production.
+   */
+  environment?: "staging" | "production";
+  /**
+   * Explicit operator confirmation for a production run. The runner refuses
+   * to start a production engagement without it — fail fast, before any
+   * packet. Set via --confirm-production.
+   */
+  confirmProduction?: boolean;
 }
 
 /** One streamed event. Written to events.jsonl as it happens. */
@@ -179,4 +193,11 @@ export interface ResolvedRunnerConfig {
    * domain. Default false. See gate.ts / prober.ts for the invariant.
    */
   localSandbox: boolean;
+  /**
+   * Operator-configured per-host rate limit (requests/sec) for the v0.13.0
+   * safety rate limiter. Env REDTEAM_MAX_RPS. Production caps it at 2
+   * mechanically regardless. Undefined = environment default (5 staging,
+   * 2 production).
+   */
+  maxRpsPerHost?: number;
 }

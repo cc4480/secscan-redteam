@@ -18,6 +18,7 @@
 
 import type { Finding, OperationPlan, RulesOfEngagement } from "../types.js";
 import type { VulnerabilityRegistry, ConfirmedFinding } from "../registry.js";
+import type { SafetyManifest } from "../safety/index.js";
 import { COMPLIANCE_CONTROLS, lookupControl } from "./controls.js";
 import { controlsForTechnique } from "./mapping.js";
 
@@ -41,6 +42,12 @@ export interface CompliancePackInput {
   batteryCoverageNote?: string;
   registry: VulnerabilityRegistry;
   generatedAt?: string;
+  /**
+   * v0.13.0 safety case: the engagement's machine-readable safety manifest
+   * (built by the runner at report time). Embedded as the pack's safety
+   * section — the artifact a buyer's security team reviews.
+   */
+  safety?: SafetyManifest;
 }
 
 export interface PackFinding {
@@ -102,6 +109,12 @@ export interface CompliancePack {
     /** Control id → finding ids exercising it. */
     controlFindings: Record<string, string[]>;
   };
+  /**
+   * v0.13.0 safety case: the engagement's safety manifest (mechanical
+   * protections, configuration, zero-disruption record, residual risks).
+   * Present when the runner built it at report time.
+   */
+  safety?: SafetyManifest;
   honestLimits: string[];
 }
 
@@ -219,7 +232,9 @@ export function buildCompliancePack(input: CompliancePackInput): CompliancePack 
       "Findings without ATT&CK IDs carry no control mapping (the mapping is technique-keyed, honestly).",
       "The tester is an AI agent team under mechanical safety rails, not a human penetration tester. Assessors evaluating tester qualification (e.g. PCI DSS 11.4.1's 'qualified' language) should weigh this methodology description directly.",
       "Retest evidence is observational (before/after across engagements), not a certification of remediation.",
+      "The safety section states mechanical protections and residual risks honestly — it is not a claim of zero risk.",
     ],
+    safety: input.safety,
   };
 }
 
@@ -291,7 +306,42 @@ export function renderCompliancePackMarkdown(pack: CompliancePack): string {
   L.push(``);
   L.push(pack.methodology.authorization);
   L.push(``);
-  L.push(`## 3. Findings → controls`);
+  if (pack.safety) {
+    const s = pack.safety;
+    L.push(`## 3. Safety case (mechanical protections, runner-enforced)`);
+    L.push(``);
+    L.push(`Environment: **${s.environment}**${s.environment === "production" ? ` (operator-confirmed: ${s.productionConfirmed})` : ""} · Manifest ${s.manifestVersion} · Generated ${s.generatedAt}`);
+    L.push(``);
+    L.push(`### Protections in force`);
+    L.push(``);
+    for (const p of s.protectionsInForce) L.push(`- ${p}`);
+    L.push(``);
+    L.push(`### Configuration this engagement`);
+    L.push(``);
+    L.push(`- Scope allowlist: ${s.scopeAllowlist.join(", ") || "(empty)"}`);
+    L.push(`- Rate limit: ${s.rateLimit.rpsPerHost} requests/sec per host (burst ${s.rateLimit.burst})${s.rateLimit.productionCapApplied ? " — production cap applied mechanically" : ""}`);
+    L.push(`- Kill switch: armed; aborts this engagement: ${s.killSwitch.aborts}`);
+    L.push(`- Destructive denylist: ${s.destructiveDenylist.patternCount} patterns (${s.destructiveDenylist.version})`);
+    L.push(`- Payload policy: ${s.payloadPolicy} · DoS policy: ${s.dosPolicy}`);
+    L.push(`- PII redaction: enabled (${s.piiRedaction.patterns.join(", ")})`);
+    L.push(`- Auto-halt: ${s.autoHalt.consecutiveThreshold} consecutive distress outcomes or ${Math.round(s.autoHalt.windowFailureRate * 100)}% distress over last ${s.autoHalt.windowSize} → target halted; halted targets: ${s.autoHalt.haltedTargets.join(", ") || "(none)"}`);
+    L.push(`- Human override: ${s.humanOverride.operator}. ${s.humanOverride.abortPath}`);
+    L.push(``);
+    L.push(`### Zero-disruption record (derived from events.jsonl)`);
+    L.push(``);
+    L.push(s.disruptionVerdict);
+    L.push(``);
+    L.push(`### Residual risks`);
+    L.push(``);
+    for (const r of s.residualRisks) L.push(`- ${r}`);
+    L.push(``);
+  } else {
+    L.push(`## 3. Safety case`);
+    L.push(``);
+    L.push(`(safety manifest not recorded for this engagement — engagements before v0.13.0 predate the machine-readable safety case)`);
+    L.push(``);
+  }
+  L.push(`## 4. Findings → controls`);
   L.push(``);
   L.push(`Controls exercised: ${pack.coverage.controlsExercised}/${pack.coverage.controlsTotal}`);
   L.push(``);
@@ -316,7 +366,7 @@ export function renderCompliancePackMarkdown(pack: CompliancePack): string {
     }
   }
   L.push(``);
-  L.push(`## 4. Retest evidence (before/after per vulnerability class)`);
+  L.push(`## 5. Retest evidence (before/after per vulnerability class)`);
   L.push(``);
   if (pack.retestEvidence.length === 0) {
     L.push(`(no registry history yet)`);
@@ -326,7 +376,7 @@ export function renderCompliancePackMarkdown(pack: CompliancePack): string {
     }
   }
   L.push(``);
-  L.push(`## 5. Honest limits`);
+  L.push(`## 6. Honest limits`);
   L.push(``);
   for (const h of pack.honestLimits) L.push(`- ${h}`);
   L.push(``);

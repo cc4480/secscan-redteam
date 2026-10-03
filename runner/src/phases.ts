@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { completeForRole as routerCompleteForRole } from "@secscan/redteam-llm-router";
 import type { AgentRole, ChatMessage, ChatResult, JsonSchemaTool, ToolCallRequest } from "@secscan/redteam-llm-router";
 import { lookupTechnique } from "./attack.js";
-import { EventLog } from "./events.js";
+import { EventLog, readEvents } from "./events.js";
 import {
   checkAuthorization,
   inBlackout,
@@ -43,6 +43,23 @@ import {
   renderCompliancePackMarkdown,
 } from "./compliance/index.js";
 import { coordinatorPrompt, exploiterPrompt, reconPrompt, reporterPrompt, taskPrompt } from "./prompts.js";
+import {
+  TargetRateLimiter,
+  TargetAutoHalt,
+  buildSafetyManifest,
+  renderSafetyManifestMarkdown,
+  buildZeroDisruptionRecord,
+  disruptionVerdict,
+  redactPii,
+  parseEnvironment,
+  productionConfirmed,
+  requireGraduation,
+  describeEnvironment,
+  resolveEffectiveRps,
+  isTargetDistress,
+  SAFETY_MANIFEST_VERSION,
+} from "./safety/index.js";
+import type { TestEnvironment } from "./safety/index.js";
 import {
   loadRegistryFile,
   queryRegistry,
@@ -133,6 +150,22 @@ interface Ctx {
    * tasks (they share this ctx). New host work is refused once aborted.
    */
   hostKill: { aborted: boolean; controllers: Set<AbortController> };
+  /**
+   * v0.13.0 production safety case — mechanical, runner-enforced.
+   * The rate limiter gates every probe/exec tool per target host; the
+   * auto-halt tracker refuses targets showing distress; environment drives
+   * staging→production graduation.
+   */
+  safety: {
+    limiter: TargetRateLimiter;
+    autoHalt: TargetAutoHalt;
+    environment: TestEnvironment;
+    productionConfirmed: boolean;
+    rpsPerHost: number;
+    productionCapApplied: boolean;
+    /** Kill-switch aborts this engagement (operator/coordinator override count). */
+    killSwitchAborts: number;
+  };
   hosts: string[];
   domain: string;
   excludedNote: string;
@@ -633,7 +666,7 @@ async function recheckVerified(ctx: Ctx): Promise<boolean> {
   return v.allowed;
 }
 
-async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
+async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   const args = call.arguments ?? {};
   ctx.actions++;
 
@@ -1114,12 +1147,14 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
 
   if (call.name === "record_finding") {
     const attackId = (optStr(args["attackId"]) ?? "T1190").toUpperCase();
+    // v0.13.0 safety case: PII redaction applies to finding evidence too —
+    // agents paste tool output into evidence, and it lands in reports.
     const lf: LiveFinding = {
       severity: optStr(args["severity"]) ?? "low",
-      title: String(args["title"] ?? "untitled").slice(0, 200),
+      title: redactPii(String(args["title"] ?? "untitled").slice(0, 200)),
       vulnClass: optStr(args["vulnClass"]),
       attackId,
-      evidence: String(args["evidence"] ?? "").slice(0, 800),
+      evidence: redactPii(String(args["evidence"] ?? "").slice(0, 800)),
       payload: optStr(args["payload"])?.slice(0, 300),
     };
     ctx.liveFindings.push(lf);
@@ -1162,11 +1197,91 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
       }
     }
     ctx.hostKill.controllers.clear();
+    // v0.13.0 safety case: count the kill-switch use for the manifest —
+    // the zero-disruption record is derived from these events.
+    ctx.safety.killSwitchAborts++;
     ctx.events.append({ phase, actor: "coordinator", action: "abort_engagement", result: `ABORTED by coordinator: ${reason}` });
     throw new HaltError(`aborted by coordinator: ${reason}`);
   }
 
   return { result: `DENIED: unknown tool ${call.name}` };
+}
+
+// ---------------------------------------------------------------------------
+// v0.13.0 safety wrapper — rate limiting + per-target auto-halt, mechanical.
+//
+// Every probe/exec tool passes through here: the target host is resolved,
+// a halted target is refused BEFORE any packet (and before waiting on the
+// limiter), then a rate-limit slot is acquired, then the tool runs, then
+// the outcome is recorded against the auto-halt tracker. Tools without a
+// resolvable target host (shared-state tools, MCP read-only tools) skip
+// the limiter — they generate no target traffic.
+// ---------------------------------------------------------------------------
+
+/** Tools whose calls generate traffic against a target host. */
+const RATE_LIMITED_TOOLS = new Set([
+  "http_probe",
+  "burst_probe",
+  "scan_url",
+  "ssh_exec",
+  "smb_exec",
+  "winrm_exec",
+  "winrm_probe",
+  "rdp_auth",
+  "rdp_shadow_prep",
+  "smb_pth",
+  "ad_enum",
+  "krb_ptt",
+  "ssh_agent_audit",
+  "nfs_enum",
+  "msf_exec",
+]);
+
+/** Best-effort target host for a tool call — undefined when the tool has no target traffic. */
+function toolTargetHost(call: ToolCallRequest): string | undefined {
+  if (!RATE_LIMITED_TOOLS.has(call.name)) return undefined;
+  const args = call.arguments as Record<string, unknown> | undefined ?? {};
+  const direct = typeof args["host"] === "string" ? (args["host"] as string).trim().toLowerCase() : "";
+  if (direct) return direct;
+  const url = typeof args["url"] === "string" ? (args["url"] as string) : "";
+  if (url) {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
+  const host = toolTargetHost(call);
+  if (host) {
+    // Auto-halt first: a halted target is refused before any packet AND
+    // before waiting on the rate limiter — never hammer, never queue.
+    if (ctx.safety.autoHalt.isHalted(host)) {
+      const reason = ctx.safety.autoHalt.haltReason(host) ?? "auto-halted";
+      return {
+        result: `HALTED: target ${host} was auto-halted (${reason}). No further traffic to this host this engagement — pivot to another in-scope target or report the halt.`,
+        target: host,
+      };
+    }
+    await ctx.safety.limiter.acquire(host);
+  }
+  const d = await dispatchToolInner(ctx, role, phase, call);
+  if (host) {
+    const haltReason = ctx.safety.autoHalt.recordOutcome(host, isTargetDistress(d.result));
+    if (haltReason) {
+      ctx.events.append({
+        phase,
+        actor: "runner",
+        action: "target_auto_halt",
+        target: host,
+        result: `AUTO-HALT: ${host} — ${haltReason}. Further traffic to this host refused this engagement.`,
+      });
+    }
+  }
+  return d;
 }
 
 // ---------------------------------------------------------------------------
@@ -1252,10 +1367,10 @@ function mergeVerdictBlock(ctx: Ctx, text: string): void {
     if (v["kind"] === "confirmed") {
       const lf: LiveFinding = {
         severity: String(v["severity"] ?? "low"),
-        title: String(v["vulnClass"] ?? v["title"] ?? "finding").slice(0, 200),
+        title: redactPii(String(v["vulnClass"] ?? v["title"] ?? "finding").slice(0, 200)),
         vulnClass: optStr(v["vulnClass"]),
         attackId: (optStr(v["attackId"]) ?? "T1190").toUpperCase(),
-        evidence: String(v["evidence"] ?? "").slice(0, 800),
+        evidence: redactPii(String(v["evidence"] ?? "").slice(0, 800)),
         payload: optStr(v["payloadPattern"]),
       };
       if (ctx.liveFindings.some((f) => f.title === lf.title && f.attackId === lf.attackId)) continue;
@@ -1420,13 +1535,17 @@ async function agentLoop(
     messages.push({ role: "assistant", content: res.text || "(tool calls)" });
     for (const call of res.toolCalls) {
       const d = await dispatchTool(ctx, role, phase, call);
+      // v0.13.0 safety case: PII is redacted from tool outputs BEFORE they
+      // reach the audit log or the agent context. The agents reason about
+      // vulnerability shapes, not other people's personal data.
+      const safeResult = redactPii(d.result);
       ctx.events.append({
         phase,
         actor: role,
         action: call.name,
         attackId: d.attackId,
         target: d.target,
-        result: d.result.slice(0, 800),
+        result: safeResult.slice(0, 800),
         opsec: d.opsec,
       });
       messages.push({
@@ -1434,7 +1553,7 @@ async function agentLoop(
         toolCallId: call.id,
         // Every observation carries the current shared state — no agent ever
         // works from a stale or private picture (Megazord protocol).
-        content: d.result.slice(0, 4000) + "\n" + sharedStateDigest(ctx, phase),
+        content: safeResult.slice(0, 4000) + "\n" + sharedStateDigest(ctx, phase),
       });
       // Wall detection: consecutive blocked/cooled-down/OPSEC-signaled probes
       // with no successful observation. The coordinator redirects to re-recon.
@@ -2094,6 +2213,54 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
   reportMd += `\n\n---\n\n## Battery coverage (runner-computed)\n\n${batteryLine}\n`;
   writeFileSync(join(ctx.events.dir, "report.md"), reportMd);
   ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings parsed).` });
+  // v0.13.0 safety case: the machine-readable safety manifest — every
+  // protection that was mechanically active, what it did, and the
+  // zero-disruption record derived from the audit log. Built BEFORE the
+  // compliance pack so the pack's safety section embeds it. Written next to
+  // report.md. Its own try/catch: a manifest failure must never break the report.
+  let safetyManifest: ReturnType<typeof buildSafetyManifest> | undefined;
+  try {
+    const events = readEvents(ctx.events.dir);
+    const zeroDisruption = buildZeroDisruptionRecord(events);
+    const ah = ctx.safety.autoHalt;
+    safetyManifest = buildSafetyManifest({
+      engagementId: ctx.events.engagementId,
+      environment: ctx.safety.environment,
+      productionConfirmed: ctx.safety.productionConfirmed,
+      scopeAllowlist: ctx.hosts,
+      rpsPerHost: ctx.safety.rpsPerHost,
+      burst: ctx.safety.rpsPerHost,
+      productionCapApplied: ctx.safety.productionCapApplied,
+      throttledMs: Math.round(ctx.safety.limiter.throttledMs),
+      acquires: ctx.safety.limiter.acquires,
+      killSwitchAborts: ctx.safety.killSwitchAborts,
+      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"] ?? "(operator name not supplied — set REDTEAM_OPERATOR)",
+      autoHalt: {
+        consecutiveThreshold: ah.config.consecutiveThreshold,
+        windowSize: ah.config.windowSize,
+        windowFailureRate: ah.config.windowFailureRate,
+        haltedTargets: ah.haltedHosts(),
+        haltCount: ah.halts,
+      },
+      zeroDisruption,
+      disruptionVerdict: disruptionVerdict(zeroDisruption),
+    });
+    writeFileSync(join(ctx.events.dir, "safety-manifest.json"), JSON.stringify(safetyManifest, null, 2));
+    writeFileSync(join(ctx.events.dir, "safety-manifest.md"), renderSafetyManifestMarkdown(safetyManifest));
+    ctx.events.append({
+      phase: "report",
+      actor: "runner",
+      action: "safety_manifest",
+      result: `Safety manifest written (env=${safetyManifest.environment}, ${safetyManifest.rateLimit.rpsPerHost}rps/host, ${safetyManifest.disruptionVerdict.split(";")[0]}).`,
+    });
+  } catch (err) {
+    ctx.events.append({
+      phase: "report",
+      actor: "runner",
+      action: "safety_manifest_failed",
+      result: `Safety manifest generation failed (report.md unaffected): ${(err as Error).message}`,
+    });
+  }
   // v0.12.0: compliance evidence pack — mechanical, runner-computed from
   // engagement state. Evidence for the client's auditors, never a claim of
   // compliance or certification.
@@ -2114,6 +2281,7 @@ async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string)
       findings,
       batteryCoverageNote: batteryLine,
       registry: ctx.registry,
+      safety: safetyManifest,
     });
     writeFileSync(join(ctx.events.dir, "compliance-pack.json"), JSON.stringify(pack, null, 2));
     writeFileSync(join(ctx.events.dir, "compliance-pack.md"), renderCompliancePackMarkdown(pack));
@@ -2180,6 +2348,8 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
   registryPath?: string;
   dryRunAgents?: boolean;
   localSandbox?: boolean;
+  /** Per-host rate limit override (requests/sec). Env REDTEAM_MAX_RPS. Production caps at 2 mechanically. */
+  maxRpsPerHost?: number;
 } = {}): ResolvedRunnerConfig {
   const mcpToken = opts.mcpToken ?? env["SECSCAN_MCP_TOKEN"];
   if (!mcpToken) {
@@ -2224,6 +2394,7 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
       (env["REDTEAM_HOME"] ? join(env["REDTEAM_HOME"], "engagements", "registry.json") : join(process.cwd(), "engagements", "registry.json")),
     dryRunAgents: opts.dryRunAgents ?? false,
     localSandbox: opts.localSandbox ?? env["REDTEAM_LOCAL_SANDBOX"] === "1",
+    maxRpsPerHost: opts.maxRpsPerHost ?? (env["REDTEAM_MAX_RPS"] ? Number(env["REDTEAM_MAX_RPS"]) : undefined),
   };
 }
 
@@ -2243,6 +2414,8 @@ export interface RunOptions {
   engagementsDir?: string;
   /** Registry path override (tests). Defaults to <REDTEAM_HOME>/engagements/registry.json. */
   registryPath?: string;
+  /** Per-host rate limit override (requests/sec). Env REDTEAM_MAX_RPS. Production caps at 2 mechanically. */
+  maxRpsPerHost?: number;
   dryRunAgents?: boolean;
   /** LOCAL SANDBOX MODE ONLY. See ResolvedRunnerConfig.localSandbox. Default false. */
   localSandbox?: boolean;
@@ -2259,6 +2432,14 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   if (!inTestWindow(new Date(), input.roe)) {
     throw new Error("[runner] current time is outside the ROE test window — refusing to run.");
   }
+
+  // v0.13.0 safety case: staging→production graduation is MECHANICAL.
+  // Production without explicit operator confirmation refuses to start —
+  // fail fast, before the engagement directory is even created.
+  const environment = input.environment ?? parseEnvironment(process.env["REDTEAM_ENV"]);
+  const prodConfirmed = input.confirmProduction ?? productionConfirmed(process.env);
+  requireGraduation(environment, prodConfirmed);
+  const { rps, productionCapApplied } = resolveEffectiveRps(environment, config.maxRpsPerHost);
 
   const hosts = scopeHosts(input.roe);
   if (hosts.length === 0) throw new Error("[runner] ROE scope produced no parseable hosts — refusing to run.");
@@ -2282,6 +2463,16 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     hostExecutor: deps.hostExecutor ?? new HostExecutor(),
     msfExecutor: deps.msfExecutor ?? new MsfExecutor(),
     hostKill: { aborted: false, controllers: new Set() },
+    // v0.13.0 safety case: mechanical protections, armed from engagement start.
+    safety: {
+      limiter: new TargetRateLimiter({ rpsPerHost: rps }),
+      autoHalt: new TargetAutoHalt(),
+      environment,
+      productionConfirmed: prodConfirmed,
+      rpsPerHost: rps,
+      productionCapApplied,
+      killSwitchAborts: 0,
+    },
     hosts,
     domain: hosts[0]!,
     excludedNote: "",
@@ -2304,7 +2495,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     deniedStreak: 0,
   };
 
-  events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
+  events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
 
   try {
     const verdict = await authorizePhase(ctx);

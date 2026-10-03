@@ -23,6 +23,11 @@ import {
 } from "../src/compliance.js";
 import type { CompliancePackInput } from "../src/compliance.js";
 import { emptyRegistry, recordConfirmed } from "../src/registry.js";
+import {
+  buildSafetyManifest,
+  buildZeroDisruptionRecord,
+  disruptionVerdict,
+} from "../src/safety/index.js";
 import type { Finding } from "../src/types.js";
 
 describe("compliance control catalog", () => {
@@ -180,19 +185,45 @@ describe("compliance evidence pack", () => {
     assert.ok(pack.operator.includes("not supplied"));
   });
 
-  it("markdown rendering contains every section", () => {
+  it("markdown rendering contains every section (v0.13.0: safety case is section 3)", () => {
     const md = renderCompliancePackMarkdown(buildCompliancePack(mockInput()));
     for (const section of [
       "# Compliance evidence pack",
       "## 1. Engagement metadata",
       "## 2. Documented methodology",
-      "## 3. Findings → controls",
-      "## 4. Retest evidence",
-      "## 5. Honest limits",
+      "## 3. Safety case",
+      "## 4. Findings → controls",
+      "## 5. Retest evidence",
+      "## 6. Honest limits",
       "does not declare the client compliant or certified",
     ]) {
       assert.ok(md.includes(section), `missing: ${section}`);
     }
+  });
+
+  it("safety section embeds the manifest when provided", () => {
+    const input = mockInput();
+    const manifest = buildSafetyManifest({
+      engagementId: "eng-safety",
+      environment: "staging",
+      productionConfirmed: false,
+      scopeAllowlist: ["example.com"],
+      rpsPerHost: 5,
+      burst: 5,
+      productionCapApplied: false,
+      throttledMs: 0,
+      acquires: 0,
+      killSwitchAborts: 0,
+      operator: "Test Op",
+      autoHalt: { consecutiveThreshold: 5, windowSize: 20, windowFailureRate: 0.5, haltedTargets: [], haltCount: 0 },
+      zeroDisruption: buildZeroDisruptionRecord([]),
+      disruptionVerdict: disruptionVerdict(buildZeroDisruptionRecord([])),
+    });
+    const md = renderCompliancePackMarkdown(buildCompliancePack({ ...input, safety: manifest }));
+    assert.ok(md.includes("## 3. Safety case (mechanical protections, runner-enforced)"));
+    assert.ok(md.includes("canary-only"));
+    assert.ok(md.includes("Residual risks"));
+    assert.ok(md.includes("CLEAN"));
   });
 });
 

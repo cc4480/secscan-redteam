@@ -85,6 +85,32 @@ export type {
   RetestObservation,
   TechniqueControlMapping,
 } from "./compliance/index.js";
+export {
+  TargetRateLimiter,
+  TargetAutoHalt,
+  buildSafetyManifest,
+  renderSafetyManifestMarkdown,
+  buildZeroDisruptionRecord,
+  disruptionVerdict,
+  redactPii,
+  piiPatternLabels,
+  parseEnvironment,
+  productionConfirmed,
+  requireGraduation,
+  resolveEffectiveRps,
+  isTargetDistress,
+  PROTECTIONS_IN_FORCE,
+  RESIDUAL_RISKS,
+  SAFETY_MANIFEST_VERSION,
+} from "./safety/index.js";
+export type {
+  SafetyManifest,
+  ManifestInputs,
+  ZeroDisruptionRecord,
+  RateLimitConfig,
+  AutoHaltConfig,
+  TestEnvironment,
+} from "./safety/index.js";
 
 export interface QueueJob {
   /** Path of the job file (for completion bookkeeping). */

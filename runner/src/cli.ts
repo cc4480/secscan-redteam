@@ -36,7 +36,7 @@ function flag(name: string): boolean {
 
 function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--local-sandbox] [--dry-run]
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--local-sandbox] [--dry-run]
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
@@ -60,6 +60,15 @@ Shop/DVWA container — never against a live/internet target.
 --dry-run: skip the live agent loops (no DEEPSEEK_API_KEY/QWEN_API_KEY
 needed) — runs gating/authorize/scope/report plumbing only, useful for
 smoke-testing the runner itself.
+
+--env staging|production (v0.13.0 safety case): staging (default) runs the
+full battery with configured rate limits. production REQUIRES explicit
+operator confirmation (--confirm-production or REDTEAM_PROD_CONFIRM=1) —
+without it the runner refuses to start, mechanically, before any packet.
+Production also caps the per-host rate limit at 2 rps even if configured
+higher. Env alternative: REDTEAM_ENV=staging|production.
+--max-rps <n>: per-host rate limit override (requests/sec). Env
+REDTEAM_MAX_RPS. Defaults: 5 staging, 2 production.
 
 Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
 Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
@@ -112,14 +121,48 @@ function buildInput(): EngagementInput {
     deconflictionContact: arg("--contact"),
     notes: arg("--notes"),
   };
-  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client"), fullBattery, targets };
+  // v0.13.0 safety case: staging→production graduation. --env production
+  // requires --confirm-production (or REDTEAM_PROD_CONFIRM=1), enforced
+  // mechanically at engagement start.
+  const envArg = arg("--env");
+  let environment: "staging" | "production" | undefined;
+  if (envArg) {
+    const v = envArg.trim().toLowerCase();
+    if (v !== "staging" && v !== "production" && v !== "prod") {
+      console.error(`[runner] bad --env ${JSON.stringify(envArg)}; want staging|production`);
+      process.exit(2);
+    }
+    environment = v === "staging" ? "staging" : "production";
+  }
+  return {
+    target: target!,
+    mode: mode!,
+    objective: objective!,
+    roe,
+    client: arg("--client"),
+    fullBattery,
+    targets,
+    environment,
+    confirmProduction: flag("--confirm-production"),
+  };
 }
 
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "start") {
     const input = buildInput();
-    const result = await runEngagement(input, { localSandbox: flag("--local-sandbox"), dryRunAgents: flag("--dry-run") });
+    const rpsIdx = process.argv.indexOf("--max-rps");
+    const rpsRaw = rpsIdx >= 0 ? process.argv[rpsIdx + 1] : undefined;
+    const maxRps = rpsRaw === undefined ? undefined : Number(rpsRaw);
+    if (maxRps !== undefined && (!Number.isFinite(maxRps) || maxRps <= 0)) {
+      console.error(`[runner] bad --max-rps ${JSON.stringify(rpsRaw)}; want a positive number (requests/sec per host)`);
+      process.exit(2);
+    }
+    const result = await runEngagement(input, {
+      localSandbox: flag("--local-sandbox"),
+      dryRunAgents: flag("--dry-run"),
+      maxRpsPerHost: maxRps,
+    });
     console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));
     process.exit(result.status === "complete" ? 0 : 1);
   }
