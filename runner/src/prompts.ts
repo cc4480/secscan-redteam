@@ -18,7 +18,9 @@
 import { TECHNIQUES } from "./attack.js";
 import { resolveExcludedTechniques } from "./attack.js";
 import { batteryChecklistText } from "./battery.js";
-import { fullBatteryChecklistText, fullBatteryPlanSkeleton } from "./targets.js";
+import { BATTERY_CATEGORIES } from "./battery.js";
+import { activeTargets, fullBatteryChecklistText, fullBatteryPlanSkeleton, TARGET_PREFIXES, TARGET_PROFILES } from "./targets.js";
+import type { TargetId } from "./targets.js";
 import type { EngagementMode, RulesOfEngagement } from "./types.js";
 
 export interface PromptContext {
@@ -27,8 +29,10 @@ export interface PromptContext {
   target: string;
   scopeHosts: string[];
   roe: RulesOfEngagement;
-  /** Full-battery unified engagement: both target batteries drive the plan. */
+  /** Full-battery unified engagement: selected target batteries drive the plan. */
   fullBattery?: boolean;
+  /** Subset of targets for a full-battery run; defaults to all four. */
+  targets?: TargetId[];
   /**
    * LOCAL SANDBOX MODE ONLY. True only when the gate's allowLocalSandbox
    * bypass actually fired (i.e. the target is loopback/private — see
@@ -38,6 +42,11 @@ export interface PromptContext {
    * technique exclusions (T1499 stays excluded) or scope enforcement.
    */
   localSandbox?: boolean;
+}
+
+/** "SecScan (SS-*) + Windows host + AD (WS-*)" style list for prompt text. */
+function targetListText(targets: TargetId[]): string {
+  return targets.map((t) => `${TARGET_PROFILES[t].name} (${TARGET_PREFIXES[t]}-*)`).join(" + ");
 }
 
 function attackCatalog(): string {
@@ -153,7 +162,7 @@ reactive — never coasting on a plan made three phases ago:
    surface. State what changed and why in your note.
 Finish only when the objective is met AND the battery is complete (all three
 categories probed, or no applicable surface explicitly declared, or probe
-budget exhausted).${ctx.fullBattery ? `\n\n${fullBatteryPlanSkeleton()}\n\n${fullBatteryChecklistText(ctx.mode)}` : ""}`;
+budget exhausted).${ctx.fullBattery ? `\n\n${fullBatteryPlanSkeleton(ctx.targets)}\n\n${fullBatteryChecklistText(ctx.mode, ctx.targets)}` : ""}`;
 }
 
 export function reconPrompt(ctx: PromptContext): string {
@@ -230,13 +239,13 @@ Two independent observations before anything is "confirmed".
 
 ## The battery — systematic, not opportunistic
 ${ctx.fullBattery
-  ? `You run the FULL target-specific battery: SecScan (SS-*) AND SecLayer (SL-*), three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` ("secscan" | "seclayer"), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on BOTH targets (3 × 2 = 6 cells) — the runner will keep you here until you do (or probes run out).`
+  ? `You run the FULL target-specific battery: ${targetListText(activeTargets(ctx))}, three categories EACH. Tag every \`http_probe\` with \`category\` ("logic" | "functionality" | "validation"), \`targetProfile\` (${activeTargets(ctx).map((t) => `"${t}"`).join(" | ")}), and the battery item ID in your hypothesis. The battery is complete only when you have probed ALL THREE categories on EVERY selected target, or the cell is honestly BLOCKED (3 × ${activeTargets(ctx).length} = ${activeTargets(ctx).length * BATTERY_CATEGORIES.length} cells) — the runner will keep you here until you do (or probes run out). Host targets (windows/linux): items marked [needs: host-exec tooling] are PLAN-ONLY — write the hypothesis and expected evidence, do NOT fire probes you cannot execute; HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward those cells.`
   : `You run a FULL battery across three categories. Tag every \`http_probe\` with
 \`category\` ("logic" | "functionality" | "validation") and the battery item ID
 in your hypothesis. The battery is complete only when you have probed ALL THREE
 categories — the runner will keep you here until you do (or probes run out).`}
 
-${ctx.fullBattery ? fullBatteryChecklistText(ctx.mode) : batteryChecklistText(ctx.mode)}
+${ctx.fullBattery ? fullBatteryChecklistText(ctx.mode, ctx.targets) : batteryChecklistText(ctx.mode)}
 
 Work the checklist against what the target actually exposes: skip items with
 no applicable surface, but say which items you skipped and why. A category

@@ -14,6 +14,8 @@
 
 import { enqueueEngagement, runEngagement, watchQueue } from "./index.js";
 import type { EngagementInput, EngagementMode, RulesOfEngagement } from "./types.js";
+import { isTargetId } from "./targets.js";
+import type { TargetId } from "./targets.js";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -34,15 +36,19 @@ function flag(name: string): boolean {
 
 function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--local-sandbox] [--dry-run]
-  redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--local-sandbox] [--dry-run]
+  redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
 
 --full-battery (or --target secscan+seclayer): ONE unified engagement running the
-target-specific SecScan + SecLayer batteries (3 categories × 2 targets). The
-coordinator prompt carries both batteries as the plan skeleton; coverage counts
-complete only at 6/6 cells. --scope must cover secscan.us (both targets live there).
+target-specific batteries (3 categories × selected targets). The coordinator
+prompt carries the selected batteries as the plan skeleton; coverage counts
+complete only when every cell is probed or honestly BLOCKED.
+--targets <csv>: subset of secscan,seclayer,windows,linux for a full-battery run
+(default: all four). Only applies with --full-battery. Host targets
+(windows/linux) are PLAN-ONLY for items marked [needs: host-exec tooling] —
+see docs/ROADMAP.md; --scope must cover secscan.us for the web targets.
 
 --local-sandbox: LOCAL SANDBOX MODE ONLY. Skips ownership verification and the
 private-host rejection, but only for a target that already resolves to a
@@ -75,6 +81,19 @@ function buildInput(): EngagementInput {
   if (!target || !mode || !objective || scopes.length === 0) usage();
   const fullBattery = process.argv.includes("--full-battery") || target === "secscan+seclayer";
   const excludeArgs = argAll("--exclude");
+  // --targets narrows the full-battery subset; the secscan+seclayer shortcut pins web targets.
+  let targets: TargetId[] | undefined;
+  if (target === "secscan+seclayer") {
+    targets = ["secscan", "seclayer"];
+  } else if (arg("--targets")) {
+    const parsed = arg("--targets")!.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0);
+    const bad = parsed.filter((s) => !isTargetId(s));
+    if (bad.length > 0) {
+      console.error(`[runner] bad --targets ${JSON.stringify(bad)}; want comma-separated subset of secscan,seclayer,windows,linux`);
+      process.exit(2);
+    }
+    targets = parsed as TargetId[];
+  }
   const roe: RulesOfEngagement = {
     scope: scopes,
     excludedTechniques: excludeArgs.length > 0 ? excludeArgs : null,
@@ -83,7 +102,7 @@ function buildInput(): EngagementInput {
     deconflictionContact: arg("--contact"),
     notes: arg("--notes"),
   };
-  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client"), fullBattery };
+  return { target: target!, mode: mode!, objective: objective!, roe, client: arg("--client"), fullBattery, targets };
 }
 
 async function main(): Promise<void> {

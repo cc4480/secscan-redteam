@@ -64,7 +64,7 @@ import type {
 } from "./types.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "./battery.js";
 import type { BatteryCategory } from "./battery.js";
-import { FULL_BATTERY_TARGETS, inferTargetProfile } from "./targets.js";
+import { activeTargets, inferTargetProfile, isTargetId, targetCellStatus, TARGET_PROFILES } from "./targets.js";
 import type { TargetId } from "./targets.js";
 
 export interface RunnerDeps {
@@ -197,7 +197,7 @@ const MCP_TOOLS: JsonSchemaTool[] = [
 const PROBE_TOOL: JsonSchemaTool = {
   name: "http_probe",
   description:
-    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis. Full-battery engagements: also include targetProfile (secscan|seclayer).",
+    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis. Full-battery engagements: also include targetProfile (secscan|seclayer|windows|linux) — host targets are never inferred from the URL, tag them explicitly.",
   parameters: {
     type: "object",
     properties: {
@@ -207,7 +207,7 @@ const PROBE_TOOL: JsonSchemaTool = {
       body: { type: "string" },
       attackId: { type: "string" },
       category: { type: "string", enum: ["logic", "functionality", "validation"] },
-      targetProfile: { type: "string", enum: ["secscan", "seclayer"] },
+      targetProfile: { type: "string", enum: ["secscan", "seclayer", "windows", "linux"] },
       hypothesis: { type: "string" },
     },
     required: ["method", "url", "category"],
@@ -378,9 +378,10 @@ async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementPhase, c
       ctx.coverage.add(category);
       if (ctx.input.fullBattery) {
         // Per-target cell: explicit tag wins, otherwise infer from the URL
-        // path (/api/mcp → seclayer, everything else → secscan).
+        // path (/api/mcp → seclayer, everything else → secscan). Host targets
+        // (windows/linux) are never inferred — they need an explicit tag.
         const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
-        const tp: TargetId = rawTp === "secscan" || rawTp === "seclayer" ? rawTp : inferTargetProfile(url);
+        const tp: TargetId = isTargetId(rawTp) ? rawTp : inferTargetProfile(url);
         let set = ctx.targetCoverage.get(tp);
         if (!set) {
           set = new Set();
@@ -702,14 +703,20 @@ function mergeVerdictBlock(ctx: Ctx, text: string): void {
 /** Compact shared-state digest appended to every tool result — the team's common picture, never stale. */
 /**
  * Runner-computed battery coverage line. Generic engagements: 3 global
- * categories. Full-battery engagements: 3 categories × 2 targets (6 cells).
+ * categories. Full-battery engagements: 3 categories × selected targets
+ * (12 cells by default). ✓ probed · ⊘ blocked (host-exec tooling) · … missing.
  */
 export function batteryStatusLine(ctx: Ctx): string {
   if (ctx.input.fullBattery) {
-    return FULL_BATTERY_TARGETS.map(
-      (t) =>
-        `${t}: ${BATTERY_CATEGORIES.map((c) => `${c}${ctx.targetCoverage.get(t)?.has(c) ? "✓" : "…"}`).join(" ")}`,
-    ).join(" | ");
+    return activeTargets(ctx.input)
+      .map(
+        (t) =>
+          `${t}: ${BATTERY_CATEGORIES.map((c) => {
+            const s = targetCellStatus(TARGET_PROFILES[t], c, ctx.targetCoverage.get(t));
+            return `${c}${s === "done" ? "✓" : s === "blocked" ? "⊘" : "…"}`;
+          }).join(" ")}`,
+      )
+      .join(" | ");
   }
   return BATTERY_CATEGORIES.map((c) => `${c}${ctx.coverage.has(c) ? "✓" : "…"}`).join(" ");
 }
@@ -879,6 +886,7 @@ function promptCtx(ctx: Ctx): {
   scopeHosts: string[];
   roe: RulesOfEngagement;
   fullBattery?: boolean;
+  targets?: TargetId[];
   localSandbox?: boolean;
 } {
   return {
@@ -888,6 +896,7 @@ function promptCtx(ctx: Ctx): {
     scopeHosts: ctx.hosts,
     roe: ctx.input.roe,
     fullBattery: ctx.input.fullBattery,
+    targets: ctx.input.targets,
     // Only actually relax discipline when the target is genuinely
     // loopback/private — matches the gate's invariant exactly. Leaving
     // --local-sandbox on does nothing against a real domain.
@@ -1348,11 +1357,14 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
     return "dry-run summary";
   }
   const cap = ctx.input.mode === "black" ? 1 : 3;
-  /** Full battery: 3 categories × 2 targets = 6 cells, e.g. "secscan:logic". */
+  /** Cell status for one target × category: done | blocked (host-exec tooling) | missing. */
+  const cellStatus = (t: TargetId, c: BatteryCategory) =>
+    targetCellStatus(TARGET_PROFILES[t], c, ctx.targetCoverage.get(t));
+  /** Full battery: 3 categories × selected targets (12 cells by default). Blocked cells never force more rounds — they are honestly reported, not chased. */
   const missing = () =>
     ctx.input.fullBattery
-      ? FULL_BATTERY_TARGETS.flatMap((t) =>
-          BATTERY_CATEGORIES.filter((c) => !ctx.targetCoverage.get(t)?.has(c)).map((c) => `${t}:${c}`),
+      ? activeTargets(ctx.input).flatMap((t) =>
+          BATTERY_CATEGORIES.filter((c) => cellStatus(t, c) === "missing").map((c) => `${t}:${c}`),
         )
       : BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c));
   const summaries: string[] = [];
@@ -1362,7 +1374,7 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
   const baseContext = () =>
     `Recon brief:\n${reconBrief.slice(0, 4000)}\n\n${sharedStateDigest(ctx, "exploit")}\n\n` +
     `Registry hits surfaced: ${ctx.registryHits.length}. Probe budget: ${ctx.config.maxExploitProbes} total, ${ctx.probesUsed} used. ` +
-    `Battery: ${ctx.input.fullBattery ? FULL_BATTERY_TARGETS.map((t) => `${t}:{${BATTERY_CATEGORIES.map((c) => `${c}:${ctx.targetCoverage.get(t)?.has(c) ? "done" : "MISSING"}`).join(",")}}`).join(" ") : (["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
+    `Battery: ${ctx.input.fullBattery ? activeTargets(ctx.input).map((t) => `${t}:{${BATTERY_CATEGORIES.map((c) => `${c}:${cellStatus(t, c) === "done" ? "done" : cellStatus(t, c) === "blocked" ? "BLOCKED" : "MISSING"}`).join(",")}}`).join(" ") : (["logic", "functionality", "validation"] as const).map((c) => `${c}:${ctx.coverage.has(c) ? "done" : "MISSING"}`).join(", ")}. ` +
     `OPSEC cooldowns: ${ctx.opsecCooldown.size}. Redirects used: ${ctx.redirects}/2.`;
 
   let directive = await coordinatorDirective(ctx, "decompose", baseContext());
@@ -1426,7 +1438,7 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
     });
   }
   const covered = ctx.input.fullBattery
-    ? FULL_BATTERY_TARGETS.flatMap((t) => BATTERY_CATEGORIES.filter((c) => ctx.targetCoverage.get(t)?.has(c)).map((c) => `${t}:${c}`))
+    ? activeTargets(ctx.input).flatMap((t) => BATTERY_CATEGORIES.filter((c) => cellStatus(t, c) === "done").map((c) => `${t}:${c}`))
     : BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const summary = summaries.join("\n\n") || "no tasks executed";
   ctx.events.append({
@@ -1439,17 +1451,22 @@ async function exploitPhase(ctx: Ctx, reconBrief: string): Promise<string> {
 }
 
 async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string): Promise<Finding[]> {
-  const fbCells = ctx.input.fullBattery
-    ? FULL_BATTERY_TARGETS.flatMap((t) => BATTERY_CATEGORIES.map((c) => ({ t, c })))
-    : [];
-  const fbCovered = fbCells.filter(({ t, c }) => ctx.targetCoverage.get(t)?.has(c));
+  const selected = ctx.input.fullBattery ? activeTargets(ctx.input) : [];
+  const fbCells = selected.flatMap((t) => BATTERY_CATEGORIES.map((c) => ({ t, c })));
+  const fbStatus = fbCells.map(({ t, c }) => ({ t, c, s: targetCellStatus(TARGET_PROFILES[t], c, ctx.targetCoverage.get(t)) }));
+  const fbDone = fbStatus.filter((x) => x.s === "done");
+  const fbBlocked = fbStatus.filter((x) => x.s === "blocked");
+  const fbMissing = fbStatus.filter((x) => x.s === "missing");
   const covered = BATTERY_CATEGORIES.filter((c) => ctx.coverage.has(c));
   const batteryLine = ctx.input.fullBattery
-    ? `Battery coverage (FULL BATTERY — 3 categories × 2 targets): ${fbCovered.length}/6 cells probed ` +
+    ? `Battery coverage (FULL BATTERY — 3 categories × ${selected.length} targets): ${fbDone.length}/${fbCells.length} cells probed ` +
       `(${batteryStatusLine(ctx)}, ${ctx.probesUsed} probes total). ` +
-      (fbCovered.length < 6
-        ? `NOT COVERED: ${fbCells.filter(({ t, c }) => !ctx.targetCoverage.get(t)?.has(c)).map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
-        : "Full battery complete on both targets.")
+      (fbBlocked.length > 0
+        ? `BLOCKED (host-exec tooling not yet available — planned, not probed; see Honest limits): ${fbBlocked.map(({ t, c }) => `${t}:${c}`).join(", ")}. `
+        : "") +
+      (fbMissing.length > 0
+        ? `NOT COVERED: ${fbMissing.map(({ t, c }) => `${t}:${c}`).join(", ")} — list these under Honest limits.`
+        : `Full battery complete: all ${fbCells.length} cells probed or honestly blocked.`)
     : `Battery coverage: ${covered.length}/3 categories probed ` +
       `(${covered.map((c) => `${c}:${ctx.coverage.has(c) ? "yes" : "no"}`).join(", ")}, ${ctx.probesUsed} probes total). ` +
       (covered.length < 3 ? `NOT COVERED: ${BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c)).join(", ")} — list these under Honest limits.` : "Full battery complete.");

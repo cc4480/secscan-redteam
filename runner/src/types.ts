@@ -12,6 +12,8 @@
 /** Red = overt/aggressive. Black = covert-ops tier (stealth-prioritized). */
 export type EngagementMode = "red" | "black";
 
+import type { TargetId } from "./targets/types.js";
+
 export type EngagementPhase =
   | "authorize"
   | "plan"
@@ -70,12 +72,18 @@ export interface EngagementInput {
   roe: RulesOfEngagement;
   client?: string;
   /**
-   * Full-battery unified engagement (SecScan webapp + SecLayer MCP API as
-   * ONE operation). The coordinator prompt carries both target batteries as
-   * the plan skeleton; coverage requires all 3 categories × both targets.
+   * Full-battery unified engagement (target-specific batteries as ONE
+   * operation). The coordinator prompt carries the selected target batteries
+   * as the plan skeleton; coverage requires all 3 categories × every
+   * selected target (or the cell honestly BLOCKED).
    * Set via --full-battery or --target secscan+seclayer.
    */
   fullBattery?: boolean;
+  /**
+   * Subset of full-battery targets, set via --targets (comma-separated).
+   * Defaults to all four (secscan, seclayer, windows, linux).
+   */
+  targets?: TargetId[];
 }
 
 /** One streamed event. Written to events.jsonl as it happens. */

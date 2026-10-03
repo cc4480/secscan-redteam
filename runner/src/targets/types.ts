@@ -9,8 +9,29 @@
 
 import type { BatteryCategory } from "../battery.js";
 
-export type TargetId = "secscan" | "seclayer";
-export const FULL_BATTERY_TARGETS: TargetId[] = ["secscan", "seclayer"];
+export type TargetId = "secscan" | "seclayer" | "windows" | "linux";
+export const FULL_BATTERY_TARGETS: TargetId[] = ["secscan", "seclayer", "windows", "linux"];
+
+/** Guard for user-supplied target ids (--targets, probe args). */
+export function isTargetId(s: string): s is TargetId {
+  return (FULL_BATTERY_TARGETS as string[]).includes(s.toLowerCase());
+}
+
+/** Battery id prefixes per target: SS-*, SL-*, WS-*, LX-*. */
+export const TARGET_PREFIXES: Record<TargetId, string> = {
+  secscan: "SS",
+  seclayer: "SL",
+  windows: "WS",
+  linux: "LX",
+};
+
+/**
+ * Marker for battery items the runner cannot execute yet: anything needing
+ * SMB/SSH/RDP/WinRM/WMI/AD execution tooling. Such items are PLAN-ONLY —
+ * the agents plan the hypothesis and expected evidence, and the coverage
+ * cell reports BLOCKED (under Honest limits) instead of covered or failed.
+ */
+export const HOST_EXEC_TOOLING = "host-exec tooling";
 
 export interface TargetBatteryItem {
   /** SS-001… / SL-001… — unique per target, zero-padded, ordered by surface. */
@@ -32,7 +53,7 @@ export interface TargetBatteryItem {
   deferredReason?: string;
 }
 
-export type TargetKind = "webapp" | "mcp-api";
+export type TargetKind = "webapp" | "mcp-api" | "host-windows" | "host-linux";
 
 export interface TargetProfile {
   id: TargetId;

@@ -74,59 +74,34 @@ The site that presents content — WordPress, static generators, marketing sites
 
 ## 3. Windows (host and Active Directory)
 
-**Recon and enumeration**
-- SMB / NetBIOS enumeration, null sessions, share and permission mapping
-- User, group, and service enumeration
-
-**Authentication attacks (ROE-permitted only)**
-- RDP / SMB credential testing within authorized accounts
-- NTLM relay, pass-the-hash, Kerberoasting, AS-REP roasting
-
-**Active Directory**
-- Domain mapping (BloodHound-style path analysis)
-- Delegation misconfiguration, GPO abuse, misconfigured ACLs
-- Unquoted service paths, writable service binaries
-
-**Privilege escalation**
-- Misconfigured services, AlwaysInstallElevated
-- Token impersonation, scheduled-task abuse
-
-**Lateral movement (authorized scope)**
-- PSExec / WMI / WinRM execution paths
-- Credential harvesting from authorized access (LSASS-style findings reported, not weaponized beyond scope)
-
-**Stealth (black mode)**
-- Low-noise variants of all of the above; back off on detection signals.
+**Superseded by the exhaustive battery (v0.8.0):** `runner/src/targets/windows.ts` —
+**104 items** (WS-001…WS-104), surface × technique: SMB/share recon, RDP/WinRM
+recon, auth attacks (authorized test accounts only), Active Directory (trusts,
+delegation, GPOs, ACLs, attack paths), privilege escalation, lateral movement,
+credential-exposure audit, persistence findings (reported, never planted),
+EDR/AV awareness. Items needing not-yet-built host execution tooling are
+marked `[needs: host-exec tooling]` and plan-only — see
+[full-battery.md](full-battery.md) and [ROADMAP.md](ROADMAP.md).
 
 ---
 
 ## 4. Linux (host)
 
-**Access**
-- SSH posture: weak / reused credentials (ROE-permitted), exposed keys, agent-forwarding abuse
-- Exposed services: Redis, MongoDB, Elasticsearch, Docker socket
-
-**Privilege escalation**
-- SUID binaries (GTFOBins-style abuse paths)
-- Sudo misconfiguration, Linux capabilities
-- Cron jobs and writable PATH / service files
-- Kernel version vs known local-privesc CVEs
-
-**Configuration and data**
-- World-writable sensitive files, readable /etc/shadow, NFS misconfiguration
-- Container escapes where Docker/K8s is in scope
-
-**Persistence findings (reported, authorized)**
-- Cron entries, systemd units, rogue authorized_keys
-
-**Stealth (black mode)**
-- Low-noise variants; back off on detection signals.
+**Superseded by the exhaustive battery (v0.8.0):** `runner/src/targets/linux.ts` —
+**106 items** (LX-001…LX-106), surface × technique: recon, SSH hardening and
+access, privilege escalation (SUID, sudo, capabilities, cron, kernel CVEs,
+containers), exposed services as findings, file-permission and secret
+auditing, persistence findings (reported, never planted). Same honest
+execution scoping as Windows — see [full-battery.md](full-battery.md) and
+[ROADMAP.md](ROADMAP.md).
 
 ---
 
 ## Scope note
 
-The automated runner performs batteries 1 and 2 today. Batteries 3 and 4
-(Windows / Linux host and AD testing) are the expansion track: they define
-what the red team performs, and the runner grows into them under the same
-authorization gate, ROE enforcement, and non-destructive rules.
+The automated runner performs batteries 1 and 2 fully today. Batteries 3 and 4
+(Windows / Linux) run as exhaustive plan batteries: HTTP(S) items execute via
+`http_probe`; items marked `[needs: host-exec tooling]` are planned, not
+probed, until the host-exec tooling track lands (see
+[ROADMAP.md](ROADMAP.md)). Same authorization gate, ROE enforcement, and
+non-destructive rules throughout.

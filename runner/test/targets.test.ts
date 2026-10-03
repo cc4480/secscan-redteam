@@ -1,6 +1,7 @@
 /**
- * Full-battery tests (v0.7.0) — EXHAUSTIVE target-specific SecScan (120+) +
- * SecLayer (80+) batteries run as ONE unified engagement. No network, no API
+ * Full-battery tests (v0.8.0) — EXHAUSTIVE target-specific SecScan (120+) +
+ * SecLayer (80+) + Windows (100+) + Linux (100+) batteries run as ONE unified
+ * engagement, with honest host-exec tooling scoping. No network, no API
  * keys: fake LLM, fake prober, injected server gate.
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -12,20 +13,27 @@ import type { AgentRole, ChatMessage, ChatResult, ToolCallRequest } from "@secsc
 import {
   TARGET_PROFILES,
   FULL_BATTERY_TARGETS,
+  HOST_EXEC_TOOLING,
+  TARGET_PREFIXES,
+  activeTargets,
   fullBatteryPlanSkeleton,
   fullBatteryChecklistText,
-  targetBatteryChecklistText,
   inferTargetProfile,
+  isTargetId,
   lookupTargetProfile,
+  targetBatteryChecklistText,
+  targetCellBlocked,
+  targetCellStatus,
   targetItemsFor,
 } from "../src/targets.js";
+import type { TargetId } from "../src/targets.js";
 import { BATTERY_CATEGORIES } from "../src/battery.js";
 import { lookupTechnique } from "../src/attack.js";
 import { coordinatorPrompt, exploiterPrompt } from "../src/prompts.js";
 import { runEngagement } from "../src/phases.js";
 import type { EngagementInput } from "../src/types.js";
 
-function promptCtx(fullBattery?: boolean) {
+function promptCtx(fullBattery?: boolean, targets?: TargetId[]) {
   return {
     mode: "red" as const,
     objective: "full battery test",
@@ -33,24 +41,42 @@ function promptCtx(fullBattery?: boolean) {
     scopeHosts: ["secscan.us"],
     roe: { scope: ["secscan.us"] },
     fullBattery,
+    targets,
   };
 }
 
+describe("target registry", () => {
+  it("isTargetId accepts the four targets, rejects unknown", () => {
+    for (const t of ["secscan", "seclayer", "windows", "linux", "SecScan", "WINDOWS"]) assert.ok(isTargetId(t), t);
+    assert.ok(!isTargetId("nope") && !isTargetId(""), "rejects unknown");
+  });
+  it("FULL_BATTERY_TARGETS is all four; activeTargets defaults and filters", () => {
+    assert.deepEqual(FULL_BATTERY_TARGETS, ["secscan", "seclayer", "windows", "linux"]);
+    assert.deepEqual(activeTargets({}), ["secscan", "seclayer", "windows", "linux"]);
+    assert.deepEqual(activeTargets({ targets: ["secscan", "seclayer"] }), ["secscan", "seclayer"]);
+    assert.deepEqual(activeTargets({ targets: ["windows", "nope" as TargetId] }), ["windows"]);
+    assert.deepEqual(activeTargets({ targets: [] }), ["secscan", "seclayer", "windows", "linux"]);
+  });
+});
+
 describe("target profile integrity", () => {
-  it("both profiles present; battery floors met (secscan ≥120, seclayer ≥80)", () => {
-    assert.deepEqual(FULL_BATTERY_TARGETS, ["secscan", "seclayer"]);
-    assert.ok(TARGET_PROFILES.secscan.battery.length >= 120, `secscan has ${TARGET_PROFILES.secscan.battery.length}`);
-    assert.ok(TARGET_PROFILES.seclayer.battery.length >= 80, `seclayer has ${TARGET_PROFILES.seclayer.battery.length}`);
-    // Every category represented on both targets (the 6-cell coverage contract).
+  it("four profiles present; battery floors met (120/80/100/100)", () => {
+    assert.deepEqual(Object.keys(TARGET_PROFILES).sort(), ["linux", "seclayer", "secscan", "windows"]);
+    const floors: Record<TargetId, number> = { secscan: 120, seclayer: 80, windows: 100, linux: 100 };
+    for (const [id, floor] of Object.entries(floors)) {
+      const n = TARGET_PROFILES[id as TargetId].battery.length;
+      assert.ok(n >= floor, `${id} has ${n}, want ≥${floor}`);
+    }
+    // Every category represented on every target (the 12-cell coverage contract).
     for (const profile of Object.values(TARGET_PROFILES)) {
       for (const cat of BATTERY_CATEGORIES) {
         assert.ok(targetItemsFor(profile, cat).length > 0, `${profile.id}:${cat} non-empty`);
       }
     }
   });
-  it("ids unique per target, SS-001/SL-001 shape, every item has category/name/brief/what/owasp", () => {
+  it("ids unique per target, prefix shape, every item has category/name/brief/what/owasp", () => {
     for (const [id, profile] of Object.entries(TARGET_PROFILES)) {
-      const prefix = id === "secscan" ? "SS" : "SL";
+      const prefix = TARGET_PREFIXES[id as TargetId];
       const ids = profile.battery.map((b) => b.id);
       assert.equal(new Set(ids).size, ids.length, `${id} ids unique`);
       for (const b of profile.battery) {
@@ -64,15 +90,19 @@ describe("target profile integrity", () => {
       }
     }
   });
-  it("lookupTargetProfile resolves both, rejects unknown", () => {
+  it("lookupTargetProfile resolves all four, rejects unknown", () => {
     assert.equal(lookupTargetProfile("secscan")?.name.includes("SecScan"), true);
     assert.equal(lookupTargetProfile("SECLAYER")?.name.includes("SecLayer"), true);
+    assert.equal(lookupTargetProfile("windows")?.kind, "host-windows");
+    assert.equal(lookupTargetProfile("LINUX")?.kind, "host-linux");
     assert.equal(lookupTargetProfile("nope"), undefined);
   });
   it("checklist text carries needs/deferred markers honestly", () => {
     const text = targetBatteryChecklistText(TARGET_PROFILES.secscan, "red");
     assert.ok(text.includes("[needs: Second test account"), "cross-account IDOR marked");
     assert.ok(text.includes("[needs: Canary"), "canary infra marked");
+    const win = targetBatteryChecklistText(TARGET_PROFILES.windows, "red");
+    assert.ok(win.includes(`[needs: ${HOST_EXEC_TOOLING}]`), "host tooling marked");
     const black = targetBatteryChecklistText(TARGET_PROFILES.seclayer, "black");
     assert.ok(black.includes("[black:"), "stealth variants rendered");
     assert.ok(!targetBatteryChecklistText(TARGET_PROFILES.seclayer, "red").includes("[black:"));
@@ -85,45 +115,85 @@ describe("target profile integrity", () => {
       }
     }
   });
+  it("--targets subset: checklist carries only selected target ids", () => {
+    const text = fullBatteryChecklistText("red", ["windows", "linux"]);
+    assert.ok(text.includes("WS-001") && text.includes("LX-001"), "host batteries present");
+    assert.ok(!text.includes("SS-001") && !text.includes("SL-001"), "web batteries excluded");
+  });
+});
+
+describe("host-exec tooling scoping", () => {
+  it("windows/linux logic+functionality cells are fully tooling-blocked; validation stays probe-able", () => {
+    for (const id of ["windows", "linux"] as TargetId[]) {
+      const profile = TARGET_PROFILES[id];
+      assert.equal(targetCellBlocked(profile, "logic"), true, `${id}:logic blocked`);
+      assert.equal(targetCellBlocked(profile, "functionality"), true, `${id}:functionality blocked`);
+      // Validation keeps http_probe-executable items (banner/TLS/headers) — never fully blocked.
+      assert.equal(targetCellBlocked(profile, "validation"), false, `${id}:validation probe-able`);
+      const execItems = targetItemsFor(profile, "validation").filter((b) => b.needs !== HOST_EXEC_TOOLING);
+      assert.ok(execItems.length >= 3, `${id}:validation has ≥3 executable items (has ${execItems.length})`);
+    }
+  });
+  it("targetCellStatus: done > blocked > missing", () => {
+    const win = TARGET_PROFILES.windows;
+    assert.equal(targetCellStatus(win, "logic", new Set()), "blocked");
+    assert.equal(targetCellStatus(win, "logic", new Set(["logic"])), "done");
+    assert.equal(targetCellStatus(win, "validation", new Set()), "missing");
+    assert.equal(targetCellStatus(win, "validation", new Set(["validation"])), "done");
+    const sec = TARGET_PROFILES.secscan;
+    assert.equal(targetCellStatus(sec, "logic", new Set()), "missing", "web cells are never blocked");
+  });
 });
 
 describe("unified plan", () => {
-  it("covers both targets in order: recon both → secscan → seclayer → chains → report", () => {
+  it("covers all four targets in order: recon all → secscan → seclayer → windows → linux → chains → report", () => {
     const s = fullBatteryPlanSkeleton();
-    const order = ["RECON both surfaces", "EXPLOIT SecScan battery", "EXPLOIT SecLayer battery", "CROSS-CUTTING CHAINS", "UNIFIED REPORT"];
+    const order = ["RECON all surfaces", "EXPLOIT SecScan battery", "EXPLOIT SecLayer battery", "EXPLOIT Windows battery", "EXPLOIT Linux battery", "CROSS-CUTTING CHAINS", "UNIFIED REPORT"];
     let prev = -1;
     for (const step of order) {
       const i = s.indexOf(step);
       assert.ok(i > prev, `${step} in order`);
       prev = i;
     }
-    assert.ok(s.includes("3 × 2 = 6 cells"), "coverage rule stated");
+    assert.ok(s.includes("3 × 4 = 12 cells"), "coverage rule stated");
+    assert.ok(s.includes("PLAN-ONLY"), "host plan-only rule stated");
   });
-  it("inferTargetProfile routes /api/mcp to seclayer", () => {
+  it("subset skeleton: two targets → 6 cells, host phases omitted", () => {
+    const s = fullBatteryPlanSkeleton(["secscan", "seclayer"]);
+    assert.ok(s.includes("3 × 2 = 6 cells"));
+    assert.ok(!s.includes("EXPLOIT Windows battery"));
+    assert.ok(s.includes('"secscan" | "seclayer"'), "tag enum narrowed");
+  });
+  it("inferTargetProfile routes /api/mcp to seclayer; never invents host targets", () => {
     assert.equal(inferTargetProfile("https://secscan.us/api/mcp"), "seclayer");
     assert.equal(inferTargetProfile("https://secscan.us/api/mcp?x=1"), "seclayer");
     assert.equal(inferTargetProfile("https://secscan.us/scan"), "secscan");
+    assert.equal(inferTargetProfile("https://10.9.0.11/"), "secscan", "host URLs default to secscan — explicit tag required");
     assert.equal(inferTargetProfile("not a url"), "secscan");
   });
 });
 
 describe("prompt wiring", () => {
-  it("coordinator prompt includes BOTH batteries when fullBattery is set, generic otherwise", () => {
+  it("coordinator prompt includes selected batteries when fullBattery is set, generic otherwise", () => {
     const fb = coordinatorPrompt(promptCtx(true));
     assert.ok(fb.includes("FULL-BATTERY unified engagement"), "plan skeleton present");
     assert.ok(fb.includes("SS-001"), "SecScan battery present");
     assert.ok(fb.includes("SL-001"), "SecLayer battery present");
-    assert.ok(fb.includes("120 items"), "secscan count shown");
-    assert.ok(fb.includes("80 items"), "seclayer count shown");
+    assert.ok(fb.includes("WS-001"), "Windows battery present");
+    assert.ok(fb.includes("LX-001"), "Linux battery present");
+    const subset = coordinatorPrompt(promptCtx(true, ["secscan", "seclayer"]));
+    assert.ok(subset.includes("SS-001") && !subset.includes("WS-001"), "--targets subset honored");
     const generic = coordinatorPrompt(promptCtx(false));
     assert.ok(!generic.includes("SS-001"), "no target battery without the flag");
     assert.ok(!generic.includes("FULL-BATTERY unified engagement"));
   });
   it("exploiter prompt swaps in target batteries + targetProfile tagging when fullBattery", () => {
     const fb = exploiterPrompt(promptCtx(true));
-    assert.ok(fb.includes("SS-060") && fb.includes("SL-040"), "both target checklists");
+    assert.ok(fb.includes("WS-050") && fb.includes("LX-050"), "host checklists present");
     assert.ok(fb.includes("targetProfile"), "tagging instruction");
-    assert.ok(fb.includes("3 × 2 = 6 cells"), "coverage rule");
+    assert.ok(fb.includes('"windows" | "linux"'), "host tags listed");
+    assert.ok(fb.includes("3 × 4 = 12 cells"), "coverage rule");
+    assert.ok(fb.includes("PLAN-ONLY"), "host plan-only rule");
     const generic = exploiterPrompt(promptCtx(undefined));
     assert.ok(!generic.includes("SL-001"), "generic battery otherwise");
     assert.ok(generic.includes("L-1"), "generic checklist intact");
@@ -151,6 +221,7 @@ describe("full-battery coverage mechanics", () => {
     objective: "full battery test",
     roe: { scope: ["secscan.us"] },
     fullBattery: true,
+    targets: ["secscan", "seclayer"],
   };
 
   /** Scripted LLM: coordinator tasks per-target cells; exploiter probes with targetProfile (explicit for secscan, URL-inferred for seclayer). */
@@ -202,6 +273,67 @@ describe("full-battery coverage mechanics", () => {
     };
   }
 
+  /** 12-cell scripted LLM: reads the runner's Battery line and tasks every MISSING cell (blocked cells are never chased). */
+  function scriptedLlm12() {
+    let n = 0;
+    const fired = new Set<string>(); // one probe per task — the fake loop doesn't record tool calls as assistant messages
+    const urls: Record<string, string> = {
+      secscan: "https://secscan.us/scan",
+      seclayer: "https://secscan.us/api/mcp",
+      windows: "https://10.9.0.11/",
+      linux: "https://10.9.0.12/",
+    };
+    const probe = (target: string, category: string): ToolCallRequest => ({
+      id: `call-${++n}`,
+      name: "http_probe",
+      arguments: {
+        method: "GET",
+        url: urls[target],
+        category,
+        attackId: "T1018",
+        targetProfile: target, // explicit tag for every cell — exercises the tagging path
+        hypothesis: `full battery ${target} ${category}`,
+      },
+    });
+    const taskFor = (target: string, category: string) => ({
+      kind: "probe", brief: `test ${target} ${category}`, attackId: "T1018", category, maxTurns: 3,
+    });
+    return async (role: AgentRole, messages: ChatMessage[], _opts: object): Promise<ChatResult> => {
+      const has = (s: string) => messages.some((m) => m.content.includes(s));
+      if (role === "coordinator") {
+        if (has("Transition awaiting sign-off")) return textOnly("SIGN-OFF: test approval.");
+        // Faithful coordinator: parse the runner's Battery line and task MISSING cells.
+        const battLine = messages.map((m) => m.content).join("\n").match(/Battery: ([^\n]*)/)?.[1] ?? "";
+        const seen = new Set<string>();
+        const tasks: object[] = [];
+        for (const m of battLine.matchAll(/(\w+):\{([^}]+)\}/g)) {
+          for (const part of m[2].split(",")) {
+            const [c, s] = part.split(":");
+            const key = `${m[1]}:${c}`;
+            if (s === "MISSING" && ["logic", "functionality", "validation"].includes(c) && !seen.has(key)) {
+              seen.add(key);
+              if (tasks.length < 3) tasks.push(taskFor(m[1], c));
+            }
+          }
+        }
+        if (tasks.length === 0) return taskJson([], true, "done");
+        return taskJson(tasks, false, `covering ${tasks.map((t) => (t as { brief: string }).brief).join(", ")}`);
+      }
+      if (role === "recon") return textOnly("recon brief: all surfaces mapped");
+      if (role === "reporter") return textOnly("# Report\n\n```json " + '{"findings":[]}' + " ```");
+      const sys = messages.find((m) => m.role === "system")?.content ?? "";
+      const brief = sys.match(/- Task: ([^\n]+)/)?.[1] ?? "";
+      const parts = brief.split(" ");
+      const target = parts[1] ?? "secscan";
+      const category = sys.match(/Battery category: (\w+)/)?.[1] ?? parts[2] ?? "logic";
+      if (!fired.has(brief)) {
+        fired.add(brief);
+        return { text: `${target} ${category} hypothesis`, toolCalls: [probe(target, category)], provider: "fake", model: "fake" };
+      }
+      return textOnly("TRIED: probe / OBSERVED: 200 ok / VERDICT: killed - no flaw");
+    };
+  }
+
   async function run(input: EngagementInput, llm: (role: AgentRole, messages: ChatMessage[], opts: object) => Promise<ChatResult>) {
     return runEngagement(input, {
       mcpToken: "test",
@@ -212,11 +344,11 @@ describe("full-battery coverage mechanics", () => {
     });
   }
 
-  it("6/6 cells → report says full battery complete on both targets", async () => {
+  it("6/6 web cells (--targets secscan,seclayer) → report says full battery complete", async () => {
     const res = await run(baseInput, scriptedLlm(true));
     assert.equal(res.status, "complete");
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
-    assert.ok(report.includes("Full battery complete on both targets."), "6-cell completion line");
+    assert.ok(report.includes("Full battery complete: all 6 cells probed or honestly blocked."), "6-cell completion line");
     assert.ok(report.includes("3 categories × 2 targets"), "per-target coverage header");
   });
 
@@ -226,5 +358,22 @@ describe("full-battery coverage mechanics", () => {
     const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
     assert.ok(report.includes("NOT COVERED: seclayer:logic, seclayer:functionality, seclayer:validation"), "missing cells named");
     assert.ok(report.includes("list these under Honest limits"), "honest-limits directive");
+  });
+
+  it("12 cells (all four targets): web cells probed, host logic/functionality blocked, host validation probed → complete", async () => {
+    const input: EngagementInput = { ...baseInput, targets: undefined }; // default: all four
+    const res = await run(input, scriptedLlm12());
+    assert.equal(res.status, "complete");
+    const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
+    assert.ok(report.includes("3 categories × 4 targets"), "12-cell header");
+    assert.ok(
+      report.includes("BLOCKED (host-exec tooling not yet available"),
+      "blocked cells named as blocked",
+    );
+    for (const cell of ["windows:logic", "windows:functionality", "linux:logic", "linux:functionality"]) {
+      assert.ok(report.includes(cell), `${cell} named`);
+    }
+    assert.ok(report.includes("Full battery complete: all 12 cells probed or honestly blocked."), "completion line");
+    assert.ok(!report.includes("NOT COVERED"), "no missing cells");
   });
 });
