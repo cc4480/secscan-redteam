@@ -1,22 +1,28 @@
 /**
- * Red-team definition for the harness.
+ * Red-team team DEFINITION for the harness — not yet wired to a spawner.
  *
  * Shape mirrors the proven dsh-agent-teams profile format
  * (NanmiCoder/dsh-agent-teams src/profiles.ts): named members with
  * {name, role, provider, model, reasoning_effort, executionPrompt} and seed
- * tasks with dependencies. The harness's team plugin consumes this to spawn
- * the coordinator + specialists as durable continuable subagents.
+ * tasks with dependencies. Intent: a harness team plugin consumes this to
+ * spawn the coordinator + specialists as durable continuable subagents.
  *
- * v0.6 model policy (DeepSeek only; Qwen available, not active):
- *   - deepseek-flash — fast, cheap, strong tool use → recon loops,
- *     coordinator orchestration, reporter write-up.
- *   - deepseek-v4-pro — premium reasoning → exploiter hypothesis
- *     formation, exploit-chain planning, pivot decisions.
- * The router (llm-router/) is provider-pluggable; Qwen (qwen3.8-max) is
- * registered and ready to swap back in for the exploiter role later —
- * see llm-router/src/policy.ts. Adding Claude / ChatGPT / Gemini / GLM
- * later means registering new provider adapters, not rewriting these roles.
+ * HONEST STATUS: no such team plugin exists in this repo yet. Today the
+ * harness path (index.ts `apply()`) only installs the auth gate and injects
+ * one system-prompt section (USAGE_SECTION) describing this same team to a
+ * single agent — it does not spawn these members as separate subagents.
+ * The live multi-agent implementation is the standalone runner
+ * (runner/src/agents.ts + runner/src/prompts/), which is independent of this
+ * profile. This file is forward scaffolding for when/if a harness team
+ * plugin is built; REDTEAM_PROFILE is currently unconsumed (see the `void`
+ * reference in index.ts) and kept as a shape reference, not live config.
+ *
+ * Per-role models are PULLED from llm-router's ROLE_MODEL_POLICY (the
+ * actual routing policy used by the runner) rather than hardcoded here, so
+ * this scaffold can't silently drift from reality if the policy changes.
  */
+
+import { ROLE_MODEL_POLICY } from "@secscan/redteam-llm-router";
 
 export interface TeamMember {
   name: string;
@@ -62,8 +68,9 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "coordinator",
       role: "Engagement lead. Owns the plan, phases, scope discipline, and final assembly. Runs recon → exploitation → reporting in order, re-tasks on surprises.",
-      provider: "deepseek",
-      model: "deepseek-flash",
+      provider: ROLE_MODEL_POLICY.coordinator.provider,
+      model: ROLE_MODEL_POLICY.coordinator.model,
+      reasoning_effort: ROLE_MODEL_POLICY.coordinator.reasoningEffort,
       promptFile: "agents/coordinator.md",
       executionPrompt:
         "You are the engagement lead. Keep phases tight, keep every action inside the authorized scope, " +
@@ -72,8 +79,9 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "recon",
       role: "Surface mapper. Passive recon first (headers, TLS, DNS, exposed files, tech fingerprinting via mcp__secscan__scan_url passive scans), then hands attack-surface notes to the exploiter.",
-      provider: "deepseek",
-      model: "deepseek-flash",
+      provider: ROLE_MODEL_POLICY.recon.provider,
+      model: ROLE_MODEL_POLICY.recon.model,
+      reasoning_effort: ROLE_MODEL_POLICY.recon.reasoningEffort,
       promptFile: "agents/recon.md",
       executionPrompt:
         "Map first, touch lightly. Enumerate everything observable without active probing, then write " +
@@ -82,9 +90,9 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "exploiter",
       role: "Reasoning attacker. Takes recon + scan findings, forms hypotheses, crafts context-specific payloads, observes responses, and pivots. The dynamic-testing differentiator lives here.",
-      provider: "deepseek",
-      model: "deepseek-v4-pro",
-      reasoning_effort: "high",
+      provider: ROLE_MODEL_POLICY.exploiter.provider,
+      model: ROLE_MODEL_POLICY.exploiter.model,
+      reasoning_effort: ROLE_MODEL_POLICY.exploiter.reasoningEffort,
       promptFile: "agents/exploiter.md",
       executionPrompt:
         "Think like an attacker, act like a scientist. Every probe tests a specific hypothesis. " +
@@ -94,8 +102,9 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "reporter",
       role: "Client report author. Converts validated findings into a business-readable report: executive summary, per-finding impact + evidence + fix, retest checklist.",
-      provider: "deepseek",
-      model: "deepseek-flash",
+      provider: ROLE_MODEL_POLICY.reporter.provider,
+      model: ROLE_MODEL_POLICY.reporter.model,
+      reasoning_effort: ROLE_MODEL_POLICY.reporter.reasoningEffort,
       promptFile: "agents/reporter.md",
       executionPrompt:
         "Write for the client's CTO, not for hackers. Every finding needs: what it is, why it matters " +

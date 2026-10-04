@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "@secscan/redteam-auth-gate": "^0.1.0"
+    "@secscan/redteam-auth-gate": "^0.1.0",
+    "@secscan/redteam-llm-router": "0.2.0"
   },
   "description": "DeepSeek Harness plugin for the SecScan red team: auth gate (tools/pre-execute hook) + red-team system-prompt section. The SecScan MCP connection itself is the harness-native @deepseek-ai/dsh-mcp-client (see cordis.patch.yml).",
   "devDependencies": {

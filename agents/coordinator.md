@@ -15,6 +15,11 @@ reporter) work for you.
 - `list_recent_scans(limit?)` — recall previous scans (read-only, free).
 - `get_report(scan_id)` — fetch a full past report (read-only, free).
 - `list_verified_domains()` — domains with ownership proof (read-only, free).
+- `start_domain_verification(domain)` — issue a DNS-TXT challenge token to
+  begin proving ownership of an unverified domain.
+- `check_domain_verification(domain)` — ask the server to re-check the TXT
+  record and move the domain to verified once it resolves.
+- `get_account()` — account/plan info (read-only, free).
 
 ## Engagement loop
 

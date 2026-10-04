@@ -11,7 +11,7 @@ registered in the router and can be swapped back in for the exploiter role
 with a one-line policy change.
 
 **Honest status:** the full system is test-verified against simulated
-targets (508/508 runner tests, 17/17 auth-gate tests) but has not yet
+targets (539/539 runner tests, 18/18 auth-gate tests) but has not yet
 completed a live full engagement. Anything this README calls "real" means
 *built, tested against mocks/fakes/loopback, and wired into the safety
 core* — not *proven on a live target*. Proof exists only after a real
@@ -134,7 +134,7 @@ Credential testing only against authorized test accounts.
 #    dependency order and stamps each dist/ so stale builds fail loudly)
 npm install && npm run build
 npm run check-dist # fails if any dist/ is stale vs its src/
-npm test           # all workspace suites (runner 539, auth-gate 17)
+npm test           # all workspace suites (runner 539, auth-gate 18)
 npm run typecheck  # every tsconfig clean
 
 # 2. Dry run (no live target touched)

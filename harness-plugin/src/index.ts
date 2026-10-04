@@ -23,6 +23,7 @@
  * server alone (no allowlist env var). Secrets via env, never in files.
  */
 
+import { ROLE_MODEL_POLICY } from "@secscan/redteam-llm-router";
 import type { Context, PluginModule } from "./harness-types.js";
 import { installAuthGate } from "./auth-gate.js";
 import { REDTEAM_PROFILE } from "./redteam-profile.js";
@@ -31,12 +32,14 @@ export const name = "secscan-redteam";
 // 'tools' for the pre-execute hook surface, 'systemPrompt' for the section registry.
 export const inject = ["tools", "systemPrompt"];
 
+const MODEL_POLICY_LINE = `Member model policy: ${ROLE_MODEL_POLICY.coordinator.model} for ` +
+  `coordinator/recon/reporter; ${ROLE_MODEL_POLICY.exploiter.model} for exploiter reasoning.`;
+
 const USAGE_SECTION = `## Red-team engagement protocol (secscan-redteam)
 
 You are operating a scoped, authorized penetration test as part of a red team.
 Team: coordinator (lead), recon (surface mapping), exploiter (dynamic testing),
-reporter (client report). Member model policy: deepseek-flash for
-recon/coordinator/reporter; deepseek-v4-pro for exploiter reasoning.
+reporter (client report). ${MODEL_POLICY_LINE}
 
 SecScan tools (via the native MCP connection, namespaced mcp__secscan__*):
 scan_url (start a scan; passive unless the target domain is verified),
@@ -60,11 +63,20 @@ export function apply(ctx: Context): void {
 
   ctx.systemPrompt.section({
     name: "secscan-redteam",
+    // TODO: 117 has no documented meaning in this repo — it was picked to
+    // sort after other known sections in testing, not derived from a
+    // published ordering scheme. Verify against the host harness's actual
+    // systemPrompt.section() ordering docs before relying on it.
     order: 117,
     text: USAGE_SECTION,
   });
 
-  void REDTEAM_PROFILE; // consumed by the team plugin / runner; kept as the source of truth
+  // REDTEAM_PROFILE is NOT consumed by anything yet — no team-spawning plugin
+  // exists in this repo (the live multi-agent implementation is the
+  // standalone runner, which is independent of this file). This is forward
+  // scaffolding for a future harness team plugin; kept as a shape reference
+  // so it type-checks and stays current (see redteam-profile.ts header).
+  void REDTEAM_PROFILE;
 }
 
 export const plugin: PluginModule = { name, inject, apply };
