@@ -60,6 +60,37 @@ describe("parseVerifiedDomains", () => {
     assert.deepEqual(parseVerifiedDomains({ nonsense: 42 }), []);
     assert.deepEqual(parseVerifiedDomains({ content: [{ type: "text", text: "not json {" }] }), []);
   });
+  it("never lists a domain mentioned only as NOT verified (fail closed on prose)", () => {
+    // Real server prose, from an actual engagement log: "First
+    // check_domain_verification({"domain":"secscan.us"}) -> NOT VERIFIED: the
+    // TXT record ...". A sentence naming an unverified domain must never
+    // cause that domain to come back as verified.
+    assert.deepEqual(
+      parseVerifiedDomains({
+        content: [
+          { type: "text", text: "NOT VERIFIED: evil-staging.example.com — TXT record missing" },
+        ],
+      }),
+      [],
+    );
+    assert.deepEqual(
+      parseVerifiedDomains({ content: [{ type: "text", text: "No verified domains yet." }] }),
+      [],
+    );
+    assert.deepEqual(
+      parseVerifiedDomains({
+        content: [
+          {
+            type: "text",
+            text:
+              "Verified (full active testing): secscan.us\n" +
+              "Not verified (pending TXT record): attacker.net",
+          },
+        ],
+      }),
+      ["secscan.us"],
+    );
+  });
 });
 
 describe("decide (pre-execute gate)", () => {

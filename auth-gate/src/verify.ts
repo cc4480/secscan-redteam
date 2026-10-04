@@ -39,6 +39,35 @@ function normalizeDomain(raw: string): string | null {
 }
 
 /**
+ * The live server's actual list_verified_domains response is sometimes prose
+ * ("Verified (full active testing): secscan.us") rather than a bare domain,
+ * JSON, or a recognized object key. We deliberately do NOT substring-match
+ * domain-shaped tokens out of arbitrary prose here: a sentence can just as
+ * easily name an *unverified* domain ("NOT VERIFIED: evil.example.com — TXT
+ * record missing", or the real wording this gate has actually seen: "No
+ * verified domains yet"). A naive extractor can't tell "verified" from "NOT
+ * verified" apart, which would flip this fail-closed gate into fail-open for
+ * exactly the inputs it exists to be strict about. Only a single prefixed
+ * line is trusted: "<label>: <domain>" where label contains "verified" and
+ * not "not"/"unverified"/"pending" — anything else contributes no domains.
+ */
+const VERIFIED_LABEL_LINE_RE = /^([a-z0-9 ()/_-]*verified[a-z0-9 ()/_-]*):\s*(.+)$/i;
+
+function extractDomainsFromText(raw: string): string[] {
+  const out: string[] = [];
+  for (const rawLine of raw.split(/[\n,]/)) {
+    const line = rawLine.trim();
+    const m = line.match(VERIFIED_LABEL_LINE_RE);
+    if (!m) continue;
+    const label = m[1].toLowerCase();
+    if (/\bnot\b|unverified|pending/.test(label)) continue;
+    const d = normalizeDomain(m[2]);
+    if (d) out.push(d);
+  }
+  return out;
+}
+
+/**
  * Defensively extract a verified-domain list from an MCP `tools/call` result
  * payload. Accepts the JSON-RPC envelope or the bare result, `content` text
  * blocks carrying JSON, bare arrays, and objects with `domain` / `domains` /
@@ -61,7 +90,13 @@ export function parseVerifiedDomains(payload: unknown): string[] {
         }
       }
       const d = normalizeDomain(t);
-      if (d) found.push(d);
+      if (d) {
+        found.push(d);
+        return;
+      }
+      // Whole string isn't a bare domain (e.g. it's a sentence) — look for
+      // domain-shaped substrings instead of giving up.
+      found.push(...extractDomainsFromText(t));
       return;
     }
     if (Array.isArray(node)) {
