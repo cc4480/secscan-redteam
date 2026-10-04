@@ -11,10 +11,10 @@
  * Verification is SERVER-AUTHORITATIVE: before allowing an active-testing
  * scan, the gate asks the SecScan server for its own verified-domain list
  * (`list_verified_domains` over the MCP endpoint) and allows only listed
- * domains. The operator-managed `SECSCAN_VERIFIED_DOMAINS` allowlist remains
- * as a secondary path for operators who verified out-of-band. The gate
- * issues no tokens and does no DNS of its own. Any check error or timeout
- * fails closed (deny).
+ * domains. The server is the sole source of truth — there is no operator
+ * allowlist or other out-of-band bypass, matching the runner's own gate. The
+ * gate issues no tokens and does no DNS of its own. Any check error or
+ * timeout fails closed (deny).
  *
  * Field names verified against @deepseek-ai/dsh-tools 0.2.0-rc.2:
  * ToolExecution has `name` (tool name) and `arguments` (unknown).
@@ -39,20 +39,9 @@ function serverConfig(): ServerVerificationConfig | null {
   };
 }
 
-function allowlistedDomains(): Set<string> {
-  const raw = process.env["SECSCAN_VERIFIED_DOMAINS"] ?? "";
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
 function gateContext(): GateContext {
   const cfg = serverConfig();
   return {
-    allowlistedDomains: allowlistedDomains(),
     // Fail closed twice: isServerVerified already returns false on any
     // error, and the wrapper below swallows anything unexpected.
     isServerVerified: async (domain: string): Promise<boolean> => {

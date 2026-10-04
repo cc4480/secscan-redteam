@@ -19,8 +19,8 @@
  *      `ctx.systemPrompt.section({ name, order, text })`.
  *
  * Config: none. The SecScan MCP token lives in the dsh-mcp-client entry's
- * headers (env SECSCAN_MCP_TOKEN), and the per-engagement verified-domain
- * allowlist in env SECSCAN_VERIFIED_DOMAINS. Secrets via env, never in files.
+ * headers (env SECSCAN_MCP_TOKEN); verified domains come from the SecScan
+ * server alone (no allowlist env var). Secrets via env, never in files.
  */
 
 import type { Context, PluginModule } from "./harness-types.js";

@@ -17,12 +17,8 @@ import {
   type GateContext,
 } from "../src/index.js";
 
-function ctxWith(
-  serverVerdict: boolean | "throw",
-  allowlisted: string[] = [],
-): GateContext {
+function ctxWith(serverVerdict: boolean | "throw"): GateContext {
   return {
-    allowlistedDomains: new Set(allowlisted),
     isServerVerified: async () => {
       if (serverVerdict === "throw") throw new Error("simulated checker failure");
       return serverVerdict;
@@ -143,12 +139,12 @@ describe("decide (pre-execute gate)", () => {
     );
     assert.deepEqual(d, { kind: "allow" });
   });
-  it("allows aggressive scans for allowlisted domains even when the server says no", async () => {
+  it("denies aggressive scans when the server says no — there is no allowlist bypass", async () => {
     const d = await decide(
       { toolName: "scan_url", arguments: { url: "https://example.com", aggressive: true } },
-      ctxWith(false, ["example.com"]),
+      ctxWith(false),
     );
-    assert.deepEqual(d, { kind: "allow" });
+    assert.equal(d.kind, "deny");
   });
   it("denies aggressive scans on malformed URLs", async () => {
     const d = await decide(

@@ -31,6 +31,6 @@
     - id: secscan-redteam
       name: '@secscan/redteam-harness-plugin'
       config:
-        # No plugin config needed. Per-engagement verified domains go in
-        # env SECSCAN_VERIFIED_DOMAINS (comma-separated); the supplementary
-        # DNS TXT proof uses env SECSCAN_ENGAGEMENT_TOKEN.
+        # No plugin config needed. Verified domains come from the SecScan
+        # server alone (list_verified_domains over MCP) — there is no
+        # allowlist env var. The MCP token lives in env SECSCAN_MCP_TOKEN.

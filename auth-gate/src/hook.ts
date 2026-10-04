@@ -5,16 +5,14 @@
  *   - Non-scan tools (reports, verification workflow, everything else) → allow.
  *   - scan_url WITHOUT an explicit active-testing request → allow (passive recon).
  *   - scan_url WITH an explicit active-testing request → allow ONLY if the
- *     target domain is proven:
- *       1. listed by the SecScan server (primary — injected `isServerVerified`,
- *          which must itself fail closed), OR
- *       2. present in the operator-managed `SECSCAN_VERIFIED_DOMAINS` allowlist
- *          (secondary — set by the operator who verified ownership out-of-band
- *          via the server's start_domain_verification flow).
+ *     target domain is listed by the SecScan server (injected
+ *     `isServerVerified`, which must itself fail closed).
  *     Otherwise → deny, with the server verification flow as remediation.
  *
- * The gate never issues tokens and performs no DNS of its own. The SecScan
- * server is the authority; this is the agent-layer backstop.
+ * The SecScan server is the SOLE source of truth: there is no operator
+ * allowlist or any other out-of-band bypass, matching the runner's own gate
+ * (runner/src/gate.ts) and the safety case's "no operator exceptions" claim.
+ * The gate never issues tokens and performs no DNS of its own.
  */
 
 import { verificationInstructions } from "./verify.js";
@@ -27,11 +25,10 @@ export interface PreExecuteEvent {
 export type GateDecision = { kind: "allow" } | { kind: "deny"; reason: string };
 
 export interface GateContext {
-  /** Operator-managed allowlist (SECSCAN_VERIFIED_DOMAINS). Empty = no bypass. */
-  allowlistedDomains: ReadonlySet<string>;
   /**
    * Server-side verdict for a domain. MUST fail closed: any error, timeout,
    * or missing credential returns false. Injected so unit tests need no network.
+   * This is the gate's only authorization input — there is no allowlist bypass.
    */
   isServerVerified: (domain: string) => Promise<boolean>;
 }
@@ -107,12 +104,7 @@ export async function decide(
     };
   }
 
-  // Proof path 1 (secondary): operator-managed allowlist.
-  if (ctx.allowlistedDomains.has(domain)) {
-    return { kind: "allow" };
-  }
-
-  // Proof path 2 (primary): the SecScan server's own verified-domain list.
+  // The only proof path: the SecScan server's own verified-domain list.
   let verified = false;
   try {
     verified = await ctx.isServerVerified(domain);
