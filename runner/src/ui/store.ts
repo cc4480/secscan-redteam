@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { StoredEngagement, UiJob } from "./types.js";
 import { readState, type LiveState } from "../events.js";
@@ -27,7 +27,7 @@ export function isSafeEngagementId(id: string): boolean {
 export function engagementDir(base: string, id: string): string | undefined {
   if (!isSafeEngagementId(id)) return undefined;
   const dir = resolve(base, id);
-  if (!dir.startsWith(resolve(base) + "/") && dir !== resolve(base)) return undefined;
+  if (!dir.startsWith(resolve(base) + sep) && dir !== resolve(base)) return undefined;
   if (!existsSync(join(dir, "state.json"))) return undefined;
   return dir;
 }
