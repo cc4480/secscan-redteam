@@ -9,6 +9,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { METHODOLOGY_EXCLUSIONS, buildCompliancePack, renderAttestationLetter, renderCompliancePackMarkdown } from "../compliance/index.js";
 import { buildSafetyManifest } from "../safety/index.js";
+import { resolveOperatorName } from "../accountability/index.js";
 import { type Ctx } from "../context.js";
 import { type Finding } from "../types.js";
 
@@ -22,7 +23,7 @@ export function writeComplianceArtifacts(
     const pack = buildCompliancePack({
       engagementId: ctx.events.engagementId,
       client: ctx.input.client,
-      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"],
+      operator: resolveOperatorName(ctx.input.operatorName),
       target: ctx.input.target,
       mode: ctx.input.mode,
       objective: ctx.input.objective,
@@ -52,7 +53,7 @@ export function writeComplianceArtifacts(
       renderAttestationLetter({
         engagementId: ctx.events.engagementId,
         client: ctx.input.client,
-        operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"],
+        operator: resolveOperatorName(ctx.input.operatorName),
         // v0.17.0 accountability: the letter names the tier the operator approved.
         tier: ctx.tier.current,
         target: ctx.input.target,

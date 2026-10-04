@@ -39,7 +39,7 @@ export async function buildIntegrationsSection(
     const siemEvents = buildSiemEvents({
       engagementId: ctx.events.engagementId,
       target: ctx.input.target,
-      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"] ?? "(operator name not supplied)",
+      operator: ctx.input.operatorName || process.env["REDTEAM_OPERATOR"]?.trim() || "(operator name not supplied)",
       findings,
       bundles: pocBundleMap,
       safetySummary: `engagement ${ctx.events.engagementId}: ${findings.length} findings parsed; zero-disruption record in safety-manifest.json`,

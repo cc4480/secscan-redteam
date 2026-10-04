@@ -29,7 +29,7 @@ export function writeSafetyArtifacts(ctx: Ctx): ReturnType<typeof buildSafetyMan
       throttledMs: Math.round(ctx.safety.limiter.throttledMs),
       acquires: ctx.safety.limiter.acquires,
       killSwitchAborts: ctx.safety.killSwitchAborts,
-      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"] ?? "(operator name not supplied — set REDTEAM_OPERATOR)",
+      operator: ctx.input.operatorName || process.env["REDTEAM_OPERATOR"]?.trim() || "(operator name not supplied — set REDTEAM_OPERATOR)",
       autoHalt: {
         consecutiveThreshold: ah.config.consecutiveThreshold,
         windowSize: ah.config.windowSize,

@@ -61,7 +61,10 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
     env["QWEN_API_KEY"] = opts.qwenApiKey;
   }
   return {
-    mcpEndpoint: opts.mcpEndpoint ?? env["SECSCAN_MCP_URL"] ?? "https://secscan.us/api/mcp",
+    // Blank-but-present SECSCAN_MCP_URL (the .env.example convention for
+    // "unset, use the default") must fall through too — "" ?? x is "",
+    // not x, so a stray fetch("") blew up here before the .trim()/|| guard.
+    mcpEndpoint: opts.mcpEndpoint || env["SECSCAN_MCP_URL"]?.trim() || "https://secscan.us/api/mcp",
     mcpToken,
     deepseekApiKey: deepseekApiKey ?? "",
     qwenApiKey: qwenApiKey ?? "",

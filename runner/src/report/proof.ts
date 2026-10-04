@@ -40,7 +40,7 @@ export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: M
     const proofMeta = {
       engagementId: ctx.events.engagementId,
       target: ctx.input.target,
-      operator: ctx.input.operatorName ?? process.env["REDTEAM_OPERATOR"] ?? "(operator name not supplied — set REDTEAM_OPERATOR)",
+      operator: ctx.input.operatorName || process.env["REDTEAM_OPERATOR"]?.trim() || "(operator name not supplied — set REDTEAM_OPERATOR)",
     };
     const attackToItem = new Map<string, string>();
     for (const [tid, profile] of Object.entries(TARGET_PROFILES)) {

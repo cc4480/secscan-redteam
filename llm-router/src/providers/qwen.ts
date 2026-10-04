@@ -91,8 +91,12 @@ export class QwenProvider implements LlmProvider {
   private readonly baseUrl: string;
 
   constructor(baseUrl?: string) {
-    const fromEnv = process.env[QWEN_BASE_URL_ENV];
-    this.baseUrl = (baseUrl ?? fromEnv ?? QWEN_BASE_URL).replace(/\/+$/, "");
+    // Same blank-but-present-env-var guard as runner/src/phases/config.ts's
+    // mcpEndpoint: "" ?? x is "", not x, so a blank QWEN_BASE_URL= in .env
+    // (the documented "unset, use default" convention) must use || / trim,
+    // not ??, or this silently resolves to an empty base URL.
+    const fromEnv = process.env[QWEN_BASE_URL_ENV]?.trim();
+    this.baseUrl = (baseUrl?.trim() || fromEnv || QWEN_BASE_URL).replace(/\/+$/, "");
   }
 
   isConfigured(): boolean {
