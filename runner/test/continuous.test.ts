@@ -18,7 +18,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   loadWatchProfile,
@@ -383,7 +383,9 @@ describe("watch cycles (integration, injected runner)", () => {
       now: () => NOW,
       runFn: runFnFor(ctx),
       reverifyFn: async (bundlePath: string) => {
-        const base = bundlePath.split("/").pop() ?? "";
+        // bundlePathFor() builds this with path.join (OS-native separators),
+        // so extract the basename portably — never split on "/" alone.
+        const base = basename(bundlePath);
         const verdict = ctx.reverifyVerdicts[base] ?? "not-reproduced";
         return { verdict, note: `fake ${verdict}` };
       },
