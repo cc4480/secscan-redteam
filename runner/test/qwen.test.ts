@@ -155,12 +155,12 @@ describe("role model policy (v0.6)", () => {
   it("routes the exploiter to DeepSeek Pro reasoning; everyone else to DeepSeek Flash", () => {
     assert.deepEqual(ROLE_MODEL_POLICY.exploiter, {
       provider: "deepseek",
-      model: "deepseek-v4.1-pro",
+      model: "deepseek-v4-pro",
       reasoningEffort: "high",
     });
     for (const role of ["coordinator", "recon", "reporter"] as const) {
       assert.equal(ROLE_MODEL_POLICY[role].provider, "deepseek");
-      assert.equal(ROLE_MODEL_POLICY[role].model, "deepseek-v4.1-flash");
+      assert.equal(ROLE_MODEL_POLICY[role].model, "deepseek-flash");
     }
   });
 });

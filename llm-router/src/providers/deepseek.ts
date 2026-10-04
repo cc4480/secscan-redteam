@@ -5,9 +5,12 @@
  * (POST {baseUrl}/chat/completions). Tool calls are translated between the
  * router's JSON-Schema form and the OpenAI `tools`/`tool_calls` form.
  *
- * Models:
- *   - deepseek-v4.1-flash — DeepSeek-V4.1-Flash: fast, cheap, strong tool use.
- *   - deepseek-v4.1-pro   — DeepSeek-V4.1-Pro: premium reasoning, for
+ * Models (wire-format IDs — confirmed against the live API 2026-10-04; a
+ * "deepseek-v4.1-flash" request was rejected with "The supported API model
+ * names are deepseek-flash, deepseek-v4-pro" — so despite the v4.1 product/
+ * version naming, these two are what the API actually accepts):
+ *   - deepseek-flash   — DeepSeek-V4.1-Flash: fast, cheap, strong tool use.
+ *   - deepseek-v4-pro  — DeepSeek-V4.1-Pro: premium reasoning, for
  *     thinking/difficult tasks (exploiter role).
  *
  * Auth: DEEPSEEK_API_KEY env var ONLY. The key is sent as a Bearer token and
@@ -27,8 +30,8 @@ export const DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 
 export const DEEPSEEK_MODELS = {
-  flash: "deepseek-v4.1-flash",
-  pro: "deepseek-v4.1-pro",
+  flash: "deepseek-flash",
+  pro: "deepseek-v4-pro",
 } as const;
 
 function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
