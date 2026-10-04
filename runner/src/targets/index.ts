@@ -37,14 +37,14 @@
 import type { BatteryCategory } from "../battery.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "../battery.js";
 import type { TargetBatteryItem, TargetId, TargetKind, TargetProfile } from "./types.js";
-import { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId } from "./types.js";
+import { BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId } from "./types.js";
 import { SECSCAN_PROFILE } from "./secscan.js";
 import { SECLAYER_PROFILE } from "./seclayer.js";
 import { WINDOWS_PROFILE } from "./windows.js";
 import { LINUX_PROFILE } from "./linux.js";
 
 export type { TargetBatteryItem, TargetId, TargetKind, TargetProfile };
-export { FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, isTargetId };
+export { BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId };
 
 export const TARGET_PROFILES: Record<TargetId, TargetProfile> = {
   secscan: SECSCAN_PROFILE,
@@ -156,8 +156,8 @@ export function fullBatteryChecklistText(mode: "red" | "black", targets?: Target
 const PLAN_PHASE_NAMES: Record<TargetId, string> = {
   secscan: "EXPLOIT SecScan battery (SS-*) — the scanner webapp: intake, SSRF guard, DNS gate, lifecycle, reports, shares, opt-out, rate limits, auth, API, efficacy canaries.",
   seclayer: "EXPLOIT SecLayer battery (SL-*) — the MCP/API layer: handshake, tools/list, per-tool per-param attacks, JSON-RPC layer, HTTP layer, auth layer, notifications, quotas, oracles.",
-  windows: "EXPLOIT Windows battery (WS-*) — host + AD: recon, auth attacks (test accounts only), AD attack paths, privesc, lateral movement, credential-exposure audit, persistence findings. All 410 items are executable via the host tools (smb_exec/smb_pth, winrm_exec/winrm_probe, rdp_auth, ad_enum, krb_ptt). Three items carry honest prerequisites: WS-064 needs kerberos ticket material, WS-065 needs a human operator for the shadowing act itself (use rdp_shadow_prep to prepare the handoff — never pretend the runner shadowed a session). HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.",
-  linux: "EXPLOIT Linux battery (LX-*) — host: recon, SSH, privesc, exposed services, file-permission audit, persistence findings. All items are executable via the host tools (ssh_exec, ssh_agent_audit, nfs_enum). One item carries an honest prerequisite: LX-041's mount+file proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope) — the export enumeration itself runs unprivileged. HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.",
+  windows: `EXPLOIT Windows battery (WS-*, ${BATTERY_ITEM_COUNTS.windows} items) — host + AD: recon, auth attacks (test accounts only), AD attack paths, privesc, lateral movement, credential-exposure audit, persistence findings. All items are executable via the host tools (smb_exec/smb_pth, winrm_exec/winrm_probe, rdp_auth, ad_enum, krb_ptt) plus the Metasploit/Nuclei methodology items (WS-105–108). Items needing operator-supplied prerequisites are tagged [needs: …] in the checklist; two need more than operator tooling — WS-064 (kerberos ticket material) and WS-065 (a human operator for the shadowing act itself; use rdp_shadow_prep to prepare the handoff — never pretend the runner shadowed a session). HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.`,
+  linux: `EXPLOIT Linux battery (LX-*, ${BATTERY_ITEM_COUNTS.linux} items) — host: recon, SSH, privesc, exposed services, file-permission audit, persistence findings. All items are executable via the host tools (ssh_exec, ssh_agent_audit, nfs_enum) plus the Metasploit/Nuclei methodology items (LX-107–110). Items needing operator-supplied prerequisites are tagged [needs: …] in the checklist; LX-041's mount+file proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope) — the export enumeration itself runs unprivileged. HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.`,
 };
 
 /**

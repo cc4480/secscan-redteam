@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import type { AgentRole, ChatMessage, ChatResult, ToolCallRequest } from "@secscan/redteam-llm-router";
 import {
   TARGET_PROFILES,
+  BATTERY_ITEM_COUNTS,
   FULL_BATTERY_TARGETS,
   HOST_EXEC_TOOLING,
   NEEDS_HUMAN_OPERATOR,
@@ -202,8 +203,9 @@ describe("unified plan", () => {
     }
     assert.ok(s.includes("3 × 4 = 12 cells"), "coverage rule stated");
     assert.ok(
-      s.includes("All 410 items are executable"),
-      "v0.10.0 host execution reality stated",
+      s.includes(`WS-*, ${BATTERY_ITEM_COUNTS.windows} items`) &&
+        s.includes("All items are executable via the host tools"),
+      "host execution reality stated with the real item count",
     );
   });
   it("subset skeleton: two targets → 6 cells, host phases omitted", () => {

@@ -17,7 +17,7 @@ import {
   setDisposition,
   prerequisiteMet,
 } from "../src/coverage/items.js";
-import { TARGET_PROFILES, FULL_BATTERY_TARGETS } from "../src/targets/index.js";
+import { TARGET_PROFILES, FULL_BATTERY_TARGETS, BATTERY_ITEM_COUNTS, TOTAL_BATTERY_ITEMS } from "../src/targets/index.js";
 
 // prerequisiteMet reads the environment — pin it for determinism.
 const PREREQ_ENV = [
@@ -46,10 +46,19 @@ afterEach(() => {
 describe("buildItemLedger", () => {
   it("contains every static battery item across all four targets", () => {
     const ledger = buildItemLedger([...FULL_BATTERY_TARGETS]);
-    let expected = 0;
-    for (const t of FULL_BATTERY_TARGETS) expected += TARGET_PROFILES[t].battery.length;
-    assert.equal(ledger.size, expected);
-    assert.ok(expected >= 416, `expected >= 418 items, got ${expected}`);
+    // Pin the promised counts EXACTLY against the shared contract so a
+    // silently added or removed item fails loudly here (a >= guard would
+    // let an accidental deletion pass). BATTERY_ITEM_COUNTS is the single
+    // source of truth; changing a battery size is a conscious edit there.
+    for (const t of FULL_BATTERY_TARGETS) {
+      assert.equal(
+        TARGET_PROFILES[t].battery.length,
+        BATTERY_ITEM_COUNTS[t],
+        `${t} battery size drifted from BATTERY_ITEM_COUNTS`,
+      );
+    }
+    assert.equal(ledger.size, TOTAL_BATTERY_ITEMS);
+    assert.equal(TOTAL_BATTERY_ITEMS, 418);
     // spot-check keys
     assert.ok(ledger.has("secscan:SS-001"));
     assert.ok(ledger.has("seclayer:SL-080"));

@@ -1,7 +1,7 @@
 /**
  * Metasploit bridge (v0.11.0) — the runner's CVE-specific exploit arm.
  *
- * The 410-item battery covers technique CLASSES (ATT&CK-mapped). Metasploit
+ * The battery covers technique CLASSES (ATT&CK-mapped). Metasploit
  * brings the ~2,000 CVE-SPECIFIC exploits the battery can't hardcode. The
  * bridge closes that gap WITHOUT hardcoding CVEs: recon detects a
  * service/version → suggestModules maps it to candidate modules →

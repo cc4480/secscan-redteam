@@ -26,6 +26,26 @@ export const TARGET_PREFIXES: Record<TargetId, string> = {
 };
 
 /**
+ * The promised battery size per target — the CONTRACT, and the single source
+ * of truth for every "N items" statement (prompts, reports, docs). The
+ * item-ledger test asserts each profile's actual `battery.length` equals the
+ * number here, so adding or removing an item fails loudly until this constant
+ * is consciously updated. Do not reference a raw count anywhere else.
+ */
+export const BATTERY_ITEM_COUNTS: Record<TargetId, number> = {
+  secscan: 120,
+  seclayer: 80,
+  windows: 108,
+  linux: 110,
+};
+
+/** Total promised battery size — derived, so it can never drift from the parts. */
+export const TOTAL_BATTERY_ITEMS: number = FULL_BATTERY_TARGETS.reduce(
+  (n, t) => n + BATTERY_ITEM_COUNTS[t],
+  0,
+);
+
+/**
  * Marker for battery items the runner could not execute even WITH the host-exec
  * tools (v0.9.0): anything needing interactive sessions (RDP GUI), active
  * network attacks (relay/spoofing), Kerberos protocol operations, binary
