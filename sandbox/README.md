@@ -51,14 +51,15 @@ node dist/cli.js start `
   --objective "shake out the runner's exploit battery against a known-vulnerable app" `
   --scope localhost `
   --local-sandbox `
-  --dry-run   # drop this once DEEPSEEK_API_KEY / QWEN_API_KEY / SECSCAN_MCP_TOKEN are set, to run the real agent loop
+  --dry-run   # drop this once DEEPSEEK_API_KEY / SECSCAN_MCP_TOKEN are set, to run the real agent loop
 ```
 
 With `--dry-run`, no live LLM/MCP keys are needed — it exercises gating,
 authorize, scope enforcement, and the report pipeline with fake agents. Drop
-`--dry-run` once you've set `SECSCAN_MCP_TOKEN`, `DEEPSEEK_API_KEY`, and
-`QWEN_API_KEY` to run the real coordinator/recon/exploiter/reporter loop
-against Juice Shop/DVWA.
+`--dry-run` once you've set `SECSCAN_MCP_TOKEN` and `DEEPSEEK_API_KEY`
+(`QWEN_API_KEY` optional — Qwen is registered but not currently routed) to
+run the real coordinator/recon/exploiter/reporter loop against Juice
+Shop/DVWA.
 
 ## Stopping / cleaning up
 

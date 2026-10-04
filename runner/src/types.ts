@@ -193,7 +193,7 @@ export interface ResolvedRunnerConfig {
   mcpEndpoint: string;
   mcpToken: string;
   deepseekApiKey: string;
-  /** Alibaba Model Studio key — the exploiter (Qwen) reads it from env. */
+  /** Alibaba Model Studio key — optional since v0.6 (DeepSeek-only policy); the provider still reads it from env when configured. */
   qwenApiKey: string;
   maxReconTurns: number;
   maxExploitProbes: number;

@@ -29,7 +29,7 @@ import { resolveVariantCap } from "../variants/index.js";
 export interface RunOptions {
   mcpToken?: string;
   deepseekApiKey?: string;
-  /** Alibaba Model Studio key for the exploiter (Qwen). Env QWEN_API_KEY preferred. */
+  /** Alibaba Model Studio key. Optional since v0.6 (DeepSeek-only policy — no role routes to Qwen); threaded through so reinstating Qwen needs no config change. Env QWEN_API_KEY preferred. */
   qwenApiKey?: string;
   mcpEndpoint?: string;
   /** Override the generated engagement ID (the console passes its request ID for correlation). */

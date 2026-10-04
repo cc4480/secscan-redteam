@@ -1,10 +1,12 @@
 /**
  * Qwen provider tests.
  *
- * The exploiter role runs on Qwen (qwen3.8-max reasoning). These tests pin the
- * provider contract with a stubbed fetch: wire format, thinking parameters,
- * reasoning-trace parsing, tool-call translation, and key handling. No
- * network, no key needed.
+ * Qwen (qwen3.8-max) is registered in the router but not currently routed to
+ * any role (v0.6 policy is DeepSeek-only). These tests pin the provider
+ * contract with a stubbed fetch: registration, wire format, thinking
+ * parameters, reasoning-trace parsing, tool-call translation, and key
+ * handling — plus the policy test confirming the one-line reinstatement
+ * target. No network, no key needed.
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

@@ -4,9 +4,11 @@
 
 AI red-team pentesting, sold as scoped, authorized, paid B2B engagements.
 Hypothesis-driven agents **reason** about the target instead of marching
-down a static checklist: the exploiter's reasoning runs on Qwen
-(`qwen3.8-max`), while DeepSeek flash drives the coordinator, recon, and
-reporter loops.
+down a static checklist. Model policy (v0.6, DeepSeek-only): the exploiter's
+reasoning runs on `deepseek-v4-pro`, while `deepseek-flash` drives the
+coordinator, recon, and reporter loops. Qwen (`qwen3.8-max`) stays
+registered in the router and can be swapped back in for the exploiter role
+with a one-line policy change.
 
 **Honest status:** the full system is test-verified against simulated
 targets (508/508 runner tests, 17/17 auth-gate tests) but has not yet
@@ -105,7 +107,8 @@ findings, coverage, compliance packs, watch triggers, reverify.
 
 ## Keys — environment only, never in code
 
-`QWEN_API_KEY` (or `DASHSCOPE_API_KEY`) · `DEEPSEEK_API_KEY` ·
+`DEEPSEEK_API_KEY` (required) · `QWEN_API_KEY` (or `DASHSCOPE_API_KEY`,
+optional — Qwen is registered but not currently routed) ·
 `SECSCAN_MCP_TOKEN` · `REDTEAM_MSFRPC_*` · `REDTEAM_UI_TOKEN` ·
 `REDTEAM_SSH_*` / `REDTEAM_SMB_*` / `REDTEAM_WINRM_*` /
 `REDTEAM_AD_*` / `REDTEAM_KRB_*` · `REDTEAM_JIRA_*` · `REDTEAM_SNOW_*` ·
@@ -136,7 +139,8 @@ cd ../auth-gate && npm test  # 17/17
 # 2. Dry run (no live target touched)
 npx redteam-runner start --target example.invalid --mode red --dry-run
 
-# 3. Smoke-test the Qwen key (no target)
+# 3. Smoke-test the Qwen provider (optional, no target) —
+#    skips cleanly when no Qwen key is configured
 node smoke-qwen.mjs
 ```
 
@@ -149,9 +153,10 @@ node smoke-qwen.mjs
   lines (mechanically enforced by `file-budget.test.ts`).
 - `auth-gate/` — server-authoritative DNS-TXT ownership verification,
   fails closed, 17 unit tests.
-- `llm-router/` — provider-pluggable LLM interface; Qwen (`qwen3.8-max`)
-  drives the exploiter's reasoning, DeepSeek flash drives
-  coordinator/recon/reporter. Adding a provider = one class +
+- `llm-router/` — provider-pluggable LLM interface; DeepSeek (`deepseek-v4-pro`
+  for the exploiter's reasoning, `deepseek-flash` for
+  coordinator/recon/reporter). Qwen (`qwen3.8-max`) stays registered and can
+  be reinstated for the exploiter with a one-line policy change. Adding a provider = one class +
   registration.
 - `agents/` — role system prompts with ReAct loops.
 - `harness-plugin/` — DeepSeek Harness integration (auth gate as a

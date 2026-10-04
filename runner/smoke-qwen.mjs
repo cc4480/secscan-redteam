@@ -1,36 +1,34 @@
 /**
- * Qwen exploiter smoke test: hypothesis-generation dry run, NO live target.
+ * Qwen provider smoke test: hypothesis-generation dry run, NO live target.
  *
- * Exercises the full provider path end to end —
- *   completeForRole("exploiter") → policy routes to qwen/qwen3.8-max →
- *   QwenProvider → DashScope OpenAI-compatible endpoint —
+ * Exercises the Qwen provider path end to end —
+ *   complete("qwen", ...) → QwenProvider → DashScope OpenAI-compatible
+ *   endpoint —
  * and verifies: text comes back, the thinking trace is surfaced, and a tool
  * definition round-trips (the model may call it; the call is never executed).
  *
- * Requires QWEN_API_KEY (or DASHSCOPE_API_KEY) in the environment — via the
- * Secure Vault. Exits 2 with a clear message when the key is absent.
+ * v0.6: the role policy runs DeepSeek-only (no role routes to Qwen), so the
+ * Qwen key is OPTIONAL. With no QWEN_API_KEY (or DASHSCOPE_API_KEY) in the
+ * environment this exits 0 with a skip message. With a key present it runs
+ * the real provider smoke test — useful for validating Qwen before
+ * reinstating it in llm-router/src/policy.ts.
  */
-import { completeForRole, ROLE_MODEL_POLICY } from "@secscan/redteam-llm-router";
+import { complete, QWEN_MODELS } from "@secscan/redteam-llm-router";
 
 const key = process.env["QWEN_API_KEY"] ?? process.env["DASHSCOPE_API_KEY"];
 if (!key) {
-  console.error(
-    "SMOKE SKIP: no QWEN_API_KEY (or DASHSCOPE_API_KEY) in the environment.\n" +
-      "Enter the Alibaba Model Studio API key via the Secure Vault, then re-run.",
+  console.log("SMOKE SKIP: Qwen not configured — skipping (exit 0).");
+  console.log(
+    "The role policy is DeepSeek-only, so no Qwen key is required. " +
+      "To smoke-test the Qwen provider, set QWEN_API_KEY (or DASHSCOPE_API_KEY) " +
+      "via the Secure Vault and re-run.",
   );
-  process.exit(2);
+  process.exit(0);
 }
 
-const route = ROLE_MODEL_POLICY.exploiter;
-console.log(`policy: exploiter → ${route.provider}/${route.model} (effort=${route.reasoningEffort})`);
-if (route.provider !== "qwen" || route.model !== "qwen3.8-max") {
-  console.error("SMOKE FAIL: policy does not route the exploiter to qwen/qwen3.8-max");
-  process.exit(1);
-}
-
-const res = await completeForRole(
-  "exploiter",
-  [
+const res = await complete("qwen", {
+  model: QWEN_MODELS.reasoning,
+  messages: [
     {
       role: "system",
       content:
@@ -38,20 +36,19 @@ const res = await completeForRole(
     },
     { role: "user", content: "Target: a fictional SaaS checkout at https://example.test (do not touch it). Generate the hypothesis." },
   ],
-  {
-    tools: [
-      {
-        name: "record_hypothesis",
-        description: "Record a hypothesis (dry run — never executed).",
-        parameters: {
-          type: "object",
-          properties: { hypothesis: { type: "string" } },
-          required: ["hypothesis"],
-        },
+  reasoningEffort: "high",
+  tools: [
+    {
+      name: "record_hypothesis",
+      description: "Record a hypothesis (dry run — never executed).",
+      parameters: {
+        type: "object",
+        properties: { hypothesis: { type: "string" } },
+        required: ["hypothesis"],
       },
-    ],
-  },
-);
+    },
+  ],
+});
 
 console.log(`provider: ${res.provider} | model: ${res.model}`);
 console.log(`text (${res.text.length} chars): ${res.text.slice(0, 300)}`);

@@ -9,7 +9,7 @@
  *   redteam-runner watch [--queue <dir>]   # run queued console jobs
  *
  * Credentials via environment only: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY,
- * QWEN_API_KEY (Alibaba Model Studio, for the exploiter), SECSCAN_MCP_URL (optional).
+ * QWEN_API_KEY (optional since v0.6 — DeepSeek-only policy), SECSCAN_MCP_URL (optional).
  *
  * Local dev convenience: a .env file is loaded automatically (Node's
  * built-in process.loadEnvFile — no dotenv dependency). Checked in order:

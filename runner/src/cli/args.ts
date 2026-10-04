@@ -93,8 +93,8 @@ private/loopback address (e.g. localhost, 127.0.0.1). No effect on a real
 domain. Use only against infrastructure you own, e.g. a local Juice
 Shop/DVWA container — never against a live/internet target.
 
---dry-run: skip the live agent loops (no DEEPSEEK_API_KEY/QWEN_API_KEY
-needed) — runs gating/authorize/scope/report plumbing only, useful for
+--dry-run: skip the live agent loops (no DEEPSEEK_API_KEY needed; QWEN_API_KEY
+is optional since v0.6) — runs gating/authorize/scope/report plumbing only, useful for
 smoke-testing the runner itself.
 
 --env staging|production (v0.13.0 safety case): staging (default) runs the
@@ -149,7 +149,7 @@ findings, the tier, and the scope.
     # and prints a warning. Env: REDTEAM_UI_TOKEN (use your own token),
     # REDTEAM_HOME or engagements default like the CLI.
 
-Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY, SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
+Env: SECSCAN_MCP_TOKEN, DEEPSEEK_API_KEY, QWEN_API_KEY (optional since v0.6), SECSCAN_MCP_URL (optional), REDTEAM_LOCAL_SANDBOX=1.
 Host-exec (v0.9.0, Windows/Linux batteries): REDTEAM_SSH_USER + one of
 REDTEAM_SSH_PASSWORD / REDTEAM_SSH_KEY / REDTEAM_SSH_KEY_PATH;
 REDTEAM_SMB_USER + REDTEAM_SMB_PASSWORD (+ optional REDTEAM_SMB_DOMAIN);

@@ -1,5 +1,5 @@
 {
-  "description": "Unified, provider-pluggable LLM interface for the red-team. v0.5: DeepSeek (flash) + Qwen (qwen3.8-max reasoning).",
+  "description": "Unified, provider-pluggable LLM interface for the red-team. v0.6: DeepSeek-only policy (deepseek-v4-pro reasoning + deepseek-flash); Qwen (qwen3.8-max) registered, not routed.",
   "devDependencies": {
     "@types/node": "^26.6.3",
     "typescript": "^5.6.0"
