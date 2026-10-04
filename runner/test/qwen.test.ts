@@ -151,16 +151,16 @@ describe("Qwen provider", () => {
   });
 });
 
-describe("role model policy (v0.5)", () => {
-  it("routes the exploiter to Qwen reasoning; everyone else to deepseek-flash", () => {
+describe("role model policy (v0.6)", () => {
+  it("routes the exploiter to DeepSeek Pro reasoning; everyone else to DeepSeek Flash", () => {
     assert.deepEqual(ROLE_MODEL_POLICY.exploiter, {
-      provider: "qwen",
-      model: "qwen3.8-max",
+      provider: "deepseek",
+      model: "deepseek-v4.1-pro",
       reasoningEffort: "high",
     });
     for (const role of ["coordinator", "recon", "reporter"] as const) {
       assert.equal(ROLE_MODEL_POLICY[role].provider, "deepseek");
-      assert.equal(ROLE_MODEL_POLICY[role].model, "deepseek-flash");
+      assert.equal(ROLE_MODEL_POLICY[role].model, "deepseek-v4.1-flash");
     }
   });
 });

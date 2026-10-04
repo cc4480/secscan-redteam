@@ -18,7 +18,7 @@ import {
 import { readEvents, readState } from "../src/events.js";
 import { validateProbeTarget, isPrivateOrLoopbackHost, WebProber } from "../src/prober.js";
 import { resolveExcludedTechniques, defaultExcludedForMode, ALWAYS_EXCLUDED } from "../src/attack.js";
-import { runEngagement } from "../src/phases.js";
+import { runEngagement, resolveConfig } from "../src/phases.js";
 import type { EngagementInput } from "../src/types.js";
 
 const noVerify = async () => false;
@@ -263,20 +263,19 @@ describe("runEngagement gating (dry-run agents, fake gate)", () => {
     await assert.rejects(() => runEngagement(inp, opts(yesVerify)), /scope/);
   });
 
-  it("fails fast without the Qwen key (exploiter engine) when agents are live", async () => {
-    const live = {
-      mcpToken: "test",
-      deepseekApiKey: "test",
-      // qwenApiKey intentionally absent
-      engagementsDir: dir,
-      deps: { verify: async () => true },
-    };
+  it("fails fast without the DeepSeek key when agents are live", () => {
+    const env = { SECSCAN_MCP_TOKEN: "test" } as NodeJS.ProcessEnv;
+    assert.throws(() => resolveConfig(env, { engagementsDir: dir }), /DEEPSEEK_API_KEY/);
+  });
+
+  it("v0.6: does NOT require a Qwen key — no role currently routes to Qwen (see llm-router/src/policy.ts)", () => {
+    const env = { SECSCAN_MCP_TOKEN: "test", DEEPSEEK_API_KEY: "test" } as NodeJS.ProcessEnv;
     const oldQwen = process.env["QWEN_API_KEY"];
     const oldDash = process.env["DASHSCOPE_API_KEY"];
     delete process.env["QWEN_API_KEY"];
     delete process.env["DASHSCOPE_API_KEY"];
     try {
-      await assert.rejects(() => runEngagement(input("red"), live), /QWEN_API_KEY/);
+      assert.doesNotThrow(() => resolveConfig(env, { engagementsDir: dir }));
     } finally {
       if (oldQwen !== undefined) process.env["QWEN_API_KEY"] = oldQwen;
       if (oldDash !== undefined) process.env["DASHSCOPE_API_KEY"] = oldDash;

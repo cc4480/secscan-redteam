@@ -50,14 +50,11 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
       "[runner] DEEPSEEK_API_KEY is not set. Enter the DeepSeek API key via the Secure Vault.",
     );
   }
-  // The exploiter runs on Qwen (qwen3.8-max reasoning) — fail fast if its key
-  // is missing rather than dying mid-engagement.
+  // v0.6: no role currently routes to Qwen (see llm-router/src/policy.ts —
+  // operator is running DeepSeek-only for now, Qwen to come back later), so
+  // its key is optional here. It's still read/threaded through so flipping
+  // policy.ts back to Qwen for the exploiter needs no config-layer change.
   const qwenApiKey = opts.qwenApiKey ?? env["QWEN_API_KEY"] ?? env["DASHSCOPE_API_KEY"];
-  if (!qwenApiKey && !opts.dryRunAgents) {
-    throw new Error(
-      "[runner] QWEN_API_KEY is not set. Enter the Alibaba Model Studio API key via the Secure Vault.",
-    );
-  }
   if (opts.qwenApiKey && !env["QWEN_API_KEY"] && !env["DASHSCOPE_API_KEY"]) {
     // Key passed programmatically: make it visible to the provider, which
     // reads env only. Never logged, never persisted.

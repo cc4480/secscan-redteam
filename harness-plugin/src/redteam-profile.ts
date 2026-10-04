@@ -7,14 +7,15 @@
  * tasks with dependencies. The harness's team plugin consumes this to spawn
  * the coordinator + specialists as durable continuable subagents.
  *
- * v0.5 model policy (DeepSeek + Qwen):
- *   - deepseek-flash — fast, cheap, strong tool use → recon loops,
+ * v0.6 model policy (DeepSeek only; Qwen available, not active):
+ *   - deepseek-v4.1-flash — fast, cheap, strong tool use → recon loops,
  *     coordinator orchestration, reporter write-up.
- *   - qwen3.8-max (Alibaba Model Studio) — flagship reasoning → exploiter
- *     hypothesis formation, exploit-chain planning, pivot decisions.
- * The router (llm-router/) is provider-pluggable; adding Claude / ChatGPT /
- * Gemini / GLM / Qwen later means registering new provider adapters, not
- * rewriting these roles.
+ *   - deepseek-v4.1-pro — premium reasoning → exploiter hypothesis
+ *     formation, exploit-chain planning, pivot decisions.
+ * The router (llm-router/) is provider-pluggable; Qwen (qwen3.8-max) is
+ * registered and ready to swap back in for the exploiter role later —
+ * see llm-router/src/policy.ts. Adding Claude / ChatGPT / Gemini / GLM
+ * later means registering new provider adapters, not rewriting these roles.
  */
 
 export interface TeamMember {
@@ -62,7 +63,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "coordinator",
       role: "Engagement lead. Owns the plan, phases, scope discipline, and final assembly. Runs recon → exploitation → reporting in order, re-tasks on surprises.",
       provider: "deepseek",
-      model: "deepseek-flash",
+      model: "deepseek-v4.1-flash",
       promptFile: "agents/coordinator.md",
       executionPrompt:
         "You are the engagement lead. Keep phases tight, keep every action inside the authorized scope, " +
@@ -72,7 +73,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "recon",
       role: "Surface mapper. Passive recon first (headers, TLS, DNS, exposed files, tech fingerprinting via mcp__secscan__scan_url passive scans), then hands attack-surface notes to the exploiter.",
       provider: "deepseek",
-      model: "deepseek-flash",
+      model: "deepseek-v4.1-flash",
       promptFile: "agents/recon.md",
       executionPrompt:
         "Map first, touch lightly. Enumerate everything observable without active probing, then write " +
@@ -81,8 +82,8 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
     {
       name: "exploiter",
       role: "Reasoning attacker. Takes recon + scan findings, forms hypotheses, crafts context-specific payloads, observes responses, and pivots. The dynamic-testing differentiator lives here.",
-      provider: "qwen",
-      model: "qwen3.8-max",
+      provider: "deepseek",
+      model: "deepseek-v4.1-pro",
       reasoning_effort: "high",
       promptFile: "agents/exploiter.md",
       executionPrompt:
@@ -94,7 +95,7 @@ export const REDTEAM_PROFILE: RedTeamProfile = {
       name: "reporter",
       role: "Client report author. Converts validated findings into a business-readable report: executive summary, per-finding impact + evidence + fix, retest checklist.",
       provider: "deepseek",
-      model: "deepseek-flash",
+      model: "deepseek-v4.1-flash",
       promptFile: "agents/reporter.md",
       executionPrompt:
         "Write for the client's CTO, not for hackers. Every finding needs: what it is, why it matters " +
