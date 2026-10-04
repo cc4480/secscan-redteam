@@ -21,8 +21,11 @@ build/
 *.log
 .DS_Store
 
-# Test artifacts
-coverage/
+# Test artifacts — anchored to the two places vitest/jest actually emit
+# coverage reports. Do NOT use a bare `coverage/` here: it would also
+# swallow runner/src/coverage/, which is real source (verdict ledger).
+/coverage/
+runner/coverage/
 
 # Runner runtime state (re-seeds / re-creates on first run)
 runner/engagements/
