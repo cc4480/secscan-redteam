@@ -82,7 +82,7 @@ variants. We do the same depth but count it honestly:
 ## Web UI — directly connected to the CLI
 
 ```bash
-cd runner && npm run build && npx redteam-runner ui   # http://127.0.0.1:8787
+npm run build && cd runner && npx redteam-runner ui   # http://127.0.0.1:8787
 ```
 
 `redteam-runner ui [--port 8787] [--listen <addr>] [--engagements-dir <dir>]`.
@@ -130,14 +130,15 @@ Credential testing only against authorized test accounts.
 ## Quickstart
 
 ```bash
-# 1. Build + test
-cd runner && npm install && npm run build
-npm test          # 508/508 runner tests
-npm run typecheck # both tsconfigs clean
-cd ../auth-gate && npm test  # 17/17
+# 1. Build + test (repo root — one command builds every workspace in
+#    dependency order and stamps each dist/ so stale builds fail loudly)
+npm install && npm run build
+npm run check-dist # fails if any dist/ is stale vs its src/
+npm test           # all workspace suites (runner 539, auth-gate 17)
+npm run typecheck  # every tsconfig clean
 
 # 2. Dry run (no live target touched)
-npx redteam-runner start --target example.invalid --mode red --dry-run
+cd runner && npx redteam-runner start --target example.invalid --mode red --dry-run
 
 # 3. Smoke-test the Qwen provider (optional, no target) —
 #    skips cleanly when no Qwen key is configured

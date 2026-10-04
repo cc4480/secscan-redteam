@@ -68,3 +68,6 @@ export {
   maybeRotateLog,
 } from "./rotation.js";
 export type { LogRotationConfig, RotationOutcome, SeqRange } from "./rotation.js";
+
+export { assertDistFresh, distIsFresh, findWorkspaceRoot, hashSrcDir } from "./distfresh.js";
+export type { FreshnessResult } from "./distfresh.js";

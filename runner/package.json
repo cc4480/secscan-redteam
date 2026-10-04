@@ -11,7 +11,7 @@
     "ssh2": "^1.17.0",
     "winrm-client": "^0.0.12"
   },
-  "description": "Live engagement runner for the secscan red-team: executes the full red/black-team loop as code \u2014 authorize \u2192 plan \u2192 recon \u2192 exploit \u2192 report \u2014 with streaming event logs.",
+  "description": "Live engagement runner for the secscan red-team: executes the full red/black-team loop as code — authorize → plan → recon → exploit → report — with streaming event logs.",
   "devDependencies": {
     "@types/node": "^26.6.3",
     "@types/ssh2": "^1.15.6",
@@ -24,7 +24,7 @@
   "name": "@secscan/redteam-runner",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json && rm -rf dist/ui/public && mkdir -p dist/ui/public && cp -r src/ui/public/. dist/ui/public/",
+    "build": "tsc -p tsconfig.json && rm -rf dist/ui/public && mkdir -p dist/ui/public && cp -r src/ui/public/. dist/ui/public/ && node ../scripts/dist-hash.mjs write .",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },

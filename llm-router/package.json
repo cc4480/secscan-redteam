@@ -9,7 +9,7 @@
   "name": "@secscan/redteam-llm-router",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../scripts/dist-hash.mjs write .",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "type": "module",

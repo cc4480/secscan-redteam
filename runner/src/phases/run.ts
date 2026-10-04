@@ -10,7 +10,7 @@ import { HostExecutor } from "../host-exec/index.js";
 import { McpClient } from "../mcp.js";
 import { MsfExecutor } from "../msf/index.js";
 import { NucleiExecutor } from "../nuclei/index.js";
-import { TargetAutoHalt, TargetRateLimiter, describeEnvironment, parseEnvironment, productionConfirmed, requireGraduation, resolveEffectiveRps, resolveLogRotationConfig } from "../safety/index.js";
+import { TargetAutoHalt, TargetRateLimiter, describeEnvironment, parseEnvironment, productionConfirmed, requireGraduation, resolveEffectiveRps, resolveLogRotationConfig, assertDistFresh } from "../safety/index.js";
 import { type VulnerabilityRegistry, loadRegistryFile, saveRegistryFile, seedRegistry } from "../registry.js";
 import { WebProber } from "../prober.js";
 import { activeTargets } from "../targets.js";
@@ -76,6 +76,9 @@ export interface OperatorAbortHandle {
 }
 
 export async function runEngagement(input: EngagementInput, opts: RunOptions = {}): Promise<EngagementResult> {
+  // Stale compiled dist/ is a silent-safety bug (e.g. an old model policy
+  // running after a src-only change). Fail fast — before any target touch.
+  assertDistFresh();
   const config = resolveConfig(process.env, opts);
   const deps = opts.deps ?? {};
 

@@ -1,1 +1,26 @@
-{"dependencies":{"@secscan/redteam-auth-gate":"^0.1.0"},"description":"DeepSeek Harness plugin for the SecScan red team: auth gate (tools/pre-execute hook) + red-team system-prompt section. The SecScan MCP connection itself is the harness-native @deepseek-ai/dsh-mcp-client (see cordis.patch.yml).","devDependencies":{"@deepseek-ai/cordis":"4.0.4","@deepseek-ai/dsh-tools":"0.2.0-rc.2","@types/node":"^26.6.3","typescript":"^5.6.0"},"license":"UNLICENSED","main":"dist/index.js","name":"@secscan/redteam-harness-plugin","peerDependencies":{"@deepseek-ai/cordis":"^4.0.0","@deepseek-ai/dsh-tools":"0.2.0-rc.2"},"private":true,"scripts":{"build":"tsc -p tsconfig.json","typecheck":"tsc --noEmit -p tsconfig.json"},"type":"module","version":"0.2.0"}
+{
+  "dependencies": {
+    "@secscan/redteam-auth-gate": "^0.1.0"
+  },
+  "description": "DeepSeek Harness plugin for the SecScan red team: auth gate (tools/pre-execute hook) + red-team system-prompt section. The SecScan MCP connection itself is the harness-native @deepseek-ai/dsh-mcp-client (see cordis.patch.yml).",
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@types/node": "^26.6.3",
+    "typescript": "^5.6.0"
+  },
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "name": "@secscan/redteam-harness-plugin",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2"
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../scripts/dist-hash.mjs write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "type": "module",
+  "version": "0.2.0"
+}

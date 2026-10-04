@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @secscan/redteam-auth-gate && npm run build -w @secscan/redteam-llm-router && npm run build -w @secscan/redteam-harness-plugin && npm run build -w @secscan/redteam-runner",
+    "check-dist": "node scripts/dist-hash.mjs check-all"
   },
   "type": "module",
   "version": "0.1.0",
