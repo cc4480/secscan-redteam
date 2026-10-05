@@ -12,6 +12,15 @@ export interface ChatMessage {
   content: string;
   /** For tool messages: the id of the call being answered. */
   toolCallId?: string;
+  /**
+   * For assistant messages that requested tool calls: the calls themselves.
+   * OpenAI-compatible APIs (DeepSeek, Qwen) REQUIRE that any `tool` message be
+   * preceded by an assistant message carrying these — otherwise the request is
+   * rejected ("Messages with role 'tool' must be a response to a preceding
+   * message with 'tool_calls'"). Must round-trip into the wire `tool_calls`
+   * field, with ids matching the following tool messages' toolCallId.
+   */
+  toolCalls?: ToolCallRequest[];
 }
 
 export interface ToolCallRequest {

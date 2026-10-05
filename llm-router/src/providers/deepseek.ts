@@ -39,6 +39,20 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
     if (m.role === "tool") {
       return { role: "tool", tool_call_id: m.toolCallId ?? "", content: m.content };
     }
+    // An assistant message that requested tool calls MUST carry them in the
+    // wire `tool_calls` field; without it the following `tool` messages are
+    // rejected ("must be a response to a preceding message with 'tool_calls'").
+    if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+      return {
+        role: "assistant",
+        content: m.content ?? "",
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: "function",
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments ?? {}) },
+        })),
+      };
+    }
     return { role: m.role, content: m.content };
   });
 }

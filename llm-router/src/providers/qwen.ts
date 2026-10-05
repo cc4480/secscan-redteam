@@ -51,6 +51,19 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
     if (m.role === "tool") {
       return { role: "tool", tool_call_id: m.toolCallId ?? "", content: m.content };
     }
+    // Assistant tool-call turns must round-trip their tool_calls, or the
+    // following tool messages are rejected by the OpenAI-compatible API.
+    if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+      return {
+        role: "assistant",
+        content: m.content ?? "",
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: "function",
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments ?? {}) },
+        })),
+      };
+    }
     return { role: m.role, content: m.content };
   });
 }

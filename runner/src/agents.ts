@@ -106,7 +106,10 @@ export async function agentLoop(
       ctx.events.append({ phase, actor: "runner", action: "phase_nudge", result: followUp.slice(0, 300) });
       continue;
     }
-    messages.push({ role: "assistant", content: res.text || "(tool calls)" });
+    // The assistant message MUST carry the tool_calls it made: the tool
+    // results pushed below are only valid in the API's eyes when preceded by
+    // an assistant message containing these calls (ids must match).
+    messages.push({ role: "assistant", content: res.text || "(tool calls)", toolCalls: res.toolCalls });
     for (const call of res.toolCalls) {
       const d = await dispatchTool(ctx, role, phase, call);
       // v0.13.0 safety case: PII is redacted from tool outputs BEFORE they
