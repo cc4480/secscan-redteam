@@ -137,8 +137,10 @@ npm run check-dist # fails if any dist/ is stale vs its src/
 npm test           # all workspace suites (runner 539, auth-gate 18)
 npm run typecheck  # every tsconfig clean
 
-# 2. Dry run (no live target touched)
-cd runner && npx redteam-runner start --target example.invalid --mode red --dry-run
+# 2. Dry run (no live target touched) — --objective and --scope are required;
+#    an unverified target correctly blocks at the ownership gate (fail-closed)
+cd runner && npx redteam-runner start --target example.invalid --mode red \
+  --objective "smoke test" --scope example.invalid --dry-run
 
 # 3. Smoke-test the Qwen provider (optional, no target) —
 #    skips cleanly when no Qwen key is configured

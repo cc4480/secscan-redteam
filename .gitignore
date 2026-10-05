@@ -29,3 +29,11 @@ runner/coverage/
 
 # Runner runtime state (re-seeds / re-creates on first run)
 runner/engagements/
+
+# Live-engagement runtime output written by the CLI/UI from the repo root
+# (per-engagement dirs + queued jobs). May contain client/target data —
+# NEVER commit it. The directories themselves are kept via .gitkeep.
+engagements/live/*
+!engagements/live/.gitkeep
+engagements/queue/*
+!engagements/queue/.gitkeep

@@ -82,10 +82,13 @@ target-specific batteries (3 categories × selected targets). The coordinator
 prompt carries the selected batteries as the plan skeleton; coverage counts
 complete only when every cell is probed or honestly BLOCKED.
 --targets <csv>: subset of secscan,seclayer,windows,linux for a full-battery run
-(default: all four). Only applies with --full-battery. Three battery items
-carry honest prerequisites (WS-064: kerberos ticket material, WS-065: human
-operator for the shadowing act, LX-041: privileged test client for the mount
-proof) — see docs/ROADMAP.md; --scope must cover secscan.us for the web targets.
+(default: all four). Only applies with --full-battery. Several battery items
+carry honest prerequisites (each tagged [needs: ...] in the plan skeleton,
+e.g. the Metasploit items need msfrpcd and the Nuclei items need the nuclei
+binary); three need more than operator tooling — WS-064: kerberos ticket
+material, WS-065: human operator for the shadowing act, LX-041: privileged
+test client for the mount proof — see docs/ROADMAP.md; --scope must cover
+secscan.us for the web targets.
 
 --local-sandbox: LOCAL SANDBOX MODE ONLY. Skips ownership verification and the
 private-host rejection, but only for a target that already resolves to a
