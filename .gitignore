@@ -37,3 +37,6 @@ engagements/live/*
 !engagements/live/.gitkeep
 engagements/queue/*
 !engagements/queue/.gitkeep
+
+# Personal project-local Claude Code settings
+.claude/settings.local.json
