@@ -53,6 +53,20 @@ A safety case with no residual risks is marketing. Ours:
    `auditSeq` reference stays resolvable only while its archive is
    retained. Size the caps to your compliance retention window
    (see `docs/continuous.md` — Log retention).
+8. **Known dependency advisory (accepted, tracked).** The WinRM transport
+   depends on `winrm-client@0.0.12`, which pins `fast-xml-parser@^4.3.2`;
+   that 4.x line is covered by GHSA-gh4j-gqv2-49f6 (moderate — XML
+   comment/CDATA injection in `XMLBuilder`). The patch is only in
+   `fast-xml-parser ≥5.7.0`, outside winrm-client's declared range, and
+   that is a breaking major with `XMLBuilder` API changes — forcing it
+   would risk silently malforming every WinRM SOAP request, a failure the
+   test suite cannot catch (the real library is never exercised; all WinRM
+   tests inject a mock transport). Reachability is low in this deployment:
+   the only input reaching `XMLBuilder` is the coordinator-approved command
+   string, destined for *your own* ownership-verified, in-scope Windows
+   host — not untrusted external input, and denylist-filtered first.
+   Accepted rather than force-patched; revisit when winrm-client widens its
+   `fast-xml-parser` range to include ≥5.7.0, or replace the WinRM library.
 
 ## Operator responsibilities
 
