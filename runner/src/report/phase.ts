@@ -28,7 +28,12 @@ import { writeSafetyArtifacts } from "./safety.js";
 import { writeComplianceArtifacts } from "./compliance.js";
 import { extractNarrative } from "./narrative.js";
 
-export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string): Promise<Finding[]> {
+export async function reportPhase(
+  ctx: Ctx,
+  reconBrief: string,
+  exploitSummary: string,
+  opts: { haltedReason?: string } = {},
+): Promise<Finding[]> {
   const selected = ctx.input.fullBattery ? activeTargets(ctx.input) : [];
   const fbCells = selected.flatMap((t) => BATTERY_CATEGORIES.map((c) => ({ t, c })));
   const fbStatus = fbCells.map(({ t, c }) => ({ t, c, s: targetCellStatus(TARGET_PROFILES[t], c, ctx.targetCoverage.get(t)) }));
@@ -95,8 +100,37 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
       `(${covered.map((c) => `${c}:${ctx.coverage.has(c) ? "yes" : "no"}`).join(", ")}, ${ctx.probesUsed} probes total). ` +
       (covered.length < 3 ? `NOT COVERED: ${BATTERY_CATEGORIES.filter((c) => !ctx.coverage.has(c)).join(", ")} — list these under Honest limits.` : "Full battery complete.");
   let reportMd: string;
-  if (ctx.config.dryRunAgents) {
+  let findings: Finding[];
+  if (opts.haltedReason) {
+    // Halt path (action/duration cap, 5xx auto-halt, kill switch, aborted
+    // sign-off, unexpected error): NEVER run the reporter LLM here — it could
+    // re-hit the same cap and we would lose the accountability record exactly
+    // when it matters most. Build the report mechanically from the audit-log
+    // state so the safety manifest, proof bundles, and item verdicts still
+    // ship. Findings are the live-confirmed set recorded during the run.
+    reportMd =
+      `# Engagement report (HALTED)\n\n` +
+      `Target: ${ctx.input.target}\nMode: ${ctx.input.mode}\n` +
+      `Status: HALTED — ${opts.haltedReason}\n` +
+      `Authorization: ${ctx.verificationProof}\n\n` +
+      `This engagement halted before the reporter phase. The findings, coverage, ` +
+      `proof bundles, and safety manifest below are the runner-computed record of ` +
+      `work completed up to the halt — no reporter-agent narrative was generated.\n`;
+    findings = ctx.liveFindings.map((lf, i) => ({
+      id: `F-${i + 1}`,
+      severity: (["critical", "high", "medium", "low", "info"].includes(lf.severity)
+        ? lf.severity
+        : "info") as Finding["severity"],
+      title: lf.title,
+      attackIds: lf.attackId ? [lf.attackId] : [],
+      evidence: lf.evidence,
+      fix: "(engagement halted before remediation guidance was written)",
+      retest: "(engagement halted before a retest plan was written)",
+      status: "confirmed",
+    }));
+  } else if (ctx.config.dryRunAgents) {
     reportMd = `# Engagement report (dry-run)\n\nTarget: ${ctx.input.target}\nMode: ${ctx.input.mode}\n`;
+    findings = [];
   } else {
     reportMd = await agentLoop(
       ctx,
@@ -107,9 +141,9 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
       READ_TOOLS,
       4,
     );
+    const parsed = extractJsonBlock(reportMd) as { findings?: Finding[] } | null;
+    findings = Array.isArray(parsed?.findings) ? parsed.findings : [];
   }
-  const parsed = extractJsonBlock(reportMd) as { findings?: Finding[] } | null;
-  const findings: Finding[] = Array.isArray(parsed?.findings) ? parsed.findings : [];
   // v0.17.0 accountability: every finding records the named human
   // accountable for it. Stamped mechanically by the runner at report time —
   // the reporter agent cannot set or change it.

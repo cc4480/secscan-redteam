@@ -482,3 +482,68 @@ describe("full-battery coverage mechanics", () => {
     assert.ok(report.includes("## Item reconciliation (runner-computed)"), "reconciliation section");
   });
 });
+
+describe("halted engagement still ships accountability artifacts", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "rt-halt-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const textOnly = (text: string): ChatResult => ({ text, toolCalls: [], provider: "fake", model: "fake" });
+  const fakeProber = { probe: async () => ({ status: 200, headers: {}, bodySnippet: "ok", ms: 5 }) };
+
+  // Drives a halt on the action cap during recon: the first probe dispatch
+  // takes ctx.actions to 1, which trips maxActions:1.
+  const haltLlm = async (role: AgentRole, _messages: ChatMessage[], _opts: object): Promise<ChatResult> => {
+    if (role === "coordinator") return textOnly("SIGN-OFF: approved.");
+    if (role === "recon") {
+      return {
+        text: "probing the surface",
+        toolCalls: [
+          {
+            id: "c1",
+            name: "http_probe",
+            arguments: { method: "GET", url: "https://secscan.us/", category: "logic", attackId: "T1190", targetProfile: "secscan", hypothesis: "recon probe" },
+          },
+        ],
+        provider: "fake",
+        model: "fake",
+      };
+    }
+    return textOnly("noop");
+  };
+
+  it("a capped halt writes report.md + safety manifest + item verdicts (not just events.jsonl)", async () => {
+    const input: EngagementInput = {
+      target: "secscan.us",
+      mode: "red",
+      objective: "halt-artifact test",
+      roe: { scope: ["secscan.us"] },
+    };
+    const res = await runEngagement(input, {
+      mcpToken: "test",
+      deepseekApiKey: "test",
+      engagementsDir: dir,
+      maxActions: 1, // force an action-cap HaltError on the first dispatched probe
+      deps: { verify: async () => true, completeForRole: haltLlm as never, prober: fakeProber },
+    });
+
+    assert.equal(res.status, "halted", "engagement halted");
+    assert.match(res.blockedReason ?? "", /action cap/, "halted on the action cap");
+
+    // The whole point: the accountability artifacts must exist despite the halt.
+    const report = readFileSync(join(dir, res.engagementId, "report.md"), "utf8");
+    assert.match(report, /HALTED/, "report marks the halt");
+    assert.match(report, /## Safety|zero[- ]disruption|Battery coverage/i, "runner-computed sections present");
+
+    const manifest = JSON.parse(readFileSync(join(dir, res.engagementId, "safety-manifest.json"), "utf8"));
+    assert.ok(manifest, "safety manifest written on halt");
+
+    // item-verdicts.json is written mechanically at the top of reportPhase.
+    const verdicts = JSON.parse(readFileSync(join(dir, res.engagementId, "item-verdicts.json"), "utf8"));
+    assert.ok(Array.isArray(verdicts), "item verdicts written on halt");
+  });
+});

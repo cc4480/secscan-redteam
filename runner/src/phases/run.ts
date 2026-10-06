@@ -230,6 +230,10 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   // v0.15.0: Slack lifecycle — engagement started (best-effort, never blocking).
   void fireSlack(ctx, { kind: "started" });
 
+  // Hoisted so the halt path (catch) can still assemble the report/safety
+  // artifacts from whatever work completed before the halt.
+  let brief = "";
+  let summary = "";
   try {
     const verdict = await authorizePhase(ctx);
     if (!verdict.allowed) {
@@ -238,13 +242,13 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     await planPhase(ctx);
     await coordinatorSignOff(ctx, "plan→recon", `Operation plan:\n${JSON.stringify(ctx.plan, null, 1)}`);
     void fireSlack(ctx, { kind: "phase", phase: "recon" });
-    const brief = await reconPhase(ctx);
+    brief = await reconPhase(ctx);
     await coordinatorSignOff(
       ctx,
       "recon→exploit",
       `Recon brief:\n${brief.slice(0, 3000)}\n\nShared target map (${ctx.targetMap.length} entries):\n${ctx.targetMap.map((t) => `- ${t.method} ${t.area}${t.authState ? ` [${t.authState}]` : ""}${t.attackId ? ` ${t.attackId}` : ""}`).join("\n") || "(empty)"}\nRegistry hits consulted: ${ctx.registryHits.length}. Fingerprint: ${JSON.stringify(ctx.fingerprint)}`,
     );
-    const summary = await exploitPhase(ctx, brief);
+    summary = await exploitPhase(ctx, brief);
     void fireSlack(ctx, { kind: "phase", phase: "exploit" });
     await coordinatorSignOff(
       ctx,
@@ -261,7 +265,20 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     events.updateState({ status: "halted", phase: "halted", blockedReason: reason });
     events.append({ phase: "halted", actor: "runner", action: "engagement_halted", result: reason });
     void fireSlack(ctx, { kind: "halted", reason });
-    return { engagementId, status: "halted", blockedReason: reason, findings: events.snapshot.findings };
+    // A halt is exactly when the zero-disruption record matters most (5xx
+    // auto-halt, kill switch, aborted sign-off). Still emit the mechanical
+    // accountability artifacts — safety manifest, item verdicts, proof
+    // bundles, partial report — WITHOUT re-running the reporter LLM (it could
+    // re-hit the same cap). Defensive: a failure here must never mask the halt.
+    let findings = events.snapshot.findings;
+    let reportPath: string | undefined;
+    try {
+      findings = await reportPhase(ctx, brief, summary, { haltedReason: reason });
+      reportPath = join(dir, "report.md");
+    } catch (reportErr) {
+      events.append({ phase: "halted", actor: "runner", action: "halt_report_failed", result: `Could not write halt artifacts: ${(reportErr as Error).message}` });
+    }
+    return { engagementId, status: "halted", blockedReason: reason, reportPath, findings };
   } finally {
     // v0.23.0: no blind save here. Every verdict persists atomically via
     // transactRegistryFile at write time; a whole-file save of this
