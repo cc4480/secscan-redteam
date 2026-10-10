@@ -1,4 +1,4 @@
-# SecScan RedTeam — v0.27.0
+# SecScan RedTeam
 
 > Working name: **secscan-redteam** (renameable — see "Naming" below).
 
@@ -11,11 +11,23 @@ registered in the router and can be swapped back in for the exploiter role
 with a one-line policy change.
 
 **Honest status:** the full system is test-verified against simulated
-targets (508/508 runner tests, 17/17 auth-gate tests) but has not yet
+targets (782/782 runner tests, 17/17 auth-gate tests) but has not yet
 completed a live full engagement. Anything this README calls "real" means
 *built, tested against mocks/fakes/loopback, and wired into the safety
 core* — not *proven on a live target*. Proof exists only after a real
 authorized system returns direct observation or a canary marker echo.
+
+## Versions
+
+There is no single repo-wide version. Each workspace package versions
+independently, and its `package.json` is canonical:
+
+- `@secscan/redteam-runner` 0.22.0 — the engagement runner (the product)
+- `@secscan/redteam-llm-router` 0.2.0
+- `@secscan/redteam-auth-gate` 0.1.0
+- `@secscan/redteam-harness-plugin` 0.2.0
+
+The root package (`secscan-redteam` 0.1.0) is only the workspace shell.
 
 ## The battery — 418 attack intents
 
@@ -35,7 +47,7 @@ reconciled per category × target cell **and** per item.
 Competitors reach "tens of thousands of attacks" by executing payload
 variants. We do the same depth but count it honestly:
 
-- **139 curated, non-destructive payloads** across 10 libraries
+- **138 curated, non-destructive payloads** across 10 libraries
   (SQLi, XSS, command injection, SSTI, XXE, path traversal, SSRF, open
   redirects, auth/session, headers/CORS) — mechanical data, never
   LLM-invented at runtime.
@@ -134,7 +146,7 @@ Credential testing only against authorized test accounts.
 #    dependency order and stamps each dist/ so stale builds fail loudly)
 npm install && npm run build
 npm run check-dist # fails if any dist/ is stale vs its src/
-npm test           # all workspace suites (runner 539, auth-gate 17)
+npm test           # all workspace suites (runner 782, auth-gate 17, harness-plugin 18)
 npm run typecheck  # every tsconfig clean
 
 # 2. Dry run (no live target touched)
@@ -148,7 +160,7 @@ node smoke-qwen.mjs
 ## Architecture
 
 - `runner/` — the engagement runner (`@secscan/redteam-runner`): phases,
-  dispatch, 26 agent tools, safety core (rate limiter, denylists,
+  dispatch, 27 agent tools, safety core (rate limiter, denylists,
   auto-halt, kill switch), proof bundles, registry, compliance packs,
   integrations, watch mode, web UI. No `runner/src` file exceeds 300
   lines (mechanically enforced by `file-budget.test.ts`).
@@ -159,11 +171,15 @@ node smoke-qwen.mjs
   coordinator/recon/reporter). Qwen (`qwen3.8-max`) stays registered and can
   be reinstated for the exploiter with a one-line policy change. Adding a provider = one class +
   registration.
-- `agents/` — role system prompts with ReAct loops.
+- `agents/` — role system prompts, GENERATED from `runner/src/prompts/` (the single source of truth; do not hand-edit — regenerate via `node scripts/gen-agent-prompts.mjs`).
 - `harness-plugin/` — DeepSeek Harness integration (auth gate as a
   `tools/pre-execute` hook, SecScan MCP via `dsh-mcp-client`).
-- `engagements/` — runbook template; live runs stream to
-  `engagements/live/<id>/`; `queue/` for dropped job files.
+- `engagements/` — runbook template + seed vuln registry; live runs stream
+  to `engagements/live/<id>/`; `queue/` for dropped job files. The runner
+  reads/writes one registry at `<REDTEAM_HOME or cwd>/engagements/registry.json`:
+  the tracked root copy is the seed snapshot, while launching from `runner/`
+  uses the git-ignored `runner/engagements/registry.json` — the two diverge,
+  so set `REDTEAM_HOME` if you want one canonical registry.
 
 Docs live in `docs/` (`architecture.md`, `safety.md`, `compliance.md`,
 `proof.md`, `integrations.md`, `continuous.md`, `accountability.md`,
