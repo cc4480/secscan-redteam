@@ -62,6 +62,21 @@ export function tier2ProductionConfirmed(env: NodeJS.ProcessEnv = process.env): 
   return v === "1" || v === "true" || v === "yes";
 }
 
+export const MSF_OPERATOR_GRANT_ENV = "REDTEAM_OPERATOR_MSF_APPROVED";
+
+/**
+ * True when the human operator explicitly granted `msf_exec run` for this
+ * process. Firing live Metasploit modules is the one action whose approval
+ * must be a person, not the LLM coordinator: the grant is the named
+ * operator setting this env var (or recording an 'msf-run' entry in the
+ * engagement's approvals.jsonl — the dispatcher checks both). Absent a
+ * grant, every msf_exec run is denied, on staging and production alike.
+ */
+export function msfRunOperatorGranted(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = (env[MSF_OPERATOR_GRANT_ENV] ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 /**
  * Mechanical gate for Tier 2 on production. Tier 2 chains toward critical
  * assets — on production that needs an explicit operator decision, exactly
@@ -143,6 +158,40 @@ export function toolMinTier(toolName: string, args: Record<string, unknown> = {}
 }
 
 /**
+ * Probe tools that accept an HTTP method argument, and the methods each may
+ * fire at Tier 0 (observe, read-only). http_probe passes its method straight
+ * to the prober, which accepts any alphabetic method plus a body — so
+ * without this check "observe" could DELETE/PUT/PATCH. burst_probe's
+ * transport already refuses everything but GET/HEAD; the tier check names
+ * the denial instead of surfacing a prober error. Safe methods follow the
+ * HTTP definition: GET/HEAD/OPTIONS never mutate by contract. Higher tiers
+ * are unrestricted here — Tier 1+ may legitimately probe with any method.
+ */
+const TIER0_PROBE_SAFE_METHODS: Record<string, ReadonlySet<string>> = {
+  http_probe: new Set(["GET", "HEAD", "OPTIONS"]),
+  burst_probe: new Set(["GET", "HEAD"]),
+};
+
+/** The HTTP method a probe call will fire (absent → GET, matching the handlers). */
+function probeMethodOf(args: Record<string, unknown>): string {
+  const m = String(args["method"] ?? "GET").trim().toUpperCase();
+  return m || "GET";
+}
+
+/** Tier 0 read-only check for method-carrying probes; undefined when allowed. */
+function tier0ProbeDenial(toolName: string, args: Record<string, unknown>): string | undefined {
+  const safe = TIER0_PROBE_SAFE_METHODS[toolName];
+  if (!safe) return undefined;
+  const method = probeMethodOf(args);
+  if (safe.has(method)) return undefined;
+  return (
+    `DENIED by autonomy tier: Tier 0 (observe) is read-only — ${toolName} with method ${method} can mutate target state. ` +
+    `Tier 0 allows only safe probe methods (${[...safe].join(", ")}). ` +
+    `Mutating probes require Tier 1 (validate) or Tier 2 (chain), declared by the operator.`
+  );
+}
+
+/**
  * Tools whose successful execution counts as a "validated exploit step" for
  * the Tier 1 chain budget. Enumeration-flavored Tier 1 tools (winrm_probe,
  * ad_enum, nfs_enum, ssh_agent_audit, rdp_shadow_prep) observe; they don't
@@ -181,6 +230,13 @@ export function checkTierAllows(state: TierState, toolName: string, args: Record
       `Tier 0 allows read-only recon only; Tier 1 adds single-step validated exploitation; ` +
       `Tier 2 allows multi-step chains. Escalation needs recorded operator approval — no silent escalation.`
     );
+  }
+  // Tier 0 is read-only in fact, not just in name: a method-carrying probe
+  // may only fire safe (non-mutating) methods, even though the tool itself
+  // is a Tier 0 tool.
+  if (state.current === 0) {
+    const probeDenial = tier0ProbeDenial(toolName, args);
+    if (probeDenial) return probeDenial;
   }
   if (state.current === 1 && isExploitStepTool(toolName, args) && host) {
     const used = state.chainSteps.get(host) ?? 0;

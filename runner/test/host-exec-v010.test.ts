@@ -49,6 +49,9 @@ const FAKE_ENV: NodeJS.ProcessEnv = {
   REDTEAM_SSH_USER: "testuser",
   REDTEAM_SSH_PASSWORD: "s3cr3t-pw-FOR-TESTS",
   REDTEAM_SSH_AGENT_SOCKET: "/tmp/fake-agent.sock",
+  // Operator opt-in for the agent-forwarding audit — explicitly enabled here
+  // so the audit-path tests exercise the tool, not the gate.
+  REDTEAM_SSH_AGENT_FORWARD: "1",
 };
 const SECRET = "s3cr3t-pw-FOR-TESTS";
 const SCOPE = ["10.9.0.12"];
@@ -704,11 +707,25 @@ describe("ssh agent-forwarding audit", () => {
 
   it("refuses fast with an actionable error when no agent socket is configured", async () => {
     const { t, seen } = fakeSsh();
-    const env: NodeJS.ProcessEnv = { REDTEAM_SSH_USER: "testuser", REDTEAM_SSH_PASSWORD: "x" };
+    const env: NodeJS.ProcessEnv = { REDTEAM_SSH_USER: "testuser", REDTEAM_SSH_PASSWORD: "x", REDTEAM_SSH_AGENT_FORWARD: "1" };
     const ex = new HostExecutor({ ssh: () => t, env });
     const r = await ex.sshAgentAudit({ host: "10.9.0.12", mode: "socket-check", scopeHosts: SCOPE });
     assert.equal(r.ok, false);
     assert.ok(r.refused?.includes("REDTEAM_SSH_AGENT_SOCKET"), r.refused ?? "no refusal reason");
+    assert.equal(seen.length, 0, "transport must never be touched");
+  });
+
+  it("refuses without the operator opt-in (REDTEAM_SSH_AGENT_FORWARD), even with a socket configured", async () => {
+    const { t, seen } = fakeSsh();
+    const env: NodeJS.ProcessEnv = {
+      REDTEAM_SSH_USER: "testuser",
+      REDTEAM_SSH_PASSWORD: "x",
+      REDTEAM_SSH_AGENT_SOCKET: "/tmp/fake-agent.sock",
+    };
+    const ex = new HostExecutor({ ssh: () => t, env });
+    const r = await ex.sshAgentAudit({ host: "10.9.0.12", mode: "socket-check", scopeHosts: SCOPE });
+    assert.equal(r.ok, false);
+    assert.ok(r.refused?.includes("REDTEAM_SSH_AGENT_FORWARD"), r.refused ?? "no refusal reason");
     assert.equal(seen.length, 0, "transport must never be touched");
   });
 

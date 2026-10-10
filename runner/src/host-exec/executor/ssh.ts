@@ -31,12 +31,15 @@ export async function sshExecImpl(core: ExecutorCore, args: {
       "ssh_exec",
       t,
     );
+    const hkNote = r.hostKey
+      ? ` [host-key ${r.hostKey.fingerprint} ${r.hostKey.mode === "tofu" ? "TOFU first-use — recorded to known_hosts" : "pinned"}]`
+      : "";
     return {
       ok: r.code === 0,
       transport: "ssh",
       host: args.host,
       summary: redactSecrets(
-        `ssh ${args.host}: exit=${r.code} in ${r.ms}ms :: ${summarizeCommand(args.command, pre.secrets)}`,
+        `ssh ${args.host}: exit=${r.code} in ${r.ms}ms${hkNote} :: ${summarizeCommand(args.command, pre.secrets)}`,
         pre.secrets,
       ),
       output: redactSecrets(capOutput(`${r.stdout}${r.stderr ? `\n[stderr]\n${r.stderr}` : ""}`), pre.secrets),

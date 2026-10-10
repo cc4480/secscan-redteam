@@ -42,6 +42,89 @@ export interface ConsoleRunResult {
 
 const CONSOLE_POLL_MS = 750;
 
+// ---------------------------------------------------------------------------
+// Console input hardening.
+//
+// Everything written to an msf console is a single line of `use …` /
+// `set K V` / `run` text. Any string that can end that line or re-tokenize
+// it lets the caller inject whole console commands (`irb`, a second
+// `set RHOSTS …`), escaping the canary-only design of the bridge. So every
+// agent- or target-influenced string is checked here and REFUSED — never
+// escaped-and-continued: input that needs a metacharacter is not
+// expressible through the bridge, loudly.
+//
+// Metasploit's datastore is case-insensitive, so target selection
+// (RHOSTS / RHOST / RHOSTS_FILE in any casing) is runner-owned: agent
+// values are dropped and the scope-checked host forced for every module
+// type (auxiliary scanners take RHOSTS too, not just exploits).
+// ---------------------------------------------------------------------------
+
+/** Slash-separated module/payload path: word chars, dots, dashes per segment. */
+const MODULE_PATH_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$/;
+/** Datastore keys are plain identifiers (dots/colons for namespaced keys). */
+const OPTION_KEY_RE = /^[A-Za-z][A-Za-z0-9_.:]*$/;
+/** Values: no whitespace/control (kills \n, \r, \t, ESC) and no console metacharacters. */
+const OPTION_VALUE_FORBIDDEN_RE = /[\s\x00-\x1F\x7F"'`$;|&<>(){}\[\]\\!]/;
+/** CMD is one `set CMD <rest of line>` value: spaces ok, no control chars or shell/console punctuation. */
+const CMD_FORBIDDEN_RE = /[\x00-\x1F\x7F;`"'$|&<>]/;
+/** Datastore keys (any case) that choose the module's target — runner-owned. */
+export const MSF_TARGET_OPTION_RE = /^rhosts?(_file)?$/i;
+
+/**
+ * Force the scope-checked host as the module's target. Any agent-supplied
+ * target option (RHOSTS/RHOST/RHOSTS_FILE, any casing) is dropped first —
+ * the datastore is case-insensitive, so `rhosts` would retarget just as
+ * surely as `RHOSTS`. Does not mutate the caller's object.
+ */
+export function forceMsfTargetOptions(
+  options: Record<string, string> | undefined,
+  host: string,
+): Record<string, string> {
+  const out: Record<string, string> = { ...(options ?? {}) };
+  for (const k of Object.keys(out)) {
+    if (MSF_TARGET_OPTION_RE.test(k)) delete out[k];
+  }
+  out["RHOSTS"] = host;
+  return out;
+}
+
+/**
+ * Refusal reason when any console-bound string is unsafe to write, or null
+ * when the whole input may be written line-by-line. Pure — the executor
+ * runs this as preflight policy (before credentials, before any packet)
+ * and the client re-checks before creating a console, so no caller of
+ * runModuleConsole can bypass it.
+ */
+export function checkMsfConsoleInputs(args: {
+  moduleType: string;
+  fullname: string;
+  options: Record<string, string>;
+  payload?: string;
+  cmd?: string;
+}): string | null {
+  if (args.moduleType !== "exploit" && args.moduleType !== "auxiliary") {
+    return `msf console refused: module type must be exploit|auxiliary, got ${JSON.stringify(args.moduleType)}`;
+  }
+  if (!MODULE_PATH_RE.test(args.fullname)) {
+    return `msf console refused: unsafe module name ${JSON.stringify(args.fullname)} — only plain module paths are expressible through the bridge`;
+  }
+  if (args.payload !== undefined && !MODULE_PATH_RE.test(args.payload)) {
+    return `msf console refused: unsafe payload name ${JSON.stringify(args.payload)} — only plain payload paths are expressible through the bridge`;
+  }
+  if (args.cmd !== undefined && CMD_FORBIDDEN_RE.test(args.cmd)) {
+    return `msf console refused: unsafe CMD string ${JSON.stringify(args.cmd)} — control characters and console/shell punctuation are not expressible through the bridge`;
+  }
+  for (const [k, v] of Object.entries(args.options)) {
+    if (!OPTION_KEY_RE.test(k)) {
+      return `msf console refused: unsafe option key ${JSON.stringify(k)} — datastore keys are plain identifiers`;
+    }
+    if (OPTION_VALUE_FORBIDDEN_RE.test(v)) {
+      return `msf console refused: unsafe value for option ${k}: ${JSON.stringify(v)} — whitespace, control characters and console metacharacters are not expressible through the bridge`;
+    }
+  }
+  return null;
+}
+
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
@@ -112,6 +195,10 @@ export class MsfClient {
    *
    * The console is destroyed on abort — that is the kill switch for a
    * running module: destroying the console kills whatever it was doing.
+   *
+   * Every console-bound string is validated first (see
+   * checkMsfConsoleInputs): an unsafe module/option/payload/CMD string
+   * throws before any console is created.
    */
   async runModuleConsole(args: {
     moduleType: "exploit" | "auxiliary";
@@ -122,6 +209,8 @@ export class MsfClient {
     timeoutMs: number;
     signal?: AbortSignal;
   }): Promise<ConsoleRunResult> {
+    const refusal = checkMsfConsoleInputs(args);
+    if (refusal) throw new Error(`[msf] ${refusal}`);
     const created = await this.call("console.create", []);
     const cid = asString(created["id"]);
     if (!cid) throw new Error("[msf] console.create returned no console id");

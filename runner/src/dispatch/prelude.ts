@@ -2,13 +2,19 @@
  * Dispatch prelude helpers (v0.19.0 refactor — extracted from dispatch.ts).
  */
 import { type Ctx } from "../context.js";
-import { checkAuthorization } from "../gate.js";
+import { checkScopeAuthorization } from "../gate.js";
 
 export async function recheckVerified(ctx: Ctx): Promise<boolean> {
   // Cache the authorize-phase proof for 5 minutes; re-check after that.
   if (ctx.verifiedAt && Date.now() - Date.parse(ctx.verifiedAt) < 5 * 60_000) return true;
-  const v = await checkAuthorization(
-    ctx.domain,
+  // Same per-host model as the authorize phase: EVERY scope host must still
+  // be authorized (server-verified, or per-host local-sandbox exemption) —
+  // not only the primary domain. Call sites pass no specific target host,
+  // and every dispatch handler gates its target against ctx.hosts first,
+  // so re-verifying the whole scope keeps the host being acted on covered
+  // (and stays fail-closed).
+  const v = await checkScopeAuthorization(
+    ctx.hosts,
     { mcpEndpoint: ctx.config.mcpEndpoint, mcpToken: ctx.config.mcpToken },
     ctx.deps.verify,
     { allowLocalSandbox: ctx.config.localSandbox },
