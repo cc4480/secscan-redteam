@@ -50,6 +50,15 @@ export function resolveConfig(env: NodeJS.ProcessEnv, opts: {
       "[runner] DEEPSEEK_API_KEY is not set. Enter the DeepSeek API key via the Secure Vault.",
     );
   }
+  if (opts.deepseekApiKey) {
+    // Key passed programmatically (RunOptions from the UI): bridge it into
+    // env, which is all the DeepSeek provider reads — the same mechanism as
+    // the Qwen branch below. Without this bridge the check above passes and
+    // the first LLM call then dies with "DEEPSEEK_API_KEY is not set". An
+    // explicitly-passed key wins over any env value. Never logged, never
+    // persisted.
+    env["DEEPSEEK_API_KEY"] = opts.deepseekApiKey;
+  }
   // v0.6: no role currently routes to Qwen (see llm-router/src/policy.ts —
   // operator is running DeepSeek-only for now, Qwen to come back later), so
   // its key is optional here. It's still read/threaded through so flipping

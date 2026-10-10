@@ -12,6 +12,14 @@ export interface ChatMessage {
   content: string;
   /** For tool messages: the id of the call being answered. */
   toolCallId?: string;
+  /**
+   * For assistant messages: the tool calls that turn issued. History MUST
+   * carry them back on the next turn — OpenAI-compatible APIs reject a
+   * `tool` result whose tool_call_id was never declared in a preceding
+   * assistant `tool_calls`, so dropping them breaks every multi-turn tool
+   * conversation at turn 2.
+   */
+  toolCalls?: ToolCallRequest[];
 }
 
 export interface ToolCallRequest {

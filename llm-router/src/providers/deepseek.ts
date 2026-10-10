@@ -39,6 +39,22 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
     if (m.role === "tool") {
       return { role: "tool", tool_call_id: m.toolCallId ?? "", content: m.content };
     }
+    if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+      // Send the calls this turn issued back verbatim: the API rejects
+      // `tool` results whose tool_call_id was never declared in a
+      // preceding assistant `tool_calls`. (This mapping previously dropped
+      // them, which 400'd every multi-turn tool conversation at turn 2.)
+      // Arguments go back as the JSON string the wire format expects.
+      return {
+        role: "assistant",
+        content: m.content,
+        tool_calls: m.toolCalls.map((c) => ({
+          id: c.id,
+          type: "function",
+          function: { name: c.name, arguments: JSON.stringify(c.arguments ?? {}) },
+        })),
+      };
+    }
     return { role: m.role, content: m.content };
   });
 }
