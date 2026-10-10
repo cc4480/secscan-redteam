@@ -162,13 +162,21 @@ REDTEAM_MSFRPC_TLS=0). Requires the operator's msfrpcd running
   process.exit(2);
 }
 
+/** True for a real 24-hour clock pair from \d{2} captures (00-23 / 00-59). */
+function isClockPair(hh: string, mm: string): boolean {
+  return Number(hh) <= 23 && Number(mm) <= 59;
+}
+
 export function parseBlackout(s: string): { start: string; end: string; tz?: string } {
-  const m = s.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})(?:\s+(.+))?$/);
-  if (!m) {
-    console.error(`[runner] bad --blackout ${JSON.stringify(s)}; want "HH:MM-HH:MM [Timezone]"`);
+  const m = s.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})(?:\s+(.+))?$/);
+  // Out-of-range clock values (25:00, 02:60, 24:00) would silently NEVER
+  // match a real clock, so the blackout would never apply — fail loud at
+  // parse time instead of running unprotected.
+  if (!m || !isClockPair(m[1]!, m[2]!) || !isClockPair(m[3]!, m[4]!)) {
+    console.error(`[runner] bad --blackout ${JSON.stringify(s)}; want "HH:MM-HH:MM [Timezone]" with real 24-hour clock times`);
     process.exit(2);
   }
-  return { start: m[1]!, end: m[2]!, tz: m[3] };
+  return { start: `${m[1]}:${m[2]}`, end: `${m[3]}:${m[4]}`, tz: m[5] };
 }
 
 export function buildInput(): EngagementInput {
@@ -191,6 +199,10 @@ export function buildInput(): EngagementInput {
       process.exit(2);
     }
     targets = parsed as TargetId[];
+  }
+  if (mode !== "red" && mode !== "black") {
+    console.error(`[runner] bad --mode ${JSON.stringify(mode)}; want red|black`);
+    process.exit(2);
   }
   const roe: RulesOfEngagement = {
     scope: scopes,
