@@ -1,7 +1,7 @@
 /**
  * WinRM transport implementations: winrmExec, winrmProbe (v0.19.0 refactor — extracted from executor.ts).
  */
-import { HOST_EXEC_TIMEOUT_MS, capOutput, redactSecrets, summarizeCommand } from "../common.js";
+import { HOST_EXEC_TIMEOUT_MS, capOutput, redactSecrets, resolveWinrmTransportSecurity, summarizeCommand } from "../common.js";
 import { type WinrmProbeRequestImpl, type WinrmProbeResult, probeWinrmListener } from "../winrm.js";
 import { ExecutorCore } from "./core.js";
 import { type HostExecResult } from "./types.js";
@@ -11,6 +11,7 @@ export async function winrmExecImpl(core: ExecutorCore, args: {
   port?: number;
   command: string;
   powershell?: boolean;
+  /** Deprecated: ignored. WinRM transport security is operator env config (see resolveWinrmTransportSecurity). */
   useTls?: boolean;
   scopeHosts: string[];
   timeoutMs?: number;
@@ -19,6 +20,11 @@ export async function winrmExecImpl(core: ExecutorCore, args: {
   const started = Date.now();
   const pre = core.preflight("winrm", args.host, args.scopeHosts, args.command);
   if ("refused" in pre) return core.refusedResult("winrm", args.host, pre.refused);
+  // Transport security is operator config, never a tool argument
+  // (2026-10-09 audit): TLS by default; plaintext only when the operator
+  // opted in with REDTEAM_WINRM_ALLOW_PLAINTEXT=1. args.useTls is accepted
+  // for call-site compatibility and intentionally has no effect.
+  const tls = resolveWinrmTransportSecurity(core.deps.env);
   const t = core.deps.winrm();
   try {
     const r = await core.bounded(
@@ -28,7 +34,7 @@ export async function winrmExecImpl(core: ExecutorCore, args: {
         creds: pre.creds,
         command: args.command.slice(0, 4000),
         powershell: args.powershell,
-        useTls: args.useTls,
+        useTls: tls.useTls,
         timeoutMs: args.timeoutMs ?? HOST_EXEC_TIMEOUT_MS,
         signal: args.signal,
       }),
@@ -41,7 +47,7 @@ export async function winrmExecImpl(core: ExecutorCore, args: {
       transport: "winrm",
       host: args.host,
       summary: redactSecrets(
-        `winrm ${args.host}: exit=${r.code} in ${r.ms}ms :: ${summarizeCommand(args.command, pre.secrets)}`,
+        `winrm ${args.host} [${tls.useTls ? "tls" : "PLAINTEXT — operator opt-in REDTEAM_WINRM_ALLOW_PLAINTEXT=1"}]: exit=${r.code} in ${r.ms}ms :: ${summarizeCommand(args.command, pre.secrets)}`,
         pre.secrets,
       ),
       output: redactSecrets(capOutput(`${r.stdout}${r.stderr ? `\n[stderr]\n${r.stderr}` : ""}`), pre.secrets),

@@ -2,7 +2,9 @@
  * Engagement-level gating. Every check fails closed: uncertainty → deny.
  *
  * Layers (all must pass before aggressive work):
- *  1. Server-authoritative ownership verification (auth-gate's isServerVerified).
+ *  1. Server-authoritative ownership verification (auth-gate's isServerVerified)
+ *     of EVERY host in the ROE scope — not just the primary domain; the
+ *     local-sandbox exemption applies per private/loopback host only.
  *  2. Scope: every probed/scanned URL's hostname must be an exact in-scope host.
  *  3. Technique exclusions: always-excluded + mode defaults + ROE exclusions.
  *  4. Blackout windows: the runner pauses, it does not skip.
@@ -95,12 +97,19 @@ export interface ServerGateConfig {
   mcpToken: string;
 }
 
+/** The SecScan-server ownership check. Injectable so tests never touch the network. */
+export type VerifyFn = (
+  domain: string,
+  cfg: { endpoint: string; token: string },
+) => Promise<boolean>;
+
 export interface CheckAuthorizationOptions {
   /**
    * LOCAL SANDBOX MODE ONLY. When true, skips the server verification call
-   * — but ONLY when `domain` itself resolves to a private/loopback host
-   * (e.g. localhost, 127.0.0.1, a RFC1918 address). For any real-looking
-   * domain this flag has zero effect: the server check still runs and the
+   * for a host that is itself private/loopback (e.g. localhost, 127.0.0.1, a
+   * RFC1918 address). The exemption is PER-HOST: in a multi-host scope it
+   * covers only the private/loopback hosts and never extends to any
+   * non-private scope host — those still face the server check and the
    * engagement still fails closed exactly as before. This exists so a
    * locally-hosted sandbox target (Juice Shop/DVWA on 127.0.0.1) can be
    * engaged without needing DNS TXT ownership proof, which can't exist for
@@ -110,29 +119,43 @@ export interface CheckAuthorizationOptions {
   allowLocalSandbox?: boolean;
 }
 
-/**
- * The authorization gate: the SecScan server must positively list the domain
- * as verified. Network errors, timeouts, missing token → denied (fail closed).
- * `verify` is injectable so unit tests never touch the network.
- */
-export async function checkAuthorization(
-  domain: string,
+/** How one scope host earned (or failed to earn) authorization. */
+export interface HostAuthorization {
+  /** Normalized hostname that was checked. */
+  host: string;
+  allowed: boolean;
+  /**
+   * "server" = the SecScan server lists the host as ownership-verified;
+   * "local-sandbox" = per-host private/loopback exemption under
+   * --local-sandbox (covers THIS host only); "none" = denied.
+   */
+  basis: "server" | "local-sandbox" | "none";
+  reason?: string;
+}
+
+export interface ScopeAuthorizationVerdict extends GateVerdict {
+  /** Per-host results, in scope order — every scope host was checked. */
+  hosts: HostAuthorization[];
+}
+
+/** The per-host check behind both authorization entry points. Fails closed. */
+async function checkOneHost(
+  host: string,
   cfg: ServerGateConfig,
-  verify: (
-    domain: string,
-    cfg: { endpoint: string; token: string },
-  ) => Promise<boolean> = (d, c) => authGateIsServerVerified(d, c),
-  opts: CheckAuthorizationOptions = {},
-): Promise<GateVerdict> {
+  verify: VerifyFn,
+  opts: CheckAuthorizationOptions,
+): Promise<HostAuthorization> {
   let target: string;
   try {
-    target = extractDomain(domain);
+    target = extractDomain(host);
   } catch {
-    return { allowed: false, reason: `unparseable target: ${domain}` };
+    return { host, allowed: false, basis: "none", reason: `unparseable target: ${host}` };
   }
   if (opts.allowLocalSandbox && isPrivateOrLoopbackHost(target)) {
     return {
+      host: target,
       allowed: true,
+      basis: "local-sandbox",
       reason:
         `LOCAL SANDBOX MODE: ${target} is a private/loopback target — server ownership ` +
         `verification was skipped (no DNS TXT proof is possible for a loopback address). ` +
@@ -147,7 +170,9 @@ export async function checkAuthorization(
   }
   if (!verified) {
     return {
+      host: target,
       allowed: false,
+      basis: "none",
       reason:
         `domain ${target} is not ownership-verified (server check). ` +
         `Publish the SecScan challenge (start_domain_verification → TXT at ` +
@@ -156,5 +181,76 @@ export async function checkAuthorization(
         `the authorization gate.`,
     };
   }
-  return { allowed: true };
+  return { host: target, allowed: true, basis: "server" };
+}
+
+/**
+ * The single-domain authorization gate: the SecScan server must positively
+ * list the domain as verified. Network errors, timeouts, missing token →
+ * denied (fail closed). `verify` is injectable so unit tests never touch
+ * the network. Kept for single-domain callers; engagements authorize the
+ * whole scope via checkScopeAuthorization.
+ */
+export async function checkAuthorization(
+  domain: string,
+  cfg: ServerGateConfig,
+  verify: VerifyFn = (d, c) => authGateIsServerVerified(d, c),
+  opts: CheckAuthorizationOptions = {},
+): Promise<GateVerdict> {
+  const r = await checkOneHost(domain, cfg, verify, opts);
+  return r.reason ? { allowed: r.allowed, reason: r.reason } : { allowed: r.allowed };
+}
+
+/**
+ * THE engagement authorization gate: EVERY host in the ROE scope must be
+ * authorized before aggressive testing — not just the primary domain.
+ *  - Private/loopback hosts under --local-sandbox: exempt, per-host only.
+ *  - Every other host: the SecScan server must list it ownership-verified.
+ * No short-circuit: all hosts are checked, so a denial names every
+ * unverified host. Check errors/timeouts deny (fail closed), as always.
+ */
+export async function checkScopeAuthorization(
+  hosts: readonly string[],
+  cfg: ServerGateConfig,
+  verify: VerifyFn = (d, c) => authGateIsServerVerified(d, c),
+  opts: CheckAuthorizationOptions = {},
+): Promise<ScopeAuthorizationVerdict> {
+  const unique = [...new Set(hosts.map((h) => h.trim().toLowerCase()).filter(Boolean))];
+  if (unique.length === 0) {
+    return { allowed: false, reason: "no scope hosts to authorize — refusing to run.", hosts: [] };
+  }
+  const results: HostAuthorization[] = [];
+  for (const host of unique) {
+    results.push(await checkOneHost(host, cfg, verify, opts));
+  }
+  const denied = results.filter((r) => !r.allowed);
+  if (denied.length > 0) {
+    return {
+      allowed: false,
+      hosts: results,
+      reason:
+        `ownership verification failed for scope host(s): ${denied.map((r) => r.host).join(", ")} — ` +
+        `every host in the ROE scope must be ownership-verified before aggressive testing. ` +
+        denied.map((r) => r.reason).filter(Boolean).join(" "),
+    };
+  }
+  const sandbox = results.filter((r) => r.basis === "local-sandbox");
+  if (sandbox.length > 0) {
+    if (results.length === 1) {
+      return { allowed: true, hosts: results, reason: results[0]!.reason };
+    }
+    const names = sandbox.map((r) => r.host).join(", ");
+    const tail =
+      sandbox.length === results.length
+        ? "This bypass never applies to a non-private domain."
+        : "Every other scope host was ownership-verified by the SecScan server; the skip does not extend to them.";
+    return {
+      allowed: true,
+      hosts: results,
+      reason:
+        `LOCAL SANDBOX MODE: server ownership verification skipped only for private/loopback ` +
+        `scope host(s): ${names} (no DNS TXT proof is possible for a loopback address). ${tail}`,
+    };
+  }
+  return { allowed: true, hosts: results };
 }

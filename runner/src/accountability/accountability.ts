@@ -27,7 +27,16 @@ import { join } from "node:path";
 import type { AutonomyTier } from "./tiers.js";
 import { TIER_NAMES } from "./tiers.js";
 
-export type ApprovalKind = "tier-declared" | "tier-escalation" | "tier-de-escalation" | "production-confirm" | "scope-renewal";
+export type ApprovalKind =
+  | "tier-declared"
+  | "tier-escalation"
+  | "tier-de-escalation"
+  | "production-confirm"
+  | "scope-renewal"
+  /** A human operator grant for `msf_exec run` was present (env var) and recorded. */
+  | "msf-run"
+  /** An `msf_exec run` attempt was denied for lack of that operator grant. */
+  | "msf-run-denied";
 
 export interface ApprovalEntry {
   seq: number;

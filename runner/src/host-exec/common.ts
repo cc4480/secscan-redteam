@@ -34,15 +34,29 @@ export function validateHostTarget(
 }
 
 // ---------------------------------------------------------------------------
-// Destructive-command denylist (fail closed).
+// Destructive-command guard (fail closed), two layers.
 //
-// This is a backstop, not a sandbox: the agent prompts already forbid
-// destructive behavior, and the engagement is non-destructive by ROE. These
-// patterns catch the catastrophic cases even if a prompt is bypassed.
-// Matching is case-insensitive against the normalized command (whitespace
-// collapsed). When in doubt we refuse — a refused benign command is a
-// DENIED event the coordinator can re-plan around; a fired destructive one
-// is not recoverable.
+// Layer 1: catastrophic patterns (root wipes, formats, shutdowns, ransomware
+// precursors). Layer 2 (2026-10-09 audit): the bypass CLASSES around layer 1 —
+// recursive/wildcard deletes at ANY path, interpreter-inline file destruction,
+// local account/group mutation, and download-piped-to-shell cradles.
+//
+// KNOWN LIMITS, stated plainly: this is a heuristic string gate, NOT a
+// sandbox. It scans the command text, so deliberate obfuscation defeats it:
+// variables/indirection, string concatenation, encoded payloads, interactive
+// shells, and compiled droppers are not detectable here. It also only sees
+// the first command string — anything a shell reads from stdin, a script
+// file, or a second-stage download is invisible to it. The real boundary
+// stays: exact-host scope, the ROE, operator supervision, and the kill
+// switch. What this layer buys is refusal of the known destructive SHAPES —
+// including when a manipulated model reaches for them — with a clear reason.
+//
+// Deliberately still allowed: single-file, non-recursive deletes of explicit
+// paths (the canary-cleanup pattern, e.g. `rm /tmp/canary-marker`) and
+// read-only enumeration (`cat /etc/passwd`, `net user <name>`, `find /
+// -perm -4000`). When in doubt between mutate and observe, we refuse: a
+// refused benign command is a DENIED event the coordinator can re-plan
+// around; a fired destructive one is not recoverable.
 // ---------------------------------------------------------------------------
 
 interface DenyPattern {
@@ -72,6 +86,34 @@ const DENY: DenyPattern[] = [
   { label: "mass file encryption loop (ransomware pattern)", re: /\b(openssl\s+enc|gpg\s+--?(encrypt|symmetric)|7z\s+a\s+.*-p)\b.*(\$\(|\`|\*\.\*)/i },
   { label: "kernel module force-load of unsigned code", re: /\binsmod\b/i },
   { label: "firmware flash", re: /\bflashrom\b/i },
+  // — Layer 2: recursive/wildcard deletion at any path —
+  { label: "recursive delete (any path)", re: /\brm\s+(?:-\S+\s+)*?-\S*[rR]\S*\s/ },
+  { label: "wildcard delete (rm)", re: /\brm\s+(?:-\S+\s+)*\S*[*?]/ },
+  { label: "find -delete", re: /\bfind\b[^;|&]*\s-delete(\s|;|$)/i },
+  { label: "find -exec rm", re: /\bfind\b[^;|&]*-(exec|execdir)\s+\S{0,4}rm\b/i },
+  { label: "recursive directory remove (cmd /S)", re: /\b(rmdir|rd)\b[^;|&]*\/[sS]\b/ },
+  { label: "recursive delete (cmd del /s)", re: /\b(del|erase)\b[^;|&]*\/[sS]\b/i },
+  { label: "wildcard delete (cmd del)", re: /\b(del|erase)\b[^;|&]*[*?]/ },
+  { label: "PowerShell recursive remove (any path)", re: /\bRemove-Item\b[^;|&]*-Recurse\b/i },
+  { label: "PowerShell recursive remove (alias)", re: /\bri\b[^;|&]*-Recurse\b/i },
+  { label: "PowerShell wildcard remove", re: /\bRemove-Item\b[^;|&]*[*]/ },
+  // — Layer 2: interpreter-inline file destruction —
+  { label: "interpreter inline file destruction (python)", re: /\bpython[23]?\s+-c\b[\s\S]*?(rmtree|os\.(remove|unlink|rmdir|removedirs))/i },
+  { label: "interpreter inline file destruction (node)", re: /\bnode\s+(-e|--eval)\b[\s\S]*?(rmSync|rmdirSync|unlinkSync|fs\.rm\s*\()/i },
+  { label: "interpreter inline file destruction (perl)", re: /\bperl\s+-e\b[\s\S]*?(\bunlink\b|\brmtree\b)/i },
+  { label: "interpreter inline file destruction (ruby)", re: /\bruby\s+-e\b[\s\S]*?(File\.(delete|unlink)|FileUtils\.rm)/i },
+  { label: "interpreter inline file destruction (php)", re: /\bphp\s+-r\b[\s\S]*?(\bunlink\s*\(|\brmdir\s*\()/i },
+  // — Layer 2: local account/group mutation —
+  { label: "local account/group mutation", re: /\b(useradd|adduser|usermod|userdel|groupadd|groupmod|groupdel|chpasswd)\b/i },
+  { label: "password change (passwd)", re: /(?:^|[;|&]\s*|\s)(?:sudo\s+)?passwd(?:\s|$)/i },
+  { label: "net account mutation (/add|/delete|/active)", re: /\bnet\s+(user|users|localgroup|group)\b[^;|&]*\/(add|delete|active)/i },
+  { label: "net user password set", re: /\bnet\s+(user|users)\s+\S+\s+[^/\s;|&]\S*/i },
+  { label: "PowerShell local account mutation", re: /\b(New|Remove|Set|Rename|Enable|Disable)-LocalUser\b|\b(Add|Remove)-LocalGroupMember\b/i },
+  // — Layer 2: download-piped-to-shell / cradles —
+  { label: "download piped to shell", re: /\b(curl|wget)\b[^;]*\|\s*(sudo\s+)?(sh|bash|zsh|dash|ksh|pwsh|powershell|python3?|perl|node|ruby|php)\b/i },
+  { label: "download executed via shell substitution", re: /\b(sh|bash|zsh)\s+(-c\s+)?["']?\$\(\s*(curl|wget)\b|\b(sh|bash|zsh)\s+<\(\s*(curl|wget)\b/i },
+  { label: "download cradle (DownloadString)", re: /\.DownloadString\s*\(/i },
+  { label: "download cradle (Invoke-Expression + fetch)", re: /\b(iex|invoke-expression)\b[^;|&]*?(download|webclient|invoke-webrequest|invoke-restmethod|\bcurl\b|\bwget\b)/i },
 ];
 
 /**
@@ -89,6 +131,22 @@ export function checkDestructive(command: string): string | null {
 /** Exported for tests and docs — the mechanical backstop, stated plainly. */
 export function destructiveDenyList(): string[] {
   return DENY.map((d) => d.label);
+}
+
+// ---------------------------------------------------------------------------
+// WinRM transport security (2026-10-09 audit): TLS is the default and is NOT
+// negotiable by the model. Plaintext WinRM (credentials + commands readable
+// and tamperable on the wire) is allowed only when the OPERATOR opts in via
+// REDTEAM_WINRM_ALLOW_PLAINTEXT=1 — e.g. a legacy lab host with no 5986
+// listener. The opt-in is operator config, recorded in the exec summary; no
+// tool argument can select plaintext.
+// ---------------------------------------------------------------------------
+
+export function resolveWinrmTransportSecurity(
+  env: NodeJS.ProcessEnv = process.env,
+): { useTls: boolean; plaintextOperatorOptIn: boolean } {
+  const plaintextOperatorOptIn = env["REDTEAM_WINRM_ALLOW_PLAINTEXT"] === "1";
+  return { useTls: !plaintextOperatorOptIn, plaintextOperatorOptIn };
 }
 
 // ---------------------------------------------------------------------------

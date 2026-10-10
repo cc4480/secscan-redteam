@@ -2,12 +2,14 @@
  * Authorization phase (v0.19.0 refactor — extracted from phases.ts).
  */
 import { type Ctx } from "../context.js";
-import { type GateVerdict, checkAuthorization } from "../gate.js";
+import { checkScopeAuthorization, type ScopeAuthorizationVerdict } from "../gate.js";
 import { join } from "node:path";
 
-export async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
-  const verdict = await checkAuthorization(
-    ctx.domain,
+export async function authorizePhase(ctx: Ctx): Promise<ScopeAuthorizationVerdict> {
+  // EVERY host in the ROE scope is ownership-checked — not just the primary
+  // domain (ctx.domain = hosts[0]). Any unverified host blocks the run.
+  const verdict = await checkScopeAuthorization(
+    ctx.hosts,
     { mcpEndpoint: ctx.config.mcpEndpoint, mcpToken: ctx.config.mcpToken },
     ctx.deps.verify,
     { allowLocalSandbox: ctx.config.localSandbox },
@@ -20,13 +22,13 @@ export async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
   ctx.verifiedAt = new Date().toISOString();
   ctx.verificationProof = verdict.reason
     ? `${verdict.reason} (${ctx.verifiedAt})`
-    : `SecScan server lists ${ctx.domain} as ownership-verified (${ctx.verifiedAt}).`;
+    : `SecScan server lists ${ctx.hosts.join(", ")} as ownership-verified (${ctx.verifiedAt}).`;
   ctx.events.append({
     phase: "authorize",
     actor: "coordinator",
     action: "authorization_basis",
     target: ctx.domain,
-    result: `${ctx.verificationProof} Mode: ${ctx.input.mode.toUpperCase()}. Objective: ${ctx.input.objective}. Scope: ${ctx.hosts.join(", ")}.`,
+    result: `${ctx.verificationProof} Mode: ${ctx.input.mode.toUpperCase()}. Objective: ${ctx.input.objective}. Scope: ${ctx.hosts.join(", ")}. Per-host basis: ${verdict.hosts.map((h) => `${h.host}=${h.basis}`).join(", ")}.`,
   });
   ctx.events.updateState({
     status: "running",
@@ -36,4 +38,3 @@ export async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
   });
   return verdict;
 }
-

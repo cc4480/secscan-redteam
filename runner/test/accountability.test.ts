@@ -36,6 +36,7 @@ import {
   TIER_NAMES,
   TIER1_CHAIN_BUDGET_PER_TARGET,
 } from "../src/accountability/index.js";
+import { MSF_OPERATOR_GRANT_ENV, msfRunOperatorGranted } from "../src/accountability/tiers.js";
 import type { AutonomyTier, TierState, ApprovalEntry } from "../src/accountability/index.js";
 import { renderAttestationLetter } from "../src/compliance/index.js";
 import { runEngagement } from "../src/phases.js";
@@ -199,6 +200,59 @@ describe("checkTierAllows", () => {
   });
   it("chain budget constant is 1 (single-step)", () => {
     assert.equal(TIER1_CHAIN_BUDGET_PER_TARGET, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 0 is read-only in fact: probe methods are checked, not just tools
+// (audit W1-F3 — http_probe used to fire DELETE/PUT at the observe tier)
+// ---------------------------------------------------------------------------
+
+describe("Tier 0 probe methods", () => {
+  it("Tier 0 allows safe probe methods (and the GET default)", () => {
+    const s = tierState(0);
+    for (const m of ["GET", "HEAD", "OPTIONS", "get"]) {
+      assert.equal(checkTierAllows(s, "http_probe", { method: m }, "h"), undefined, `${m} must be allowed`);
+    }
+    assert.equal(checkTierAllows(s, "http_probe", {}, "h"), undefined, "absent method defaults to GET");
+    for (const m of ["GET", "HEAD"]) {
+      assert.equal(checkTierAllows(s, "burst_probe", { method: m }, "h"), undefined, `burst ${m} allowed`);
+    }
+  });
+  it("Tier 0 denies mutating probe methods, naming the tier", () => {
+    const s = tierState(0);
+    for (const m of ["POST", "PUT", "PATCH", "DELETE", "delete"]) {
+      const d = checkTierAllows(s, "http_probe", { method: m }, "h");
+      assert.ok(d?.includes("DENIED by autonomy tier"), d ?? `no denial for ${m}`);
+      assert.ok(d?.includes("Tier 0"), d ?? "tier not named");
+      assert.ok(d?.includes("read-only"), d ?? "read-only nature not named");
+      assert.ok(d?.includes(m.toUpperCase()), d ?? "method not named");
+    }
+    const db = checkTierAllows(s, "burst_probe", { method: "POST" }, "h");
+    assert.ok(db?.includes("Tier 0"), db ?? "burst POST not tier-denied");
+  });
+  it("Tier 1+ probes may use mutating methods", () => {
+    for (const tier of [1, 2] as const) {
+      const s = tierState(tier);
+      assert.equal(checkTierAllows(s, "http_probe", { method: "DELETE" }, "h"), undefined, `Tier ${tier} DELETE probe allowed`);
+      assert.equal(checkTierAllows(s, "http_probe", { method: "PUT" }, "h"), undefined, `Tier ${tier} PUT probe allowed`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MSF operator grant (audit W1-F3) — the human gate behind msf_exec run
+// ---------------------------------------------------------------------------
+
+describe("msfRunOperatorGranted", () => {
+  it("recognizes only explicit truthy values", () => {
+    for (const v of ["1", "true", "TRUE", "yes", " Yes "]) {
+      assert.equal(msfRunOperatorGranted({ [MSF_OPERATOR_GRANT_ENV]: v }), true, `${JSON.stringify(v)} grants`);
+    }
+    for (const v of ["", "0", "false", "no", "granted", "2"]) {
+      assert.equal(msfRunOperatorGranted({ [MSF_OPERATOR_GRANT_ENV]: v }), false, `${JSON.stringify(v)} must not grant`);
+    }
+    assert.equal(msfRunOperatorGranted({}), false, "absent env never grants");
   });
 });
 

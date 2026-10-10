@@ -38,6 +38,7 @@ import {
   MsfAuthError,
 } from "../src/msf/index.js";
 import { runEngagement } from "../src/phases.js";
+import { MSF_OPERATOR_GRANT_ENV } from "../src/accountability/tiers.js";
 import type { EngagementInput } from "../src/types.js";
 import type { AgentRole, ChatMessage, ChatResult, ToolCallRequest } from "@secscan/redteam-llm-router";
 
@@ -444,7 +445,7 @@ describe("msf_exec wiring", () => {
     };
   }
 
-  async function run(action: "search" | "run", outOfScope: boolean, fake: FakeMsf) {
+  async function run(action: "search" | "run", outOfScope: boolean, fake: FakeMsf, grant = true) {
     const input: EngagementInput = {
       target: "10.9.0.12",
       mode: "red",
@@ -452,28 +453,44 @@ describe("msf_exec wiring", () => {
       roe: { scope: ["10.9.0.12"] },
     };
     const msfExecutor = new MsfExecutor({ request: fakeRequest(fake), env: msfEnv() });
-    const res = await runEngagement(input, {
-      mcpToken: "test",
-      deepseekApiKey: "test",
-      qwenApiKey: "test",
-      engagementsDir: dir,
-      deps: {
-        verify: async () => true,
-        completeForRole: scriptedLlm(action, outOfScope) as never,
-        msfExecutor,
-      },
-    });
+    // The operator grant is an environment decision, read at dispatch time;
+    // set or clear it for exactly this engagement run.
+    const prev = process.env[MSF_OPERATOR_GRANT_ENV];
+    if (grant) process.env[MSF_OPERATOR_GRANT_ENV] = "1";
+    else delete process.env[MSF_OPERATOR_GRANT_ENV];
+    let res: Awaited<ReturnType<typeof runEngagement>>;
+    try {
+      res = await runEngagement(input, {
+        mcpToken: "test",
+        deepseekApiKey: "test",
+        qwenApiKey: "test",
+        engagementsDir: dir,
+        deps: {
+          verify: async () => true,
+          completeForRole: scriptedLlm(action, outOfScope) as never,
+          msfExecutor,
+        },
+      });
+    } finally {
+      if (prev === undefined) delete process.env[MSF_OPERATOR_GRANT_ENV];
+      else process.env[MSF_OPERATOR_GRANT_ENV] = prev;
+    }
     const events = readFileSync(join(dir, res.engagementId, "events.jsonl"), "utf8")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l) as { action: string; result: string });
-    return { res, events: events.filter((e) => e.action === "msf_exec"), fake };
+    const approvals = readFileSync(join(dir, res.engagementId, "approvals.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { kind: string; operator: string; detail: string });
+    return { res, events: events.filter((e) => e.action === "msf_exec"), fake, approvals };
   }
 
   it("msf_exec search executes and the audit lands in the event feed", async () => {
     const fake = await startFakeMsf();
     try {
-      const { res, events } = await run("search", false, fake);
+      // No operator grant: search/suggest stay available without one.
+      const { res, events } = await run("search", false, fake, false);
       assert.equal(res.status, "complete");
       assert.ok(events.length >= 1, "msf_exec event logged");
       assert.ok(events[0]!.result.includes("msf search"), events[0]!.result.slice(0, 160));
@@ -500,12 +517,34 @@ describe("msf_exec wiring", () => {
   it("in-scope msf_exec run validates the marker and reports the CVE instance", async () => {
     const fake = await startFakeMsf();
     try {
-      const { res, events } = await run("run", false, fake);
+      const { res, events, approvals } = await run("run", false, fake);
       assert.equal(res.status, "complete");
       assert.ok(events.length >= 1);
       assert.ok(events[0]!.result.includes("MARKER ECHOED"), events[0]!.result.slice(0, 200));
       assert.ok(events[0]!.result.includes("ms17_010_eternalblue"));
       assert.ok(events[0]!.result.includes("[CVE-2017-0144]"), "per-CVE instance tagged in result");
+      assert.ok(
+        approvals.some((a) => a.kind === "msf-run"),
+        "the operator grant is recorded in approvals.jsonl",
+      );
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("msf_exec run without the operator grant is DENIED before any msfrpcd request", async () => {
+    const fake = await startFakeMsf();
+    try {
+      const { res, events, approvals } = await run("run", false, fake, false);
+      assert.equal(res.status, "complete");
+      assert.ok(events.length >= 1);
+      assert.ok(events[0]!.result.includes("DENIED by operator gate"), events[0]!.result.slice(0, 200));
+      assert.ok(events[0]!.result.includes(MSF_OPERATOR_GRANT_ENV), "denial names the missing grant");
+      assert.equal(fake.requests.length, 0, "no msfrpcd request without the grant");
+      assert.ok(
+        approvals.some((a) => a.kind === "msf-run-denied"),
+        "the denial is recorded in approvals.jsonl",
+      );
     } finally {
       await fake.close();
     }

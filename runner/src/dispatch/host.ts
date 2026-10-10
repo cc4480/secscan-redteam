@@ -2,7 +2,7 @@
  * Host-execution tool handlers: ssh/smb/winrm wave 1 + wave 2 (v0.19.0 refactor — extracted from dispatch.ts).
  */
 import { BATTERY_CATEGORIES, type BatteryCategory } from "../battery.js";
-import { isTargetId } from "../targets.js";
+import { isTargetId, type TargetId } from "../targets.js";
 import { lookupTechnique } from "../attack.js";
 import { scopeHosts, techniqueAllowed } from "../gate.js";
 import { sleep } from "../util.js";
@@ -23,6 +23,48 @@ const WAVE2_TOOLS = new Set([
   "nfs_enum",
 ]);
 
+/**
+ * Record battery coverage for a probe that actually EXECUTED (audit
+ * 2026-10-09 H2). Coverage used to be marked at dispatch, so refused,
+ * denied, and failed probes counted as covered. Callers invoke this
+ * only once an execution produced an outcome; denials and transport
+ * failures never reach it. ctx.probesUsed stays the attempt counter —
+ * coverage is outcome-only.
+ */
+function markCoverage(ctx: Ctx, category: BatteryCategory, tp: TargetId): void {
+  ctx.coverage.add(category);
+  if (ctx.input.fullBattery) {
+    let set = ctx.targetCoverage.get(tp);
+    if (!set) {
+      set = new Set();
+      ctx.targetCoverage.set(tp, set);
+    }
+    set.add(category);
+  }
+  ctx.events.updateState({
+    batteryCoverage: {
+      logic: ctx.coverage.has("logic") ? 1 : 0,
+      functionality: ctx.coverage.has("functionality") ? 1 : 0,
+      validation: ctx.coverage.has("validation") ? 1 : 0,
+    },
+  });
+}
+
+/**
+ * Did this host call actually execute on the target? Executors report
+ * pre-flight refusals via `refused` and transport failures (connect,
+ * auth, spawn) as ok:false with no exit code. An exit code — zero or
+ * not — means a command ran on the target and produced an outcome, so
+ * it counts even when the command itself failed. Where a transport
+ * reports success without an exit code (SMB/NFS/RDP/AD enumerations),
+ * ok:true counts; an ok:false without an exit code cannot be told
+ * apart from a transport failure and conservatively does not count.
+ */
+function hostProbeExecuted(res: { ok: boolean; refused?: string; exitCode?: number }): boolean {
+  if (res.refused) return false;
+  return res.exitCode !== undefined || res.ok === true;
+}
+
 export async function handleHostTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "ssh_exec" && call.name !== "smb_exec" && call.name !== "winrm_exec" && !WAVE2_TOOLS.has(call.name)) return null;
 if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm_exec") {
@@ -42,26 +84,10 @@ if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm
     };
   }
   const host = String(args["host"] ?? "");
-  // The exec is really going out: count it toward the battery.
+  // Counts attempts only — coverage is marked after the executor
+  // returns, and only when the call actually executed on the target
+  // (audit 2026-10-09 H2).
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(wantTp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(wantTp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
   // Kill-switch wiring: register this execution's controller so a
   // coordinator abort terminates it mid-flight (shared ctx → all parallel
   // tasks). The executor checks the aborted flag before starting.
@@ -89,7 +115,10 @@ if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm
               port: numArg(args["port"]),
               command: String(args["command"] ?? ""),
               powershell: args["powershell"] !== false,
-              useTls: args["useTls"] === true,
+              // NOT passed: any useTls tool argument. WinRM transport
+              // security is operator env config (TLS default; plaintext
+              // only via REDTEAM_WINRM_ALLOW_PLAINTEXT=1) — the model
+              // does not choose whether credentials cross in plaintext.
               scopeHosts: ctx.hosts,
               signal: ctrl.signal,
             });
@@ -98,6 +127,12 @@ if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm
     }
     if (res.refused) {
       return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
+    }
+    // Coverage counts EXECUTED probes only (audit 2026-10-09 H2):
+    // safety-core refusals and kill-switch aborts returned above;
+    // transport failures (no exit code, not ok) mark nothing below.
+    if (category && hostProbeExecuted(res)) {
+      markCoverage(ctx, category, wantTp);
     }
     const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
     return { result: `${res.summary}.${out}`, attackId, target: host };
@@ -129,25 +164,10 @@ if (WAVE2_TOOLS.has(call.name)) {
     };
   }
   const host = String(args["host"] ?? "");
+  // Counts attempts only — coverage is marked after the executor
+  // returns, and only when the call actually executed on the target
+  // (audit 2026-10-09 H2).
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(wantTp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(wantTp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
   const ctrl = new AbortController();
   ctx.hostKill.controllers.add(ctrl);
   try {
@@ -182,6 +202,11 @@ if (WAVE2_TOOLS.has(call.name)) {
     }
     if (res.refused) {
       return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
+    }
+    // Coverage counts EXECUTED probes only (audit 2026-10-09 H2) —
+    // same rule as wave 1 above.
+    if (category && hostProbeExecuted(res)) {
+      markCoverage(ctx, category, wantTp);
     }
     const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
     return { result: `${res.summary}.${out}`, attackId, target: host };

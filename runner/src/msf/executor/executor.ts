@@ -21,7 +21,7 @@
 
 import { HOST_EXEC_TIMEOUT_MS, capOutput, checkDestructive, redactSecrets, validateHostTarget } from "../../host-exec/common.js";
 import { MsfTransportError, type MsfRequestFn } from "../protocol.js";
-import { MsfAuthError } from "../client.js";
+import { MsfAuthError, checkMsfConsoleInputs, forceMsfTargetOptions } from "../client.js";
 import {
   buildMarkerCommand,
   checkMsfModule,
@@ -233,13 +233,17 @@ export class MsfExecutor {
     // anyway — defense in depth on the one command we ever fire.
     const denied = checkDestructive(markerCmd);
     if (denied) return this.refusedResult(args.host, `destructive-command denylist: ${denied}`);
+    // Target options are runner-owned: drop agent-supplied RHOSTS/RHOST/
+    // RHOSTS_FILE (any case) and force the scope-checked host — auxiliary too.
+    const options = forceMsfTargetOptions(args.options, args.host);
+    // Console-line safety: refuse anything that could break out of its
+    // `use`/`set` line and inject console commands — before any packet.
+    const consoleRefusal = checkMsfConsoleInputs({ moduleType: args.moduleType, fullname: args.module, options, payload, cmd: payload ? markerCmd : undefined });
+    if (consoleRefusal) return this.refusedResult(args.host, consoleRefusal);
     try {
       const { client, secrets } = await authedClient(this.deps, MSF_TIMEOUT_MS, args.signal);
       const before = new Set(Object.keys(await client.sessionList()));
       const timeoutMs = args.timeoutMs ?? MSF_TIMEOUT_MS;
-      const options: Record<string, string> = { ...(args.options ?? {}) };
-      // RHOSTS always comes from the scope-checked host — never agent-supplied.
-      if (args.moduleType === "exploit" && !options["RHOSTS"]) options["RHOSTS"] = args.host;
       const res = await client.runModuleConsole({
         moduleType: args.moduleType,
         fullname: args.module,

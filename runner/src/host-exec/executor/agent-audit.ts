@@ -18,6 +18,19 @@ export async function sshAgentAuditImpl(core: ExecutorCore, args: {
   const command = args.mode === "socket-check" ? SSH_AGENT_AUDIT_SOCKET_CHECK : SSH_AGENT_AUDIT_ABUSE_PATH;
   const pre = core.preflight("ssh", args.host, args.scopeHosts, command);
   if ("refused" in pre) return core.refusedResult("ssh", args.host, pre.refused);
+  // Operator opt-in gate (2026-10-09 audit): forwarding the operator's real
+  // SSH agent to a possibly-hostile target is refused by default. The
+  // forwarded socket is a live capability on the target — anyone who can
+  // write to it can ask the operator's agent to sign. Analysis-only intent
+  // is not enforcement, so enablement is an explicit operator env choice.
+  if (core.deps.env["REDTEAM_SSH_AGENT_FORWARD"] !== "1") {
+    return core.refusedResult(
+      "ssh",
+      args.host,
+      "ssh agent-forwarding audit refused: REDTEAM_SSH_AGENT_FORWARD is not set. Forwarding the operator's SSH agent to a target is operator opt-in only — set REDTEAM_SSH_AGENT_FORWARD=1 to enable the LX-018/LX-019 audit.",
+      pre.secrets,
+    );
+  }
   let agentSocket: string;
   try {
     agentSocket = resolveAgentSocketPath(core.deps.env);
