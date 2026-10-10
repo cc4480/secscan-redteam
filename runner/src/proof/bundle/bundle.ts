@@ -15,6 +15,19 @@ import {
   stepValidation,
 } from "./steps.js";
 import type { PocStep, StepValidation } from "./steps.js";
+import { stampBundleIntegrity, type BundleIntegrity } from "./integrity.js";
+
+/**
+ * The on-disk file name for a finding's bundle. Finding ids are
+ * reporter-influenced (parsed model JSON, never runner-validated):
+ * anything outside `[A-Za-z0-9._-]` becomes `_` and leading dot segments
+ * are stripped, so an id like "../../registry" can never name a path
+ * outside the caller's `poc/` directory.
+ */
+export function bundleFileName(findingId: string): string {
+  const stem = findingId.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+/, "");
+  return `${stem || "bundle"}.json`;
+}
 
 export type ValidationTier = "execution" | "observation";
 
@@ -40,6 +53,15 @@ export interface PocBundle {
   /** What it does NOT prove — no impact overclaim, stated explicitly. */
   doesNotProve: string;
   reverifyCommand: string;
+  /**
+   * Runner-recorded provenance (see ./integrity.js): sha256 over the
+   * canonical bundle, stamped at build time. Reverify refuses to replay
+   * a bundle whose digest is missing or mismatched — the stored commands
+   * run with fresh credentials, so the bundle must be provably the one
+   * the runner derived from the audit log. Optional in the type only so
+   * pre-provenance bundles PARSE (they then fail the check, fail closed).
+   */
+  integrity?: BundleIntegrity;
 }
 
 export interface BundleBuildInput {
@@ -148,9 +170,12 @@ export function buildPocBundle(input: BundleBuildInput): BundleBuildResult {
       "privilege beyond what the steps show, data access or exfiltration — was not attempted " +
       "and is NOT proven by this bundle. Re-running the steps should reproduce the same " +
       "observation; any deviation means the target changed.",
-    reverifyCommand: `redteam-runner reverify --bundle poc/${finding.id}.json --scope ${engagement.target} --execute`,
+    reverifyCommand: `redteam-runner reverify --bundle poc/${bundleFileName(finding.id)} --scope ${engagement.target} --execute`,
   };
-  return { bundle };
+  // Provenance: stamp the integrity digest at the single point where
+  // bundles are born — every bundle the runner derives carries it,
+  // in-memory and on disk alike.
+  return { bundle: stampBundleIntegrity(bundle) };
 }
 
 /** A killed hypothesis with its decisive audit evidence attached (negative proof). */

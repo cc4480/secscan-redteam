@@ -6,6 +6,7 @@ import { type EngagementPhase, type Finding } from "../types.js";
 import { ensureCveEntry, markAttempted, resolveItemKey } from "../coverage/items.js";
 import { hasActiveVariantExpansion } from "../variants/index.js";
 import { extractJsonBlock } from "../util.js";
+import { coerceSeverity } from "../severity.js";
 import { lookupTechnique } from "../attack.js";
 import { recordConfirmed, recordKilled, transactRegistryFile } from "../registry.js";
 import { redactPii } from "../safety/index.js";
@@ -53,12 +54,7 @@ export function recordItemAttempt(
 // ---------------------------------------------------------------------------
 
 
-const VALID_SEVERITIES = new Set(["critical", "high", "medium", "low", "info"]);
 
-function coerceSeverity(s: string): Finding["severity"] {
-  const l = s.toLowerCase();
-  return (VALID_SEVERITIES.has(l) ? l : "low") as Finding["severity"];
-}
 
 /** Mirror live findings into state.json so the console shows them as they land. */
 export function syncLiveFindingsToState(ctx: Ctx): void {
@@ -128,6 +124,9 @@ export function mergeVerdictBlock(ctx: Ctx, text: string): void {
   const verdicts = parsed && Array.isArray(parsed.verdicts) ? parsed.verdicts : [];
   let merged = 0;
   for (const v of verdicts) {
+    // A malformed entry (null, primitive) must never take the engagement
+    // down or corrupt the record — skip it; valid siblings still merge.
+    if (!v || typeof v !== "object") continue;
     if (v["kind"] === "confirmed") {
       const lf: LiveFinding = {
         severity: String(v["severity"] ?? "low"),

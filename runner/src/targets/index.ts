@@ -105,7 +105,7 @@ export function inferTargetProfile(url: string): TargetId {
 /**
  * A coverage cell is BLOCKED when the runner cannot execute any of its
  * items: every item in that target+category carries a `needs` prerequisite
- * the operator has not met, and no probe was tagged for the cell. Blocked
+ * the operator has not met, and no probe has executed for the cell. Blocked
  * cells are reported under Honest limits — never counted as covered, never
  * counted as failed. (v0.10.0: no cell is fully blocked; the mechanic stays
  * for future batteries.)
@@ -117,7 +117,13 @@ export function targetCellBlocked(profile: TargetProfile, category: BatteryCateg
 
 export type CellStatus = "done" | "blocked" | "missing";
 
-/** Cell status for one target × category. */
+/**
+ * Cell status for one target × category. `probed` holds only categories
+ * with at least one EXECUTED probe: dispatchers mark coverage on
+ * outcome, not at dispatch (audit 2026-10-09 H2), so "done" means
+ * traffic actually reached the cell and produced a response/outcome —
+ * refused, denied, and failed probes leave the cell "missing".
+ */
 export function targetCellStatus(
   profile: TargetProfile,
   category: BatteryCategory,
@@ -156,7 +162,7 @@ export function fullBatteryChecklistText(mode: "red" | "black", targets?: Target
 const PLAN_PHASE_NAMES: Record<TargetId, string> = {
   secscan: "EXPLOIT SecScan battery (SS-*) — the scanner webapp: intake, SSRF guard, DNS gate, lifecycle, reports, shares, opt-out, rate limits, auth, API, efficacy canaries.",
   seclayer: "EXPLOIT SecLayer battery (SL-*) — the MCP/API layer: handshake, tools/list, per-tool per-param attacks, JSON-RPC layer, HTTP layer, auth layer, notifications, quotas, oracles.",
-  windows: "EXPLOIT Windows battery (WS-*) — host + AD: recon, auth attacks (test accounts only), AD attack paths, privesc, lateral movement, credential-exposure audit, persistence findings. All 410 items are executable via the host tools (smb_exec/smb_pth, winrm_exec/winrm_probe, rdp_auth, ad_enum, krb_ptt). Three items carry honest prerequisites: WS-064 needs kerberos ticket material, WS-065 needs a human operator for the shadowing act itself (use rdp_shadow_prep to prepare the handoff — never pretend the runner shadowed a session). HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.",
+  windows: "EXPLOIT Windows battery (WS-*) — host + AD: recon, auth attacks (test accounts only), AD attack paths, privesc, lateral movement, credential-exposure audit, persistence findings. All 418 items are executable via the host tools (smb_exec/smb_pth, winrm_exec/winrm_probe, rdp_auth, ad_enum, krb_ptt). Three items carry honest prerequisites: WS-064 needs kerberos ticket material, WS-065 needs a human operator for the shadowing act itself (use rdp_shadow_prep to prepare the handoff — never pretend the runner shadowed a session). HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.",
   linux: "EXPLOIT Linux battery (LX-*) — host: recon, SSH, privesc, exposed services, file-permission audit, persistence findings. All items are executable via the host tools (ssh_exec, ssh_agent_audit, nfs_enum). One item carries an honest prerequisite: LX-041's mount+file proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope) — the export enumeration itself runs unprivileged. HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.",
 };
 

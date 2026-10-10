@@ -9,7 +9,8 @@
  *  - engagement.md — the human paper trail (Time | Phase | Actor | Action | Result).
  */
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import { basename, join } from "node:path";
 import type { EngagementEvent, EngagementMode, EngagementPhase, EngagementStatus, Finding, OperationPlan } from "./types.js";
 import type { BatteryCategory } from "./battery.js";
@@ -196,6 +197,91 @@ export function readEvents(dir: string, afterSeq = 0, limit = 200): EngagementEv
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Full-log reads (report-time consumers).
+//
+// readEvents above is a paging TAIL over the CURRENT events.jsonl: at most
+// `limit` events per call, advanced by the caller's `afterSeq` cursor. That
+// is the right shape for the live console feed — and a wrong one for
+// verdicts derived from the whole engagement. Proof bundles and the
+// zero-disruption record must see EVERY event, including seqs rotated into
+// archives (events.jsonl.<UTC-stamp>, oldest first — the fresh file's
+// log_rotated event names each archive's seq range, and seqs stay
+// continuous across rotations). iterateEvents streams that full trail in
+// seq order without loading it whole; readAllEvents materializes it for
+// the array-shaped report builders.
+// ---------------------------------------------------------------------------
+
+const EVENT_READ_CHUNK_BYTES = 64 * 1024;
+
+function parseEventLine(line: string, afterSeq: number): EngagementEvent | null {
+  if (!line.trim()) return null;
+  try {
+    const ev = JSON.parse(line) as EngagementEvent;
+    return typeof ev.seq === "number" && ev.seq > afterSeq ? ev : null;
+  } catch {
+    return null; // corrupt line — skip, same tolerance as the tail reader
+  }
+}
+
+/** Stream one events file line-by-line in bounded memory (chunked reads). */
+function* iterateEventFile(path: string, afterSeq: number): Generator<EngagementEvent> {
+  let fd: number;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return; // file vanished between listing and open — nothing to read
+  }
+  try {
+    const decoder = new StringDecoder("utf8");
+    const buf = Buffer.alloc(EVENT_READ_CHUNK_BYTES);
+    let pending = "";
+    let n = 0;
+    while ((n = readSync(fd, buf, 0, buf.length, null)) > 0) {
+      pending += decoder.write(buf.subarray(0, n));
+      let nl = -1;
+      while ((nl = pending.indexOf("\n")) >= 0) {
+        const ev = parseEventLine(pending.slice(0, nl), afterSeq);
+        pending = pending.slice(nl + 1);
+        if (ev) yield ev;
+      }
+    }
+    const ev = parseEventLine(pending + decoder.end(), afterSeq);
+    if (ev) yield ev;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Rotation archives for events.jsonl, oldest → newest (stamps sort chronologically, as in safety/rotation.ts). */
+function eventArchivePaths(dir: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.startsWith("events.jsonl."))
+    .sort()
+    .map((name) => join(dir, name));
+}
+
+/**
+ * Every event in the engagement (seq > afterSeq): rotation archives first,
+ * then the current events.jsonl — the unbroken audit trail, streamed.
+ */
+export function* iterateEvents(dir: string, afterSeq = 0): Generator<EngagementEvent> {
+  for (const path of eventArchivePaths(dir)) yield* iterateEventFile(path, afterSeq);
+  const current = join(dir, "events.jsonl");
+  if (existsSync(current)) yield* iterateEventFile(current, afterSeq);
+}
+
+/** The full engagement log as an array (materializes — prefer iterateEvents when streaming suffices). */
+export function readAllEvents(dir: string, afterSeq = 0): EngagementEvent[] {
+  return [...iterateEvents(dir, afterSeq)];
 }
 
 /** Read-only state snapshot for the console. */
