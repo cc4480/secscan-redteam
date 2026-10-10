@@ -7,9 +7,9 @@
  * Its own try/catch: proof generation must never break the report.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { readEvents } from "../events.js";
-import { PocBundle, buildNegativeProof, buildPocBundle, bundleSummary } from "../proof/index.js";
+import { join, resolve, sep } from "node:path";
+import { readAllEvents } from "../events.js";
+import { PocBundle, buildNegativeProof, buildPocBundle, bundleFileName, bundleSummary } from "../proof/index.js";
 import { type Finding } from "../types.js";
 import { TARGET_PROFILES } from "../targets.js";
 import { type Ctx } from "../context.js";
@@ -26,7 +26,10 @@ export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: M
   // pocBundleMap is declared outside the try so the v0.15.0 integrations
   // block (ticket sync + SIEM export) can reuse the bundles it built.
   try {
-    const proofEvents = readEvents(ctx.events.dir);
+    // FULL log (rotation archives + current file): a verdict derived from
+    // the tail reader's 200-event prefix would falsely report "no bundle"
+    // for any finding validated after seq 200.
+    const proofEvents = readAllEvents(ctx.events.dir);
     const secretEnvNames = [
       "REDTEAM_SSH_PASSWORD", "REDTEAM_SSH_KEY",
       "REDTEAM_SMB_PASSWORD", "REDTEAM_SMB_NTHASH",
@@ -65,7 +68,16 @@ export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: M
         secrets: proofSecrets,
       });
       if (bundle) {
-        writeFileSync(join(pocDir, `${f.id}.json`), JSON.stringify(bundle, null, 2));
+        // f.id is reporter-influenced: bundleFileName() maps it into a
+        // strict charset, and the resolved path is containment-checked
+        // before writing — an id like "../../registry" must never write
+        // outside poc/. Containment failure fails LOUD (throws into the
+        // section's own catch), never silently writes elsewhere.
+        const bundlePath = resolve(pocDir, bundleFileName(f.id));
+        if (!bundlePath.startsWith(resolve(pocDir) + sep)) {
+          throw new Error(`refusing to write PoC bundle for finding ${f.id}: resolved path escapes the poc directory`);
+        }
+        writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
         pocBundleMap.set(f.id, bundle);
         bundleLines.push(`- ${bundleSummary(bundle)}`);
       } else {

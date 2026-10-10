@@ -28,6 +28,33 @@ function strListArg(args: Record<string, unknown>, key: string): string[] | unde
   return out.length ? out : undefined;
 }
 
+/**
+ * Record battery coverage for a probe that actually EXECUTED (audit
+ * 2026-10-09 H2). Coverage used to be marked at dispatch, so refused,
+ * denied, and failed probes counted as covered. Callers invoke this
+ * only once an execution produced an outcome; denials and transport
+ * failures never reach it. ctx.probesUsed stays the attempt counter —
+ * coverage is outcome-only.
+ */
+function markCoverage(ctx: Ctx, category: BatteryCategory, tp: TargetId): void {
+  ctx.coverage.add(category);
+  if (ctx.input.fullBattery) {
+    let set = ctx.targetCoverage.get(tp);
+    if (!set) {
+      set = new Set();
+      ctx.targetCoverage.set(tp, set);
+    }
+    set.add(category);
+  }
+  ctx.events.updateState({
+    batteryCoverage: {
+      logic: ctx.coverage.has("logic") ? 1 : 0,
+      functionality: ctx.coverage.has("functionality") ? 1 : 0,
+      validation: ctx.coverage.has("validation") ? 1 : 0,
+    },
+  });
+}
+
 export async function handleNucleiTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "nuclei_exec") return null;
   const attackId = strArg(args, "attackId")?.toUpperCase();
@@ -53,25 +80,10 @@ export async function handleNucleiTools(ctx: Ctx, role: ActorRole, phase: Engage
     };
   }
   const host = String(args["host"] ?? "");
+  // Counts attempts only — coverage is marked after the executor
+  // returns, and only when the call actually executed (audit
+  // 2026-10-09 H2).
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(rawTp as TargetId);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(rawTp as TargetId, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
   const ctrl = new AbortController();
   ctx.hostKill.controllers.add(ctrl);
   try {
@@ -87,6 +99,8 @@ export async function handleNucleiTools(ctx: Ctx, role: ActorRole, phase: Engage
     if (action === "templates") {
       const res = await exec.templates({ filter });
       if (res.refused) return { result: `DENIED by nuclei safety policy: ${res.refused}`, attackId, target: host };
+      // The listing executed — coverage counts it (audit 2026-10-09 H2).
+      if (category) markCoverage(ctx, category, rawTp as TargetId);
       return { result: `${res.summary}\n${res.output}`, attackId, target: host };
     }
     const res = await exec.run({
@@ -99,6 +113,11 @@ export async function handleNucleiTools(ctx: Ctx, role: ActorRole, phase: Engage
       signal: ctrl.signal,
     });
     if (res.refused) return { result: `DENIED by nuclei safety policy: ${res.refused}`, attackId, target: host };
+    // Coverage counts EXECUTED probes only (audit 2026-10-09 H2):
+    // policy refusals returned just above (scope, tags, kill switch,
+    // missing binary) mark nothing; a run that reached the target —
+    // including one that later timed out with partial output — counts.
+    if (category) markCoverage(ctx, category, rawTp as TargetId);
     if (res.timedOut) {
       return { result: `ABORTED: nuclei run timed out at the runner timeout — target ${host}. Partial results below.\n${res.output}`, attackId, target: host };
     }

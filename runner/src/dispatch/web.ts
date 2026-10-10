@@ -11,6 +11,33 @@ import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 
+/**
+ * Record battery coverage for a probe that actually EXECUTED (audit
+ * 2026-10-09 H2). Coverage used to be marked at dispatch, so refused,
+ * denied, and failed probes counted as covered. Callers invoke this only
+ * once an execution produced an outcome (a real target response);
+ * denials and transport failures never reach it. ctx.probesUsed stays
+ * the attempt counter — coverage is outcome-only.
+ */
+function markCoverage(ctx: Ctx, category: BatteryCategory, tp: TargetId): void {
+  ctx.coverage.add(category);
+  if (ctx.input.fullBattery) {
+    let set = ctx.targetCoverage.get(tp);
+    if (!set) {
+      set = new Set();
+      ctx.targetCoverage.set(tp, set);
+    }
+    set.add(category);
+  }
+  ctx.events.updateState({
+    batteryCoverage: {
+      logic: ctx.coverage.has("logic") ? 1 : 0,
+      functionality: ctx.coverage.has("functionality") ? 1 : 0,
+      validation: ctx.coverage.has("validation") ? 1 : 0,
+    },
+  });
+}
+
 export async function handleWebTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "http_probe" && call.name !== "burst_probe") return null;
 if (call.name === "http_probe") {
@@ -37,31 +64,9 @@ if (call.name === "http_probe") {
       opsec: "cooldown",
     };
   }
-  // The probe is really going out: count it toward the battery.
+  // Counts attempts only — coverage is marked below, once the probe
+  // has actually executed and the target responded (audit 2026-10-09 H2).
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      // Per-target cell: explicit tag wins, otherwise infer from the URL
-      // path (/api/mcp → seclayer, everything else → secscan). Host targets
-      // (windows/linux) are never inferred — they need an explicit tag.
-      const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
-      const tp: TargetId = isTargetId(rawTp) ? rawTp : inferTargetProfile(url);
-      let set = ctx.targetCoverage.get(tp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(tp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
   try {
     if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
     const res = await ctx.prober.probe({
@@ -70,6 +75,18 @@ if (call.name === "http_probe") {
       headers: (args["headers"] as Record<string, string>) ?? {},
       body: typeof args["body"] === "string" ? (args["body"] as string) : undefined,
     });
+    // The probe executed and the target responded (any status, OPSEC
+    // signal included) — only now does the category count as covered.
+    // A throw (prober refusal, transport error) lands in the catch
+    // below and marks nothing.
+    if (category) {
+      // Per-target cell: explicit tag wins, otherwise infer from the URL
+      // path (/api/mcp → seclayer, everything else → secscan). Host targets
+      // (windows/linux) are never inferred — they need an explicit tag.
+      const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+      const tp: TargetId = isTargetId(rawTp) ? rawTp : inferTargetProfile(url);
+      markCoverage(ctx, category, tp);
+    }
     if (res.status >= 500) {
       ctx.consecutive5xx++;
     } else {

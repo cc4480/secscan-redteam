@@ -13,9 +13,10 @@ import { type Finding } from "../types.js";
 import { BATTERY_CATEGORIES } from "../battery.js";
 import { TARGET_PROFILES, activeTargets, targetCellStatus } from "../targets.js";
 import { ledgerSummary, serializeLedger } from "../coverage/items.js";
-import { type Ctx } from "../context.js";
+import { type Ctx, type LiveFinding } from "../context.js";
 import { agentLoop, promptCtx } from "../agents.js";
 import { extractJsonBlock } from "../util.js";
+import { coerceSeverity } from "../severity.js";
 import { READ_TOOLS } from "../tools.js";
 import { batteryStatusLine } from "../coverage/cells.js";
 import { PocBundle } from "../proof/index.js";
@@ -27,6 +28,80 @@ import { buildIntegrationsSection } from "./integrations.js";
 import { writeSafetyArtifacts } from "./safety.js";
 import { writeComplianceArtifacts } from "./compliance.js";
 import { extractNarrative } from "./narrative.js";
+
+// ---------------------------------------------------------------------------
+// Verdict integrity (audit correctness H1): the engagement's findings are
+// derived from the verdicts recorded mechanically during the run —
+// ctx.liveFindings, written by record_finding / the VERDICTS-block merge —
+// never from the reporter LLM's closing JSON. That JSON is untrusted
+// formatting: it may only enrich a recorded verdict with remediation text
+// (fix/retest). It can never add a finding no verdict supports, drop one a
+// verdict recorded, or rewrite a verdict's severity/title/evidence — where
+// the two disagree, the recorded verdict wins. A reporter that omits or
+// mangles its JSON block therefore changes nothing about the findings of
+// record, and downstream consumers (state.json, drift watching) never see
+// a confirmed finding vanish because a model slipped.
+// ---------------------------------------------------------------------------
+
+
+
+/**
+ * Find the reporter entry that speaks for a recorded verdict: exact title
+ * first (the reporter echoes the verdict list it was shown), else the
+ * F-<n> id slot when its attackIds still name the verdict's technique.
+ * Matching only ever borrows fix/retest — never verdict facts.
+ */
+function reporterEntryFor(lf: LiveFinding, index: number, reporter: Finding[]): number {
+  const byTitle = reporter.findIndex((r) => typeof r.title === "string" && r.title === lf.title);
+  if (byTitle >= 0) return byTitle;
+  return reporter.findIndex(
+    (r) => r.id === `F-${index + 1}` && Array.isArray(r.attackIds) && r.attackIds.includes(lf.attackId),
+  );
+}
+
+interface ReconciledFindings {
+  findings: Finding[];
+  /** Reporter-JSON entries matching no recorded verdict — dropped. */
+  reporterOnly: number;
+  /** Recorded verdicts the reporter's JSON never mentioned. */
+  reporterOmitted: number;
+}
+
+function findingsFromRecordedVerdicts(recorded: LiveFinding[], reporterRaw: unknown): ReconciledFindings {
+  const reporter: Finding[] = Array.isArray(reporterRaw)
+    ? (reporterRaw as unknown[]).filter(
+        (f): f is Finding => typeof f === "object" && f !== null && !Array.isArray(f),
+      )
+    : [];
+  const used = new Set<number>();
+  let covered = 0;
+  const findings = recorded.map((lf, i) => {
+    const matchIdx = reporterEntryFor(lf, i, reporter);
+    const match = matchIdx >= 0 ? reporter[matchIdx] : undefined;
+    if (match) {
+      used.add(matchIdx);
+      covered++;
+    }
+    const fix =
+      typeof match?.fix === "string" && match.fix.trim() ? match.fix : "(pending — the reporter writes the fix)";
+    const retest = typeof match?.retest === "string" && match.retest.trim() ? match.retest : "(pending)";
+    return {
+      id: `F-${i + 1}`,
+      severity: coerceSeverity(lf.severity),
+      title: lf.title,
+      attackIds: [lf.attackId],
+      evidence: lf.evidence,
+      fix,
+      retest,
+      status: "confirmed" as const,
+    };
+  });
+  return {
+    findings,
+    reporterOnly: reporter.length - used.size,
+    reporterOmitted: recorded.length - covered,
+  };
+}
 
 export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: string): Promise<Finding[]> {
   const selected = ctx.input.fullBattery ? activeTargets(ctx.input) : [];
@@ -108,8 +183,26 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
       4,
     );
   }
-  const parsed = extractJsonBlock(reportMd) as { findings?: Finding[] } | null;
-  const findings: Finding[] = Array.isArray(parsed?.findings) ? parsed.findings : [];
+  const parsed = extractJsonBlock(reportMd) as { findings?: unknown } | null;
+  // Findings of record come from the recorded verdicts (see the verdict-
+  // integrity note above); the reporter's JSON only lends fix/retest text.
+  const { findings, reporterOnly, reporterOmitted } = findingsFromRecordedVerdicts(
+    ctx.liveFindings,
+    parsed?.findings,
+  );
+  if (reporterOnly > 0 || reporterOmitted > 0) {
+    ctx.events.append({
+      phase: "report",
+      actor: "runner",
+      action: "findings_reconciled",
+      result:
+        `Reporter JSON disagreed with the recorded verdicts and was overridden: ` +
+        `${findings.length} recorded finding(s) stand` +
+        (reporterOnly > 0 ? `; ${reporterOnly} reporter-only entr${reporterOnly === 1 ? "y" : "ies"} dropped (no recorded verdict)` : "") +
+        (reporterOmitted > 0 ? `; ${reporterOmitted} recorded verdict(s) the reporter omitted restored` : "") +
+        `.`,
+    });
+  }
   // v0.17.0 accountability: every finding records the named human
   // accountable for it. Stamped mechanically by the runner at report time —
   // the reporter agent cannot set or change it.
@@ -166,7 +259,7 @@ export async function reportPhase(ctx: Ctx, reconBrief: string, exploitSummary: 
   }
   reportMd += await buildIntegrationsSection(ctx, findings, pocBundleMap);
   writeFileSync(join(ctx.events.dir, "report.md"), reportMd);
-  ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings parsed).` });
+  ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings from recorded verdicts).` });
   const safetyManifest = writeSafetyArtifacts(ctx);
   writeComplianceArtifacts(ctx, findings, batteryLine, safetyManifest);
   ctx.events.updateState({ findings });

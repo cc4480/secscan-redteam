@@ -11,6 +11,7 @@ import type { ServerResponse } from "node:http";
 import type { UiStore } from "../store.js";
 import { engagementDir } from "../store.js";
 import { readState } from "../../events.js";
+import { bundleFileName } from "../../proof/bundle/bundle.js";
 import { json } from "./http.js";
 
 /** GET /api/engagements/:id/findings */
@@ -38,11 +39,10 @@ export function handleFindings(store: UiStore, res: ServerResponse, id: string):
 
 /** GET /api/engagements/:id/proof/:fid */
 export function handleProof(store: UiStore, res: ServerResponse, id: string, fid: string): void {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(fid)) {
-    json(res, 400, { error: "bad finding id" });
-    return;
-  }
-  const bundle = store.readJsonArtifact(id, `poc/${fid}.json`);
+  // Name the file exactly the way the writer did: bundleFileName maps
+  // every path separator to "_", so a traversal-shaped fid can only ever
+  // name a file inside poc/ — the same rule report/proof.ts writes by.
+  const bundle = store.readJsonArtifact(id, `poc/${bundleFileName(fid)}`);
   if (!bundle) {
     json(res, 404, { error: "no proof bundle for finding" });
     return;

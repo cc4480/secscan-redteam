@@ -1,44 +1,43 @@
 /**
  * RE-VERIFY — the mechanical retest loop (v0.14.0).
  *
- * Takes a PoC bundle and re-executes its steps against the target to confirm
- * the finding still reproduces. Verdicts:
- *   - "reproduced"     — every replayable step re-ran and its validation
- *                         signal re-observed (fresh marker echoed / evidence
- *                         output returned).
- *   - "not-reproduced" — steps ran but the validation signal did not come
- *                         back (fixed, or the finding never reproduced this way).
- *   - "target-changed"  — a step failed on connectivity (unreachable,
- *                         refused, DNS, timeout): the environment moved, not
- *                         the vulnerability. Retest, don't celebrate.
- *
+ * Takes a PoC bundle and re-executes its steps against the target:
+ *   - "reproduced"     — every replayable step re-ran, validation signal re-observed.
+ *   - "not-reproduced" — steps ran but the signal did not come back.
+ *   - "target-changed"  — a step failed on connectivity: the environment
+ *                         moved, not the vulnerability. Retest, don't celebrate.
  * Only steps with structured replay parameters are re-executed
- * (ssh_exec / winrm_exec / msf_exec — the execution tools). Read-only
- * observation steps are reported as skipped: re-reading fresh enumeration
- * output is a human retest, and the report says so plainly.
+ * (ssh_exec / winrm_exec / msf_exec); observation steps are reported as
+ * skipped (re-reading enumeration output is a human retest).
  *
- * Credentials are NEVER in the bundle. Reverify resolves them fresh from
- * the environment at re-execution time — exactly like the original run.
- * A FRESH canary marker is generated per reverify run; the old marker is
- * never replayed (its echo would prove nothing about the present).
+ * Credentials are NEVER in the bundle; they resolve fresh from env at
+ * re-execution, exactly like the original run. Recorded steps are replayed
+ * VERBATIM and validation checks the ORIGINALLY recorded marker against
+ * the fresh run's raw tool output — never the result summary, which embeds
+ * the sent command (marker and all) and would "verify" a command that
+ * never echoed anything. A marker-echo step that records no marker means
+ * incomplete verification material: the replay ABORTS before firing.
+ * Before ALL of that, the bundle's runner-recorded integrity digest must
+ * verify (bundle/integrity.ts): a bundle of unproven origin never runs.
  */
 
-import type { PocBundle, PocStep } from "./bundle.js";
+import { verifyBundleIntegrity, type PocBundle, type PocStep } from "./bundle.js";
 import { HostExecutor } from "../host-exec/executor.js";
 import { MsfExecutor } from "../msf/executor.js";
 import { validateHostTarget } from "../host-exec/common.js";
 
 export interface StepRunResult {
   ok: boolean;
+  /** RAW tool output only — never the result summary (it embeds the sent
+   *  command, marker and all). Summaries belong in `note`. */
   output: string;
   note?: string;
 }
 
-/**
- * Executes one bundle step. Injected — the CLI wires the real replayer,
- * tests wire fakes. Receives a FRESH marker to use for this reverify run.
- */
-export type StepRunner = (step: PocStep, freshMarker: string) => Promise<StepRunResult>;
+/** Executes one bundle step (CLI wires the real replayer, tests wire
+ *  fakes). Receives the step's ORIGINALLY recorded marker (full
+ *  `REDTEAM-MARKER-…` form, "" when none) + a timeout abort signal. */
+export type StepRunner = (step: PocStep, recordedMarker: string, signal?: AbortSignal) => Promise<StepRunResult>;
 
 export type ReverifyVerdict = "reproduced" | "not-reproduced" | "target-changed";
 
@@ -66,24 +65,55 @@ export interface ReverifyReport {
 const TARGET_CHANGED_RE =
   /unreachable|econnrefused|connection refused|enotfound|etimedout|timed out|no route to host|nxdomain|getaddrinfo|network is unreachable|dial tcp/i;
 
-const MARKER_RE = /REDTEAM-MARKER-[A-Za-z0-9_-]{1,64}/;
+const MARKER_SUFFIX_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const FULL_MARKER_RE = /^REDTEAM-MARKER-[A-Za-z0-9_-]{1,64}$/;
 
-function freshMarker(): string {
-  return `REVERIFY-${Date.now().toString(36)}${Math.floor(Math.random() * 0xffffff).toString(16)}`;
+/**
+ * The step's originally recorded marker, full form. Steps record the
+ * marker suffix; the bundle-level observed marker is the fallback when a
+ * bundle carries exactly one marker-echo step. "" = not recorded.
+ */
+function recordedMarkerFor(step: PocStep, bundle: PocBundle): string {
+  if (step.marker && MARKER_SUFFIX_RE.test(step.marker)) return `REDTEAM-MARKER-${step.marker}`;
+  const markerSteps = bundle.steps.filter((s) => s.validation === "marker-echo");
+  if (markerSteps.length === 1 && bundle.markerObserved && FULL_MARKER_RE.test(bundle.markerObserved)) {
+    return bundle.markerObserved;
+  }
+  return "";
 }
 
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+/**
+ * Run one step under a REAL deadline: on timeout the abort signal fires
+ * (transports/executors cancel the underlying work — the step does not
+ * keep acting on the target in the background) and the race rejects.
+ */
+async function runStepWithTimeout(
+  runner: StepRunner,
+  step: PocStep,
+  marker: string,
+  ms: number,
+): Promise<StepRunResult> {
+  const ctrl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      p,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      runner(step, marker, ctrl.signal),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          ctrl.abort();
+          reject(new Error(`reverify seq ${step.seq} timed out after ${ms}ms`));
+        }, ms);
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/** Preflight refusal/abort report: every step listed, nothing fired. */
+function abortedReport(b: PocBundle, note: string, summary: string, registryNote: string): ReverifyReport {
+  return { bundleId: b.bundleId, findingId: b.findingId, engagementId: b.engagementId, reverifiedAt: new Date().toISOString(), verdict: "not-reproduced",
+    steps: b.steps.map((s) => ({ seq: s.seq, tool: s.tool, replayed: false, ok: false, validationObserved: false, note })), summary, registryNote };
 }
 
 /**
@@ -95,9 +125,29 @@ export async function reverifyBundle(
   runner: StepRunner,
   opts: { perStepTimeoutMs?: number } = {},
 ): Promise<ReverifyReport> {
-  const marker = freshMarker();
   const perStep = opts.perStepTimeoutMs ?? 60_000;
   const steps: ReverifyStepReport[] = [];
+
+  // Preflight: verification material must be complete BEFORE anything
+  // fires. A marker-echo step that records no marker can never be
+  // verified output-side — abort the whole replay without firing a
+  // single step rather than marching on unverifiable material.
+  // Provenance FIRST: stored commands replay with fresh env credentials, so
+  // the bundle must be bit-for-bit what the runner recorded — else refuse.
+  const badProvenance = verifyBundleIntegrity(bundle);
+  if (badProvenance) return abortedReport(bundle, "not fired — reverify refused (bundle provenance check failed)",
+    `refused before firing: ${badProvenance}. Nothing was executed. Re-derive the bundle from the audit log (report phase) and re-verify that instead.`,
+    `${bundle.findingId} re-verify REFUSED (bundle provenance check failed): do NOT close the finding; re-derive the bundle from the audit log and re-verify.`);
+
+  const unverifiable = bundle.steps.filter(
+    (s) => s.validation === "marker-echo" && recordedMarkerFor(s, bundle) === "",
+  );
+  if (unverifiable.length > 0) {
+    const seqs = unverifiable.map((s) => s.seq).join(", ");
+    return abortedReport(bundle, "not fired — reverify aborted (verification material missing)",
+      `aborted before firing: step(s) ${seqs} claim marker-echo validation but the bundle records no marker for them — there is nothing trustworthy to verify against. Nothing was executed. Re-derive the bundle from the audit log (its marker must be captured from tool output) and re-verify.`,
+      `${bundle.findingId} re-verify ABORTED (verification material missing): do NOT close the finding; re-derive the bundle from the audit log and re-verify.`);
+  }
 
   for (const step of bundle.steps) {
     if (!step.replay) {
@@ -111,19 +161,21 @@ export async function reverifyBundle(
       });
       continue;
     }
+    const marker = recordedMarkerFor(step, bundle);
     let res: StepRunResult;
     try {
-      res = await withTimeout(runner(step, marker), perStep, `reverify seq ${step.seq}`);
+      res = await runStepWithTimeout(runner, step, marker, perStep);
     } catch (err) {
       res = { ok: false, output: "", note: (err as Error).message };
     }
     const changed = !res.ok && TARGET_CHANGED_RE.test(`${res.output} ${res.note ?? ""}`);
-    // Validation: the FRESH marker must echo (execution steps), or the tool
-    // must succeed with evidence output (observation steps).
+    // Validation: the RECORDED marker must reappear in the fresh run's raw
+    // tool output (execution steps), or the tool must succeed with
+    // evidence output (observation steps). The summary never counts.
     const validationObserved = changed
       ? false
       : step.validation === "marker-echo"
-        ? res.ok && res.output.includes(marker)
+        ? res.ok && marker !== "" && res.output.includes(marker)
         : res.ok && res.output.trim().length > 0;
     steps.push({
       seq: step.seq,
@@ -152,7 +204,7 @@ export async function reverifyBundle(
     verdict = "reproduced";
     summary =
       `reproduced: ${replayed.length}/${bundle.steps.length} replayable step(s) re-ran and every validation ` +
-      `signal re-observed (fresh marker ${marker} echoed where applicable). The finding still holds.`;
+      `signal re-observed (the recorded marker reappeared in fresh tool output where applicable). The finding still holds.`;
   } else {
     verdict = "not-reproduced";
     const bad = replayed.filter((s) => !s.ok || !s.validationObserved).length;
@@ -184,24 +236,29 @@ export interface ReplayerOptions {
   env?: NodeJS.ProcessEnv;
   killSwitch?: { aborted: boolean };
   perStepTimeoutMs?: number;
+  /** Test seam: pre-built executors (fake transports) instead of real ones. */
+  executors?: { hostExec?: HostExecutor; msfExec?: MsfExecutor };
 }
 
 /**
  * Production StepRunner: replays bundle steps through the real executors.
- * Scope is enforced by the executors themselves (fail closed); credentials
- * resolve fresh from env; the kill switch aborts via SIGINT wiring in the CLI.
+ * Scope is enforced by the executors (fail closed); credentials resolve
+ * fresh from env. Recorded commands replay VERBATIM, every replay carries
+ * an explicit timeout + the caller's abort signal, and results carry raw
+ * tool output only (the summary rides in the note, unread by validation).
  */
 export function createReplayer(opts: ReplayerOptions): StepRunner {
   const env = opts.env ?? process.env;
-  const hostExec = new HostExecutor({ env });
-  const msfExec = new MsfExecutor({ env });
+  const hostExec = opts.executors?.hostExec ?? new HostExecutor({ env });
+  const msfExec = opts.executors?.msfExec ?? new MsfExecutor({ env });
   if (opts.killSwitch) {
     hostExec.killSwitch = opts.killSwitch;
     msfExec.killSwitch = opts.killSwitch;
   }
   const scope = opts.scope;
+  const stepTimeoutMs = opts.perStepTimeoutMs ?? 60_000;
 
-  return async (step: PocStep, marker: string): Promise<StepRunResult> => {
+  return async (step: PocStep, recordedMarker: string, signal?: AbortSignal): Promise<StepRunResult> => {
     const replay = step.replay;
     if (!replay) return { ok: false, output: "", note: "not replayable" };
     const host = replay.host ?? step.target ?? "";
@@ -211,27 +268,28 @@ export function createReplayer(opts: ReplayerOptions): StepRunner {
     }
     try {
       if (replay.tool === "ssh_exec" || replay.tool === "winrm_exec") {
-        let command = String(replay.args["command"] ?? "");
-        // Fresh marker in, old marker out: replaying the stale marker would prove nothing.
-        command = command.replace(/REDTEAM-MARKER-[A-Za-z0-9_-]{1,64}/g, marker);
+        const command = String(replay.args["command"] ?? "");
         const res =
           replay.tool === "ssh_exec"
-            ? await hostExec.sshExec({ host, command, scopeHosts: scope, timeoutMs: opts.perStepTimeoutMs })
-            : await hostExec.winrmExec({ host, command, scopeHosts: scope, timeoutMs: opts.perStepTimeoutMs });
+            ? await hostExec.sshExec({ host, command, scopeHosts: scope, timeoutMs: stepTimeoutMs, signal })
+            : await hostExec.winrmExec({ host, command, scopeHosts: scope, timeoutMs: stepTimeoutMs, signal });
         if (res.refused) return { ok: false, output: res.output, note: res.refused };
-        return { ok: res.ok, output: `${res.summary}\n${res.output}`.slice(0, 4000) };
+        return { ok: res.ok, output: res.output.slice(0, 4000), note: res.summary.slice(0, 300) };
       }
       if (replay.tool === "msf_exec") {
         const res = await msfExec.run({
           host,
           moduleType: replay.args["moduleType"] === "auxiliary" ? "auxiliary" : "exploit",
           module: String(replay.args["module"] ?? ""),
-          marker,
+          // The executor builds `echo REDTEAM-MARKER-<id>` — hand it the
+          // recorded marker's id so the fresh echo IS the recorded marker.
+          marker: recordedMarker.replace(/^REDTEAM-MARKER-/, ""),
           scopeHosts: scope,
-          timeoutMs: opts.perStepTimeoutMs,
+          timeoutMs: stepTimeoutMs,
+          signal,
         });
         if (res.refused) return { ok: false, output: res.output, note: res.refused };
-        return { ok: res.ok, output: `${res.summary}\n${res.output}`.slice(0, 4000) };
+        return { ok: res.ok, output: res.output.slice(0, 4000), note: res.summary.slice(0, 300) };
       }
       return { ok: false, output: "", note: `no replayer for tool ${replay.tool} — manual retest` };
     } catch (err) {

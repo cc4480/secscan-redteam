@@ -8,14 +8,17 @@
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readEvents } from "../events.js";
+import { readAllEvents } from "../events.js";
 import { buildSafetyManifest, buildZeroDisruptionRecord, disruptionVerdict, renderSafetyManifestMarkdown } from "../safety/index.js";
 import { type Ctx } from "../context.js";
 
 export function writeSafetyArtifacts(ctx: Ctx): ReturnType<typeof buildSafetyManifest> | undefined {
   let safetyManifest: ReturnType<typeof buildSafetyManifest> | undefined;
   try {
-    const events = readEvents(ctx.events.dir);
+    // FULL log (rotation archives + current file): the zero-disruption
+    // record proves a negative, so a 200-event prefix could print CLEAN
+    // while a later event records a destructive action as executed.
+    const events = readAllEvents(ctx.events.dir);
     const zeroDisruption = buildZeroDisruptionRecord(events);
     const ah = ctx.safety.autoHalt;
     safetyManifest = buildSafetyManifest({
