@@ -64,7 +64,7 @@ export function apply(ctx: Context): void {
     text: USAGE_SECTION,
   });
 
-  void REDTEAM_PROFILE; // consumed by the team plugin / runner; kept as the source of truth
+  void REDTEAM_PROFILE; // profile for the team plugin; the agents/*.md it names are generated from runner/src/prompts/ (single source of truth)
 }
 
 export const plugin: PluginModule = { name, inject, apply };
