@@ -202,7 +202,7 @@ describe("unified plan", () => {
     }
     assert.ok(s.includes("3 × 4 = 12 cells"), "coverage rule stated");
     assert.ok(
-      s.includes("All 410 items are executable"),
+      s.includes("All 418 items are executable"),
       "v0.10.0 host execution reality stated",
     );
   });

@@ -1,4 +1,4 @@
-# Architecture — secscan-redteam runner (v0.19.0)
+# Architecture — secscan-redteam runner (v0.22.0)
 
 The runner (`runner/src/`) is organized as small, single-purpose modules.
 **Hard rule: no file exceeds 300 lines.** If a module approaches the limit,
@@ -21,7 +21,7 @@ runner/src/
 │   ├── config.ts        # resolveConfig
 │   └── run.ts           # runEngagement + RunOptions (public entry)
 ├── dispatch.ts          # BARREL — re-exports ./dispatch/
-├── dispatch/            # Tool-call router (the 25 agent tools)
+├── dispatch/            # Tool-call router (the 27 agent tools)
 │   ├── router.ts        # dispatchToolInner (ordered handlers) + dispatchTool (safety wrapper)
 │   ├── web.ts           # http_probe, burst_probe
 │   ├── host.ts          # ssh/smb/winrm_exec (wave 1) + winrm_probe, rdp_*, smb_pth, ad_enum, krb_ptt, ssh_agent_audit, nfs_enum (wave 2)
@@ -81,9 +81,8 @@ runner/src/
 - **The runner enforces; the model proposes.** Ownership verification, scope,
   denylists, rate limits, kill switch, and tier gates are mechanical in the
   runner — never trusted to prompts.
-- **Public surface (do not break):** 4 CLI commands, 25 flags, 26 agent tool
-  names (variant_list added in v0.20.0), 418 battery item IDs, 8 report
-  artifacts, env-var names. The behavior inventory
+- **Public surface (do not break):** 6 CLI commands, 35 flags, 27 agent
+  tool names, 418 battery item IDs, 8 report artifacts, env-var names. The behavior inventory
   (`/tmp/refactor-inventory.mjs` pattern) must diff empty.
 
 ## Payload variants (v0.20.0)

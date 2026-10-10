@@ -63,7 +63,6 @@ export const REDIRECT_VARIANTS: VariantPayload[] = [
   v("redirect", "//evil%2eexample/", "encoded dot in host"),
   v("redirect", "https://trusted.example@evil.example/", "userinfo @ trick"),
   v("redirect", "https://evil.example%2f..", "encoded path confusion"),
-  v("redirect", "javascript:alert(1)", "javascript scheme landing"),
   v("redirect", "data:text/html,<script>alert(1)</script>", "data scheme landing"),
   v("redirect", "/%09/evil.example/", "tab-in-path confusion"),
 ];

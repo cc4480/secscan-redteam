@@ -78,6 +78,19 @@ describe("variant libraries", () => {
     assert.equal(totalLibrarySize(), sum);
     assert.ok(sum >= 100, `expected a deep library, got ${sum}`);
   });
+  it("no payload string appears in more than one library", () => {
+    const seen = new Map<string, string>();
+    for (const [name, lib] of libs) {
+      for (const p of lib) {
+        const other = seen.get(p.payload);
+        assert.ok(
+          other === undefined || other === name,
+          `payload duplicated across libraries (${other} + ${name}): ${p.payload}`,
+        );
+        seen.set(p.payload, name);
+      }
+    }
+  });
   it("VARIANT_CLASSES covers every library", () => {
     assert.deepEqual([...VARIANT_CLASSES].sort(), libs.map(([n]) => n).sort());
   });
