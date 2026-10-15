@@ -49,10 +49,23 @@ index ff855cfd09..f8221b345e 100644
    if (failures.length === 0) return
    throw new Error(`desktop package: the build host cannot run this packaging sequence:\n${
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index e0a707dc32..c3d5ec18f9 100644
+index e0a707dc32..2c93d5e645 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
-@@ -115,6 +115,11 @@ export function createElectronBuilderConfig(
+@@ -106,7 +106,11 @@ export function createElectronBuilderConfig(
+       ...buildVersion === productVersion ? {} : { version: buildVersion },
+       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
+     },
+-    productName: 'DeepSeek Harness',
++    // Renamed from 'DeepSeek Harness': this is a separate product built from
++    // DeepSeek's MIT-licensed source. The name, the exe and the Start-menu
++    // entry must not read as a DeepSeek release. Pairs with
++    // DSH_DESKTOP_APP_ID=com.secscan.redteam in apps/desktop/.env.windows.
++    productName: 'SecScan RedTeam',
+     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
+     artifactName: `deepseek-harness-\${version}-\${os}-\${arch}${unsigned ? '-unsigned' : ''}.\${ext}`,
+     directories: { output: unsigned ? buildPaths.unsignedArtifacts : buildPaths.artifacts },
+@@ -115,6 +119,11 @@ export function createElectronBuilderConfig(
      electronFuses: { runAsNode: true },
      beforeBuild: async () => {
        if (resolvedPlatform !== 'win32') return true

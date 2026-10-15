@@ -295,3 +295,74 @@ pnpm --dir apps/desktop run package:win:x64:unsigned
    `npm_execpath` and refuses otherwise; under `npx`, nested calls resolve to npm, which
    swallows `--family` / `--out` as its own config and the pack step dies with
    `ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL`.
+
+---
+
+## Round 4 findings
+
+### The installer path now reaches NSIS, and fails on exactly one thing
+
+With the three escapes and the cache fix below, the installer target runs to completion of
+everything except the NSIS step:
+
+```
+Error: Command failed: powershell.exe ... prepare-windows-installer.ps1
+  Windows installer preparation requires Visual Studio C++ Build Tools and a Windows SDK.
+  At prepare-windows-installer.ps1:12
+```
+
+That is the **only** remaining obstacle. Confirmed here that no workaround exists: no
+installer artifact is present on this machine to extract a prebuilt `window-frame.dll` from,
+the DLL is not anywhere on disk, and 7-Zip is not installed to unpack one anyway.
+
+### A corrupt download-cache entry, and how to spot it
+
+`prepare:runtime` failed reproducibly with:
+
+```
+primary runtime download: checksum mismatch for .../openpyxl-3.1.5-py2.py3-none-any.whl
+```
+
+Not a network fault. The file downloads correctly and matches `lock.json` exactly:
+
+```
+lock.json expects   5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+a fresh download    5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+```
+
+But the cache is content-addressed by expected hash, and one entry did not hash to its own
+name:
+
+```
+apps/desktop/.desktop-build/downloads/5282c12b107b...   size 250,910 (correct)
+    actual sha256  4abf2d1530473ff0ccb6b70096c17ffa9b62b97139789f692e06c930e420dc68
+    name says      5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+```
+
+Same length, valid ZIP header (`50 4B 03 04`), wrong content. It was the only one of 15
+entries that failed to hash to its own filename. Deleting that single file fixed the build.
+
+**To check the whole cache for this class of corruption:**
+
+```powershell
+Get-ChildItem "$src\apps\desktop\.desktop-build\downloads" -File | ForEach-Object {
+  [pscustomobject]@{ Entry = $_.Name.Substring(0,12)
+                     Valid = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() -eq $_.Name }
+} | Where-Object { -not $_.Valid }
+```
+
+Note `prepare:runtime` begins with `rmSync(RUNTIME_ROOT)`, so it re-downloads every run and
+re-hits a corrupt entry every time rather than failing once.
+
+### Branding
+
+`productName` changed from `DeepSeek Harness` to `SecScan RedTeam`
+(`apps/desktop/scripts/electron-builder-config.mjs:113`), pairing with
+`DSH_DESKTOP_APP_ID=com.secscan.redteam`. The window icon is still the upstream one
+(`resources/icon-windows.png`) and has not been replaced.
+
+### Conclusion
+
+Everything that can be produced without an MSVC toolchain has been. The app builds, runs,
+and carries the red team. The installer needs Visual Studio Build Tools 2022 with
+*Desktop development with C++*, installed as Administrator.
