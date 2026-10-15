@@ -75,7 +75,7 @@ export async function handleLaunch(store: UiStore, req: IncomingMessage, res: Se
   const localSandbox = (body as UiLaunchRequest).localSandbox === true;
   const id = generateEngagementId();
   const dir = join(store.engagementsDir, id);
-  store.register({ id, dir, status: "starting", startedAt: new Date().toISOString() });
+  store.register({ id, dir, status: "starting", startedAt: new Date().toISOString(), target: input.target, mode: input.mode });
   // Detached run — the request returns now; progress streams via SSE.
   // onCtxReady fires synchronously inside runEngagement before any agent
   // acts, so the kill-switch handle is registered while the run is live.
@@ -107,13 +107,35 @@ export function handleList(store: UiStore, res: ServerResponse): void {
 /** GET /api/engagements/:id — state snapshot + artifact availability. */
 export function handleDetail(store: UiStore, res: ServerResponse, id: string): void {
   const dir = engagementDir(store.engagementsDir, id);
-  if (!dir) {
-    json(res, 404, { error: "unknown engagement" });
-    return;
-  }
-  const state = readState(dir);
+  const state = dir ? readState(dir) : null;
   if (!state) {
-    json(res, 404, { error: "no state for engagement" });
+    // No state.json. Either the run is still starting, or it died before it
+    // wrote one — a missing SECSCAN_MCP_TOKEN, a refused scope, an expired
+    // authorization. Report the in-memory record so the operator learns WHY,
+    // instead of the bare "unknown engagement" this used to return.
+    const rec = store.get(id);
+    if (!rec) {
+      json(res, 404, { error: "unknown engagement" });
+      return;
+    }
+    json(res, 200, {
+      state: null,
+      pending: true,
+      live: rec.abort !== undefined,
+      status: rec.status,
+      target: rec.target ?? null,
+      mode: rec.mode ?? null,
+      startedAt: rec.startedAt,
+      error: rec.error ?? null,
+      artifacts: {
+        report: false,
+        compliancePack: false,
+        attestation: false,
+        safetyManifest: false,
+        itemVerdicts: false,
+        proofBundles: 0,
+      },
+    });
     return;
   }
   const live = store.get(id);

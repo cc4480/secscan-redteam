@@ -30,6 +30,13 @@ export interface StoredEngagement {
   dir: string;
   status: "starting" | "running" | EngagementStatus;
   startedAt: string;
+  /**
+   * What was asked for. Recorded at register() time because a run that dies
+   * before writing state.json has no other record of its target or mode — and
+   * a failure the operator cannot identify is worse than no report at all.
+   */
+  target?: string;
+  mode?: string;
   /** Set while the engagement is live in this process (kill-switch handle). */
   abort?: (reason: string) => void;
   error?: string;

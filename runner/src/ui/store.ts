@@ -47,6 +47,13 @@ export interface EngagementSummary {
   startedAt: string;
   updatedAt: string;
   live: boolean;
+  /**
+   * Present when the run failed. A launch that dies before writing state.json
+   * used to disappear from every listing, so the operator saw an id and then
+   * "unknown engagement" with no reason — the worst possible failure mode for
+   * something that drives live pentest tooling.
+   */
+  error?: string;
 }
 
 function toSummary(id: string, state: LiveState, live: boolean): EngagementSummary {
@@ -115,8 +122,26 @@ export class UiStore {
       const st = readState(e.dir);
       if (st) {
         out.push(toSummary(id, st, true));
-        seen.add(id);
+      } else {
+        // No state yet: either still starting, or the run died before it wrote
+        // one. Report it from the in-memory record rather than dropping it.
+        // A failed launch that vanishes is indistinguishable from a launch
+        // that never happened.
+        out.push({
+          id,
+          target: e.target ?? "(not started)",
+          mode: e.mode ?? "-",
+          status: e.status,
+          phase: "-",
+          findings: 0,
+          eventCount: 0,
+          startedAt: e.startedAt,
+          updatedAt: e.startedAt,
+          live: e.abort !== undefined,
+          ...(e.error === undefined ? {} : { error: e.error }),
+        });
       }
+      seen.add(id);
     }
     if (existsSync(this.engagementsDir)) {
       const dirs = readdirSync(this.engagementsDir, { withFileTypes: true })
