@@ -21,8 +21,14 @@
         transport: streamable-http
         url: https://secscan.us/api/mcp
         headers:
-          # MCP-scope token — create at https://secscan.us/settings (AI editors).
-          # NOTE: an API-scope (ssk_) token does NOT work here; scopes are separate.
+          # MCP-scope token - create at https://secscan.us/settings (AI editors).
+          # Verified 2026-10-15: the settings page issues an ssk_-prefixed token FOR
+          # MCP and the endpoint accepts it (initialize and get_account both HTTP 200).
+          # Earlier revisions warned that ssk_ would be rejected - that is no longer
+          # true. If a token is refused, suspect revocation or the wrong account, not
+          # the prefix. If the token is UNSET the harness still starts and the
+          # mcp__secscan__* tools simply do not appear - and the auth gate fails closed
+          # anyway, so nothing aggressive can run without it.
           Authorization: !!js "'Bearer ' + (process.env.SECSCAN_MCP_TOKEN || '')"
         # If the token is unset the harness still starts; the mcp__secscan__*
         # tools simply don't appear (and the auth gate fails closed anyway).
