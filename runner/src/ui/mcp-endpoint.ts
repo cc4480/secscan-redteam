@@ -22,6 +22,7 @@ import { isAuthorized } from "./auth.js";
 import type { UiStore } from "./store.js";
 import { json, readJsonBody } from "./routes/http.js";
 import { TOOLS, TOOLS_BY_NAME } from "./mcp-tools.js";
+import { EXEC_TOOLS, EXEC_TOOLS_BY_NAME, LIST_LIVE_TOOL } from "./mcp-exec.js";
 
 const PROTOCOL_VERSION = "2025-03-26";
 const SERVER_INFO = { name: "secscan-redteam-runner", version: "0.22.0" };
@@ -56,12 +57,48 @@ async function dispatch(store: UiStore, r: RpcRequest): Promise<Record<string, u
     case "ping":
       return rpcOk(r.id, {});
     case "tools/list":
+      // Two surfaces, deliberately in one list. The cockpit tools drive
+      // ENGAGEMENTS (start one, read its feed, escalate, abort); the executor
+      // tools drive the tooling INSIDE a running one (nuclei_exec, msf_exec,
+      // http_probe, ssh_exec, …), each requiring an engagementId.
       return rpcOk(r.id, {
-        tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+        tools: [
+          ...TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+          {
+            name: LIST_LIVE_TOOL.name,
+            description: LIST_LIVE_TOOL.description,
+            inputSchema: LIST_LIVE_TOOL.inputSchema,
+          },
+          ...EXEC_TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+        ],
       });
     case "tools/call": {
       const name = String(r.params?.["name"] ?? "");
       const args = (r.params?.["arguments"] ?? {}) as Record<string, unknown>;
+      if (name === LIST_LIVE_TOOL.name) {
+        try {
+          return rpcOk(r.id, { content: [{ type: "text", text: await LIST_LIVE_TOOL.run({}) }] });
+        } catch (err) {
+          return rpcOk(r.id, {
+            content: [{ type: "text", text: `tool failed: ${(err as Error).message}` }],
+            isError: true,
+          });
+        }
+      }
+      const exec = EXEC_TOOLS_BY_NAME.get(name);
+      if (exec) {
+        try {
+          return rpcOk(r.id, { content: [{ type: "text", text: await exec.run(args) }] });
+        } catch (err) {
+          // Refusals arrive here as text, not as transport errors: a tier
+          // denial or a halted target is a RESULT the model must reason about.
+          // A genuine failure (unknown engagement, transport) is isError.
+          return rpcOk(r.id, {
+            content: [{ type: "text", text: `tool failed: ${(err as Error).message}` }],
+            isError: true,
+          });
+        }
+      }
       const tool = TOOLS_BY_NAME.get(name);
       if (!tool) return rpcErr(r.id, -32602, `unknown tool: ${name}`);
       try {

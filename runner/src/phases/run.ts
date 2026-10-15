@@ -22,6 +22,7 @@ import { authorizePhase } from "./authorize.js";
 import { planPhase } from "./plan.js";
 import { reconPhase } from "./recon.js";
 import { exploitPhase } from "./exploit.js";
+import { registerLive, unregisterLive } from "../live.js";
 import { resolveConfig } from "./config.js";
 import { coordinatorSignOff } from "./signoff.js";
 import { resolveVariantCap } from "../variants/index.js";
@@ -198,6 +199,14 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     deniedStreak: 0,
   };
 
+  // v0.30.0: publish this context so the console and the MCP bridge can invoke
+  // the executor tools (nuclei_exec, msf_exec, http_probe, …) on demand while
+  // the engagement runs. Registered here — before any agent acts — so the tools
+  // are reachable for the whole live window, and withdrawn in the finally below
+  // so a finished engagement reports "not running" rather than serving a stale
+  // context whose executors and kill switch no longer belong to anything.
+  registerLive(engagementId, ctx);
+
   events.append({ phase: "authorize", actor: "runner", action: "engagement_start", target: input.target, result: `Mode=${input.mode.toUpperCase()} env=${describeEnvironment(environment, prodConfirmed)} tier=${describeTier(tier)} rate_limit=${rps}rps/host objective="${input.objective}" scope=[${hosts.join(", ")}] registry=${registry.confirmed.length} confirmed / ${registry.killed.length} killed entries loaded` });
   // v0.22.0 UI kill switch: hand the operator abort handle to whoever is
   // driving this engagement (the UI server registers it for the kill-switch
@@ -280,6 +289,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
     }
     return { engagementId, status: "halted", blockedReason: reason, reportPath, findings };
   } finally {
+    unregisterLive(engagementId);
     // v0.23.0: no blind save here. Every verdict persists atomically via
     // transactRegistryFile at write time; a whole-file save of this
     // engagement's in-memory copy would silently clobber verdicts transacted
