@@ -2,20 +2,65 @@
 # insert over whatever profile root it is composed into.
 #
 # Applied after dsh-base and dsh-web-app (bundle order in `dsh.profile.bundles`),
-# and before the profile's own cordis.patch.yml - so a person can still
-# override or disable either row by id in their own patch layer.
+# and before the profile's own cordis.patch.yml - so a person can still override
+# or disable any row by id in their own patch layer.
 #
-# Two rows:
-#   1. mcp-secscan      - the harness-NATIVE MCP client
-#                         (@deepseek-ai/dsh-mcp-client) over Streamable HTTP.
-#                         Tools appear namespaced mcp__secscan__scan_url,
-#                         mcp__secscan__get_report, ...
-#   2. secscan-redteam  - @secscan/redteam-harness-plugin: the authorization
-#                         gate as a `tools/pre-execute` hook, plus the
-#                         engagement-protocol system-prompt section.
+# Six rows:
+#   1. mcp-secscan          - the harness-NATIVE MCP client
+#                             (@deepseek-ai/dsh-mcp-client) over Streamable HTTP
+#                             against the SecScan scan service. Tools appear
+#                             namespaced mcp__secscan__scan_url, ...get_report.
+#   2. secscan-redteam      - @secscan/redteam-harness-plugin: the authorization
+#                             gate as a `tools/pre-execute` hook, plus the
+#                             engagement-protocol system-prompt section.
+#   3. mcp-redteam-runner   - THE ENGAGEMENT ENGINE, over MCP. The runner was an
+#                             MCP CLIENT only (runner/src/mcp.ts calls SecScan's
+#                             server), so there was nothing for a harness to
+#                             connect to. runner/src/ui/mcp-endpoint.ts now
+#                             serves POST /mcp on the console, exposing 13 tools
+#                             namespaced mcp__redteam__*: start_engagement,
+#                             get_engagement, get_feed, get_findings, get_proof,
+#                             get_coverage, get_compliance, escalate, reverify,
+#                             abort_engagement, watch_profiles, watch_trigger,
+#                             list_engagements. Every one delegates to the same
+#                             handler the console UI calls, so the safety core,
+#                             launch validation, tier rules and approval logging
+#                             all still apply. Reach, not authority.
+#   4. agent-team           - the Agent Teams roster, durable peer mailbox and
+#                             shared task DAG.
+#   5. tool-agent-team      - the model-facing Team tools.
+#   6. ui-agent-team        - the Web UI for the roster and task board.
+#
+# NOTE ON THE TWO AGENT SYSTEMS. Rows 4-6 are NOT the engagement team. The
+# engagement team is the runner's own multi-agent implementation
+# (runner/src/agents.ts + src/prompts/), with the safety core around every
+# action. Harness teammates have none of that - no safety core, no tier rules,
+# no authorization gate - so engagements are driven through the runner via
+# mcp__redteam__*, and harness teammates are convenience only.
 #
 # Secrets are cordis-native: schemastery Config with env fallbacks.
 # NEVER put a raw key in this file.
+
+# Direct subagent delegation is disabled so that ALL delegation goes through the
+# Team tools. A plain subagent is invisible to the roster, is not durable, and
+# takes no part in the shared task board - so using it would fragment an
+# engagement into untracked work. This mirrors the upstream Agent Teams profile
+# (@deepseek-ai/dsh-experimental-agent-team-profile), which disables the same
+# four rows for the same reason.
+#
+# To get fire-and-forget delegation back, set `disabled: false` on these rows in
+# your own profile patch layer - but a red-team engagement wants the trail.
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
 
 - insert:
     - id: mcp-secscan
@@ -25,17 +70,16 @@
         transport: streamable-http
         url: https://secscan.us/api/mcp
         headers:
-          # MCP-scope token - create at https://secscan.us/settings (AI editors).
-          # Verified 2026-10-15: the settings page issues an ssk_-prefixed token FOR
-          # MCP and the endpoint accepts it (initialize and get_account both HTTP 200).
-          # Earlier revisions warned that ssk_ would be rejected - that is no longer
-          # true. If a token is refused, suspect revocation or the wrong account, not
-          # the prefix. If the token is UNSET the harness still starts and the
-          # mcp__secscan__* tools simply do not appear - and the auth gate fails closed
-          # anyway, so nothing aggressive can run without it.
+          # Token - create at https://secscan.us/settings (AI editors).
+          # Verified 2026-10-15: the settings page issues an ssk_-prefixed token
+          # FOR MCP and the endpoint accepts it (initialize and get_account both
+          # HTTP 200). Earlier revisions warned that ssk_ would be rejected -
+          # that is no longer true. If a token is refused, suspect revocation or
+          # the wrong account, not the prefix. If it is UNSET the harness still
+          # starts and the mcp__secscan__* tools simply do not appear - and the
+          # auth gate fails closed anyway, so nothing aggressive can run.
           Authorization: !!js "'Bearer ' + (process.env.SECSCAN_MCP_TOKEN || '')"
 
-- insert:
     - id: secscan-redteam
       name: '@secscan/redteam-harness-plugin'
       config:
@@ -44,3 +88,50 @@
         # deliberately: an env-var allowlist would be a way to assert ownership
         # locally instead of proving it with the server. The MCP token lives in
         # env SECSCAN_MCP_TOKEN.
+
+    # The engagement engine. The console must be running for this row to connect:
+    #     npx redteam-runner ui            # 127.0.0.1:8787
+    # If it is not, the harness still starts and the mcp__redteam__* tools are
+    # simply absent - the same failure mode as an unset SECSCAN_MCP_TOKEN.
+    - id: mcp-redteam-runner
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: redteam
+        transport: streamable-http
+        # Loopback by default. The console binds 127.0.0.1 unless explicitly
+        # overridden, and it drives live pentest tooling - keep it there.
+        url: !!js "process.env.REDTEAM_MCP_URL || 'http://127.0.0.1:8787/mcp'"
+        headers:
+          # The console's startup token. Stable across restarts if REDTEAM_UI_TOKEN
+          # is set when launching the console; otherwise copy the random token it
+          # prints. It must clear the strength floor (>= 16 chars).
+          Authorization: !!js "'Bearer ' + (process.env.REDTEAM_UI_TOKEN || '')"
+
+    # The team itself. Durable session storage is the activation requirement and
+    # is already mounted by dsh-base (row `session-persistence-jsonl`), so the
+    # roster, mailbox and task board survive a crash, reload or restart.
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+      config:
+        # A full engagement is lead + recon + exploiter + reporter. The margin
+        # is for extra specialists (a second exploiter on a large surface, or a
+        # dedicated verifier), and because a teammate whose creation FAILED
+        # still consumes a name permanently.
+        maxMembers: 8
+        maxTasks: 256
+        maxPendingMessagesPerMember: 64
+        maxMessageBytes: 65536
+        disposalTimeoutMs: 5000
+
+    - id: tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+      config:
+        # `fresh` gives a specialist with no memory of the Lead's conversation,
+        # which is right for a red-team role: each specialist gets its role
+        # brief and its task, not the Lead's whole reasoning. `fork` is
+        # available to the Lead for a specialist that needs the Lead's context.
+        freshProvider: spawn
+        forkProvider: fork
+
+    - id: ui-agent-team
+      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
