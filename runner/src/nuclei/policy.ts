@@ -37,8 +37,14 @@ export const NUCLEI_SETUP_INSTRUCTIONS = [
 /** Template tags that are always excluded — DoS stays excluded in every mode. */
 export const NUCLEI_DENIED_TAGS = ["dos"];
 
-/** Flags the argv builder will never emit, even if requested. */
-const FORBIDDEN_FLAGS = new Set(["-update-templates", "-ut", "-uncover", "-duc", "-disable-update-check"]);
+/**
+ * Flags an AGENT may never request. This governs agent-supplied flags only:
+ * the argv builder emits -disable-update-check itself, because omitting it lets
+ * nuclei block on a network update check and the run dies on its timeout with
+ * empty output. What stays forbidden is an agent asking for a template UPDATE
+ * or an uncover run - updating templates remains an operator act.
+ */
+const FORBIDDEN_FLAGS = new Set(["-update-templates", "-ut", "-uncover", "-duc"]);
 
 /** Resolve the nuclei binary path — explicit env wins, else PATH lookup. */
 export function resolveNucleiBinary(env: NodeJS.ProcessEnv = process.env): string {
@@ -109,6 +115,17 @@ export interface NucleiRunOptions {
  */
 export function buildNucleiRunArgv(binary: string, opts: NucleiRunOptions): string[] {
   const argv = [binary, "-u", opts.target, "-jsonl", "-silent", "-nc", "-retries", "1"];
+  // Always skip the update check. It is a NETWORK call nuclei makes before it
+  // does anything else, and when it stalls the whole run stalls with it — the
+  // spawn then hits its timeout with empty output, which is indistinguishable
+  // from "no templates matched". Found by watching -tl return 0 templates while
+  // the same command run by hand listed 13,866.
+  //
+  // This is not a template UPDATE: -update-templates is still refused, and
+  // checkNucleiExtraFlags refuses it if an agent asks. Updating templates stays
+  // an operator act done outside the engagement; this only stops the engine
+  // from phoning home mid-flight.
+  argv.push("-disable-update-check");
   argv.push("-rate-limit", String(Math.max(1, Math.floor(opts.rateLimit))));
   argv.push("-timeout", String(Math.max(10, Math.floor(opts.timeoutS))));
   argv.push("-stats-interval", "0");
@@ -128,7 +145,12 @@ export function buildNucleiRunArgv(binary: string, opts: NucleiRunOptions): stri
 
 /** argv for the recon-safe template listing (no target touched). */
 export function buildNucleiListArgv(binary: string, templateDir?: string): string[] {
-  const argv = [binary, "-tl", "-silent", "-nc"];
+  // -disable-update-check is load-bearing. Without it nuclei makes a BLOCKING
+  // network call before printing anything; the spawn then hits its 60s timeout
+  // with empty stdout, and the listing reports 0 templates from the 13,866 that
+  // are installed. Found exactly that way: the tool said zero while the same
+  // binary run by hand listed all of them.
+  const argv = [binary, "-tl", "-silent", "-nc", "-disable-update-check"];
   if (templateDir) argv.push("-t", templateDir);
   return argv;
 }
