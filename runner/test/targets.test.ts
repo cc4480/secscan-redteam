@@ -34,6 +34,7 @@ import {
 } from "../src/targets.js";
 import type { TargetId, TargetProfile } from "../src/targets.js";
 import { BATTERY_CATEGORIES } from "../src/battery.js";
+import { _resetNucleiProbeCache } from "../src/nuclei/index.js";
 import { lookupTechnique } from "../src/attack.js";
 import { coordinatorPrompt, exploiterPrompt } from "../src/prompts.js";
 import { runEngagement } from "../src/phases.js";
@@ -253,11 +254,44 @@ describe("prompt wiring", () => {
 
 describe("full-battery coverage mechanics", () => {
   let dir: string;
+  // These tests assert an EXACT completion line, and that line interpolates the
+  // ledger totals, which depend on which items have their prerequisites met
+  // (see prerequisiteMet). It reads the environment, so a machine that actually
+  // has nuclei or msfrpcd configured reports different totals and fails here —
+  // the suite passed only because CI is bare. Pin the environment, matching the
+  // "no network, no API keys" contract in this file's header and the same guard
+  // item-ledger.test.ts already uses for prerequisiteMet.
+  //
+  // REDTEAM_NUCLEI_BIN is included because nucleiBinaryPresent() treats a set
+  // value as present without probing. The probe is cached module-wide, so the
+  // cache is reset on both sides of every test or a value read once leaks into
+  // the rest of the file.
+  const PREREQ_ENV = [
+    "REDTEAM_MSFRPC_USER",
+    "REDTEAM_MSFRPC_PASS",
+    "REDTEAM_KRB_CCACHE_B64",
+    "REDTEAM_KRB_CCACHE_PATH",
+    "REDTEAM_KRB_KIRBI_B64",
+    "REDTEAM_NFS_TEST_CLIENT",
+    "REDTEAM_NUCLEI_BIN",
+  ];
+  let savedEnv: Record<string, string | undefined>;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "rt-fb-"));
+    savedEnv = {};
+    for (const k of PREREQ_ENV) {
+      savedEnv[k] = process.env[k];
+      delete process.env[k];
+    }
+    _resetNucleiProbeCache();
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
+    for (const k of PREREQ_ENV) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+    _resetNucleiProbeCache();
   });
 
   const textOnly = (text: string): ChatResult => ({ text, toolCalls: [], provider: "fake", model: "fake" });

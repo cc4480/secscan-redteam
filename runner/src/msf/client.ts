@@ -57,7 +57,7 @@ export class MsfClient {
 
   /** Authenticate. Throws MsfAuthError (with setup instructions) on failure. */
   async login(user: string, pass: string): Promise<void> {
-    const res = await msfCall(this.request, "auth.login", null, [user, pass]);
+    const res = asRecord(await msfCall(this.request, "auth.login", null, [user, pass]));
     if (res["result"] === "success" && typeof res["token"] === "string") {
       this.token = res["token"] as string;
       return;
@@ -67,15 +67,26 @@ export class MsfClient {
     );
   }
 
-  private async call(method: string, args: unknown[]): Promise<Record<string, unknown>> {
+  /** Raw msfrpc result — a map for most methods, an array for module.search. */
+  private async callAny(method: string, args: unknown[]): Promise<unknown> {
     if (!this.token) throw new MsfAuthError("[msf] not authenticated — call login() first");
     return msfCall(this.request, method, this.token, args);
   }
 
-  /** Search the module database. Query uses msf search syntax (cve:, type:, platform:, name:…). */
+  private async call(method: string, args: unknown[]): Promise<Record<string, unknown>> {
+    return asRecord(await this.callAny(method, args));
+  }
+
+  /**
+   * Search the module database. Query uses msf search syntax (cve:, type:, platform:, name:…).
+   *
+   * msfrpcd returns a BARE ARRAY here (unlike module.exploits, which wraps its
+   * results in `{modules:[…]}`). Reading only `res["modules"]` therefore found
+   * nothing, so accept either shape — a real daemon sends the array.
+   */
   async searchModules(query: string): Promise<MsfModule[]> {
-    const res = await this.call("module.search", [query]);
-    const list = res["modules"];
+    const res = await this.callAny("module.search", [query]);
+    const list = Array.isArray(res) ? res : asRecord(res)["modules"];
     if (!Array.isArray(list)) return [];
     return list.map((m) => {
       const r = asRecord(m);

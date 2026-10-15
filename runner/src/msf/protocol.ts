@@ -26,15 +26,58 @@ export class MsfTransportError extends Error {
 }
 
 /**
+ * msfrpcd encodes every string as MessagePack BINARY, not str.
+ *
+ * Ruby's `String#to_msgpack` emits `bin` for ASCII-8BIT strings, and msfrpcd's
+ * responses come back that way — both map keys and values. Two consequences,
+ * both of which made this bridge unable to talk to a real daemon:
+ *
+ *   1. @msgpack/msgpack v3 refuses a non-string map key ("The type of key must
+ *      be string or number but object"), so every call threw
+ *      MsfTransportError('undecodable data') before the result was ever read.
+ *   2. Even with the keys converted, values arrive as Uint8Array rather than
+ *      string, so `res['result'] === 'success'` could never be true.
+ *
+ * Found by pointing the bridge at a real msfrpcd. The unit tests inject a fake
+ * transport that returns encoder-produced bytes, which use str — so they pass
+ * while production fails. Fix both sides: convert keys on the way in, then
+ * normalise binary leaves to UTF-8 strings.
+ */
+function decodeMsfResponse(raw: Uint8Array): unknown {
+  return decode(raw, {
+    mapKeyConverter: (key: unknown): string | number =>
+      typeof key === "string" || typeof key === "number" ? key : new TextDecoder().decode(key as Uint8Array),
+  });
+}
+
+/** Recursively turn binary leaves into UTF-8 strings, leaving other types alone. */
+function normaliseBinary(value: unknown): unknown {
+  if (value instanceof Uint8Array) return new TextDecoder().decode(value);
+  if (Array.isArray(value)) return value.map(normaliseBinary);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = normaliseBinary(v);
+    return out;
+  }
+  return value;
+}
+
+/**
  * One msfrpc call. Throws MsfTransportError when the daemon is unreachable
- * or the response is not a MessagePack map — both fail closed upstream.
+ * or the response is not MessagePack at all — both fail closed upstream.
+ *
+ * The response may legitimately be a MAP (`core.version`, `auth.login`,
+ * `module.exploits`) or an ARRAY: `module.search` returns a bare array of
+ * module records, not `{modules:[…]}`. Demanding a map here made every
+ * module search throw "non-map response" against a real daemon, so the
+ * caller decides which shape it expects.
  */
 export async function msfCall(
   request: MsfRequestFn,
   method: string,
   token: string | null,
   args: unknown[],
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, unknown> | unknown[]> {
   const payload = token === null ? [method, ...args] : [method, token, ...args];
   let raw: Uint8Array;
   try {
@@ -44,12 +87,13 @@ export async function msfCall(
   }
   let decoded: unknown;
   try {
-    decoded = decode(raw);
+    decoded = normaliseBinary(decodeMsfResponse(raw));
   } catch (err) {
     throw new MsfTransportError(`msfrpcd returned undecodable data (${method})`, err);
   }
-  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
-    throw new MsfTransportError(`msfrpcd returned a non-map response (${method})`);
+  if (Array.isArray(decoded)) return decoded;
+  if (typeof decoded !== "object" || decoded === null) {
+    throw new MsfTransportError(`msfrpcd returned neither a map nor an array (${method})`);
   }
   return decoded as Record<string, unknown>;
 }
