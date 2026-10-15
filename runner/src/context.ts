@@ -19,6 +19,7 @@ import { type BatteryCategory } from "./battery.js";
 import { type TargetId } from "./targets.js";
 import { MsfExecutor } from "./msf/index.js";
 import { NucleiExecutor } from "./nuclei/index.js";
+import { NmapExecutor } from "./nmap/index.js";
 import { type ItemVerdict } from "./coverage/items.js";
 
 export interface RunnerDeps {
@@ -33,6 +34,8 @@ export interface RunnerDeps {
   msfExecutor?: MsfExecutor;
   /** Injectable for tests (default: real NucleiExecutor against the operator's nuclei binary). */
   nucleiExecutor?: NucleiExecutor;
+  /** Injectable for tests (default: real NmapExecutor against the operator's nmap binary). */
+  nmapExecutor?: NmapExecutor;
 }
 
 /** One entry in the shared target map (recon-written, whole-team-read). */
@@ -79,6 +82,8 @@ export interface Ctx {
   msfExecutor: MsfExecutor;
   /** Nuclei bridge — every call flows through the nuclei safety policy. */
   nucleiExecutor: NucleiExecutor;
+  /** Nmap bridge — every call flows through the nmap safety policy. */
+  nmapExecutor: NmapExecutor;
   /**
    * v0.21.0 honest counting: nuclei template executions are variant-level
    * checks, tracked separately from the 418 intents (never merged).

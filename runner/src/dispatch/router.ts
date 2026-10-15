@@ -19,13 +19,14 @@ import { handleWebTools } from "./web.js";
 import { handleHostTools } from "./host.js";
 import { handleMsfTools } from "./msf.js";
 import { handleNucleiTools } from "./nuclei.js";
+import { handleNmapTools } from "./nmap.js";
 import { handleMcpTools } from "./mcp.js";
 import { handleBookkeepingTools } from "./bookkeeping.js";
 async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   const args = call.arguments ?? {};
   ctx.actions++;
 
-  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleNucleiTools, handleMcpTools, handleBookkeepingTools];
+  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleNucleiTools, handleNmapTools, handleMcpTools, handleBookkeepingTools];
   for (const h of handlers) {
     const r = await h(ctx, role, phase, call, args);
     if (r) return r;
@@ -56,6 +57,7 @@ const RATE_LIMITED_TOOLS = new Set([
   "nfs_enum",
   "msf_exec",
   "nuclei_exec",
+  "nmap_exec",
 ]);
 
 /** Best-effort target host for a tool call — undefined when the tool has no target traffic. */
@@ -65,6 +67,9 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
   // v0.21.0: nuclei_exec templates is local-only (reads the operator's
   // template checkout) — no target traffic, so no limiter/halt applies.
   if (call.name === "nuclei_exec" && args["action"] !== "run") return undefined;
+  // v0.31.0: nmap_exec profiles runs `nmap --version` locally — no target
+  // traffic, so no limiter and no auto-halt applies.
+  if (call.name === "nmap_exec" && args["action"] !== "scan") return undefined;
   const direct = typeof args["host"] === "string" ? (args["host"] as string).trim().toLowerCase() : "";
   if (direct) return direct;
   const url = typeof args["url"] === "string" ? (args["url"] as string) : "";

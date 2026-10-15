@@ -24,6 +24,7 @@ import { MCP_TOOLS, READ_TOOLS, PROBE_TOOL, BURST_PROBE_TOOL } from "../tools/we
 import { HOST_TOOLS } from "../tools/host.js";
 import { MSF_EXEC_TOOL } from "../tools/msf.js";
 import { NUCLEI_EXEC_TOOL } from "../tools/nuclei.js";
+import { NMAP_EXEC_TOOL } from "../tools/nmap.js";
 import {
   ABORT_TOOL,
   QUERY_REGISTRY_TOOL,
@@ -116,6 +117,7 @@ function collect(): JsonSchemaTool[] {
     ...HOST_TOOLS,
     MSF_EXEC_TOOL,
     NUCLEI_EXEC_TOOL,
+    NMAP_EXEC_TOOL,
     QUERY_REGISTRY_TOOL,
     UPDATE_TARGET_MAP_TOOL,
     RECORD_FINDING_TOOL,

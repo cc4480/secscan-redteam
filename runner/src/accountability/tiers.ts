@@ -20,6 +20,9 @@
  * accountability record adds who supervised and approved.
  */
 
+// The nmap tier depends on the SELECTED PROFILE, not just the tool name.
+import { findProfile } from "../nmap/policy.js";
+
 export type AutonomyTier = 0 | 1 | 2;
 
 export const TIER_NAMES: Record<AutonomyTier, string> = {
@@ -124,6 +127,12 @@ const TIER1_TOOLS = new Set([
  *  - msf_exec: search/suggest never fire → Tier 1; run fires exploits → Tier 2.
  *  - nuclei_exec: templates never fires (local template listing) → Tier 1;
  *    run executes templates against the target → Tier 2.
+ *  - nmap_exec: profiles touches no target (it runs `nmap --version`) → Tier 0;
+ *    scan fires packets, and the tier is the SELECTED PROFILE's own minTier.
+ *    All six profiles share one tool name, so without this a 65535-port sweep
+ *    would be as reachable at Tier 0 as a top-100 sweep. The same gate is
+ *    enforced again in the nmap dispatch handler, which is where the refusal
+ *    can name the tier that would allow it.
  */
 export function toolMinTier(toolName: string, args: Record<string, unknown> = {}): AutonomyTier {
   if (toolName === "scan_url") {
@@ -134,6 +143,11 @@ export function toolMinTier(toolName: string, args: Record<string, unknown> = {}
   }
   if (toolName === "nuclei_exec") {
     return args["action"] === "run" ? 2 : 1;
+  }
+  if (toolName === "nmap_exec") {
+    if (args["action"] !== "scan") return 0;
+    const id = typeof args["profile"] === "string" ? args["profile"] : "quick";
+    return (findProfile(id)?.minTier ?? 0) as AutonomyTier;
   }
   if (TIER0_TOOLS.has(toolName)) return 0;
   if (TIER1_TOOLS.has(toolName)) return 1;
