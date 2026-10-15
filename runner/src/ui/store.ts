@@ -11,6 +11,7 @@ import { join, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { StoredEngagement, UiJob } from "./types.js";
 import { readState, type LiveState } from "../events.js";
+import { reconcileStatus, ORPHAN_REASON } from "./reconcile.js";
 
 /** Same env convention as resolveConfig: REDTEAM_HOME or cwd. */
 export function defaultEngagementsDir(): string {
@@ -57,17 +58,25 @@ export interface EngagementSummary {
 }
 
 function toSummary(id: string, state: LiveState, live: boolean): EngagementSummary {
+  // A record whose owner process is gone is over, whatever its status says.
+  const rec = reconcileStatus(state);
   return {
     id,
     target: state.target,
     mode: state.mode,
-    status: state.status,
+    status: rec.status,
     phase: state.phase,
     findings: state.findings.length,
     eventCount: state.eventCount,
     startedAt: state.startedAt,
     updatedAt: state.updatedAt,
     live: live,
+    ...(rec.orphaned
+      ? {
+          error:
+            ORPHAN_REASON,
+        }
+      : {}),
   };
 }
 

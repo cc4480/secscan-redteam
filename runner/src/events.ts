@@ -33,6 +33,8 @@ export interface LiveState {
   eventCount: number;
   startedAt: string;
   updatedAt: string;
+  /** PID of the process driving this run; absent on pre-v0.33 records. */
+  ownerPid?: number;
   blockedReason?: string;
 }
 
@@ -79,6 +81,12 @@ export class EventLog {
       eventCount: 0,
       startedAt: now,
       updatedAt: now,
+      // Which process owns this run. A console restart, a killed CLI run or a
+      // crash leaves a state.json still saying "running" with nobody driving it,
+      // and there is no way to tell from the record alone — the status simply
+      // lies until something marks it. Recording the owner makes the check
+      // mechanical: if that pid is gone, the run is over, whatever the file says.
+      ownerPid: process.pid,
     };
     writeFileSync(join(dir, "engagement.md"), `# Engagement ${engagementId}\n\n| Time | Phase | Actor | Action | Result |\n|------|-------|-------|--------|--------|\n`);
     this.persistState();
