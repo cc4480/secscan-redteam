@@ -53,6 +53,26 @@ describe("xtool registry", () => {
     assert.equal(XTOOL_DEFS.length, 5);
     for (const spec of XTOOLS) assert.ok(XTOOL_DEFS_BY_NAME.has(`${spec.id}_exec`), `${spec.id}_exec`);
   });
+
+  it("never claims a binary is missing in its description", () => {
+    // The setup text is a FALLBACK for when a binary is absent. Appending it
+    // bare made all five descriptions open with "john not found." and friends
+    // even on a machine where every binary was installed and working — a
+    // teammate reading the schema caught it, which is exactly how it would have
+    // reached a user. Availability is what `probe` reports; a schema must never
+    // assert it either way.
+    for (const t of XTOOL_DEFS) {
+      const opening = t.description.slice(0, 120);
+      assert.ok(
+        !/^(john|sqlmap|ffuf|gobuster|nikto) not found/i.test(opening),
+        `${t.name} must not open by asserting its binary is missing`,
+      );
+      assert.ok(
+        /If \w+ is not installed/i.test(t.description),
+        `${t.name} must frame its setup text as a fallback, not a fact`,
+      );
+    }
+  });
 });
 
 describe("the agent never reaches the command line", () => {

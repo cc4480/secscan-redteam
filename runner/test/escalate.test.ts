@@ -26,6 +26,29 @@ import { EventLog, readEvents } from "../src/events.js";
 import { UiStore } from "../src/ui/store.js";
 import { handleEscalate } from "../src/ui/routes/actions.js";
 
+// The operator name and environment are read from the process environment, and
+// several tests below assert the REFUSAL that happens when no operator is named.
+// A developer machine with REDTEAM_OPERATOR set (or REDTEAM_ENV=production) then
+// fails tests that are about a different machine's configuration. Pin both for
+// determinism — the same guard item-ledger.test.ts already uses for the
+// prerequisite variables.
+const ENV_PIN = ["REDTEAM_OPERATOR", "REDTEAM_ENV"];
+let savedEnv: Record<string, string | undefined>;
+beforeEach(() => {
+  savedEnv = {};
+  for (const k of ENV_PIN) {
+    savedEnv[k] = process.env[k];
+    delete process.env[k];
+  }
+});
+afterEach(() => {
+  for (const k of ENV_PIN) {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  }
+});
+
+
 let tmp = "";
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "escalate-test-"));

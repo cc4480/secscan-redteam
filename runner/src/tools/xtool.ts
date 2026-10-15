@@ -61,6 +61,12 @@ export function xToolDef(spec: XToolSpec): JsonSchemaTool {
       (spec.id === "john"
         ? "John is an OFFLINE cracker: 'host' is a path to a hash file on this machine, never a network target. "
         : "The target is scope-checked before the process starts. ") +
+      // The setup text is a FALLBACK, not a statement of fact. Appending it bare
+      // made every description open with "john not found." / "sqlmap not found."
+      // even when the binary was installed and working — found by a teammate
+      // reading the schema, which is exactly how it would have reached a user.
+      // Call `probe` first to learn which case applies.
+      `If ${spec.id} is not installed, probe will say so and name the install steps: ` +
       spec.setup.join(" ") +
       BATTERY_HINT,
     parameters: {
