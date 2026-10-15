@@ -71,6 +71,13 @@ function toSummary(id: string, state: LiveState, live: boolean): EngagementSumma
   };
 }
 
+/**
+ * Statuses that mean the run is over. A record in one of these is reported as
+ * live:false however it was launched, so list() and get_engagement() agree
+ * about whether an engagement is still running.
+ */
+const TERMINAL_STATUSES = new Set(["complete", "halted", "blocked"]);
+
 export class UiStore {
   private live = new Map<string, StoredEngagement>();
   private jobs = new Map<string, UiJob>();
@@ -137,7 +144,14 @@ export class UiStore {
           eventCount: 0,
           startedAt: e.startedAt,
           updatedAt: e.startedAt,
-          live: e.abort !== undefined,
+          // `live` must mean RUNNING, not "has an abort handle". A finished or
+          // halted run keeps the handle it was registered with, so testing the
+          // handle alone reported live:true on a record whose own status said
+          // "halted" — contradicting get_engagement, which reads the state file
+          // and correctly says live:false. Two endpoints disagreeing about
+          // whether an engagement is running is the kind of thing an operator
+          // notices at the worst moment. A terminal status wins.
+          live: e.abort !== undefined && !TERMINAL_STATUSES.has(e.status),
           ...(e.error === undefined ? {} : { error: e.error }),
         });
       }
