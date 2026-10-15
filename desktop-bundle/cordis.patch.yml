@@ -1,0 +1,43 @@
+# The @secscan/redteam-desktop-bundle patch: the whole SecScan red team as ONE
+# insert over whatever profile root it is composed into.
+#
+# Applied after dsh-base and dsh-web-app (bundle order in `dsh.profile.bundles`),
+# and before the profile's own cordis.patch.yml - so a person can still
+# override or disable either row by id in their own patch layer.
+#
+# Two rows:
+#   1. mcp-secscan      - the harness-NATIVE MCP client
+#                         (@deepseek-ai/dsh-mcp-client) over Streamable HTTP.
+#                         Tools appear namespaced mcp__secscan__scan_url,
+#                         mcp__secscan__get_report, ...
+#   2. secscan-redteam  - @secscan/redteam-harness-plugin: the authorization
+#                         gate as a `tools/pre-execute` hook, plus the
+#                         engagement-protocol system-prompt section.
+#
+# Secrets are cordis-native: schemastery Config with env fallbacks.
+# NEVER put a raw key in this file.
+
+- insert:
+    - id: mcp-secscan
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: secscan
+        transport: streamable-http
+        url: https://secscan.us/api/mcp
+        headers:
+          # MCP-scope token - create at https://secscan.us/settings (AI editors).
+          # NOTE: an API-scope (ssk_) token does NOT work here; the scopes are
+          # separate. If the token is unset the harness still starts and the
+          # mcp__secscan__* tools simply do not appear - and the auth gate fails
+          # closed anyway, so nothing aggressive can run without it.
+          Authorization: !!js "'Bearer ' + (process.env.SECSCAN_MCP_TOKEN || '')"
+
+- insert:
+    - id: secscan-redteam
+      name: '@secscan/redteam-harness-plugin'
+      config:
+        # No plugin config needed. Verified domains come from the SecScan server
+        # alone (list_verified_domains over MCP) - there is no allowlist env var,
+        # deliberately: an env-var allowlist would be a way to assert ownership
+        # locally instead of proving it with the server. The MCP token lives in
+        # env SECSCAN_MCP_TOKEN.
