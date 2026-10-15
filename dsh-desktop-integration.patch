@@ -1,3 +1,16 @@
+# ============================================================================
+# SUPERSEDED - kept for reference only.
+#
+# This patch records the DSH MONOREPO-side injection: the profile template line,
+# the CLI dependency, the tsconfig aliases and references, and the packaging
+# fixes. It does NOT include the red-team packages themselves, the desktop
+# bundle's cordis.patch.yml rows, or the Agent Teams mount - new files do not
+# appear in a diff of tracked files.
+#
+# The complete, buildable source is now:
+#     https://github.com/cc4480/secscan-redteam-desktop
+# A clone of that repo builds the app; this patch is history, not the recipe.
+# ============================================================================
 diff --git a/apps/cli/package.json b/apps/cli/package.json
 index 5e309e3982..9c501ca571 100644
 --- a/apps/cli/package.json
@@ -162,3 +175,4 @@ index 2d31d0df31..6c65ddb662 100644
      { "path": "./apps/cli" },
      { "path": "./apps/desktop-host" },
      { "path": "./apps/desktop/tsconfig.host.json" }
+

@@ -637,3 +637,96 @@ was happening from inside that instance.
 running. Quit DSH entirely, then launch **SecScan RedTeam** from the Start Menu. If it
 opens, this is closed. If it still exits immediately, it is a genuine defect and the next
 thing to investigate.
+
+---
+
+## Round 8: the runner speaks MCP, and the repos are reconciled
+
+### The engagement engine is now reachable over MCP
+
+`secscan-redteam` is two systems and they were being conflated:
+
+| | What it is | MCP role |
+|---|---|---|
+| SecScan scan service | `https://secscan.us/api/mcp` | an MCP **server** the harness calls |
+| The runner | the engagement engine — 418-intent battery, safety core, proof bundles, compliance packs | was an MCP **client** only |
+
+The runner had no MCP server face (`runner/src/mcp.ts` is a client), so a harness
+had nothing to connect to for actual engagements. `runner/src/ui/mcp-endpoint.ts`
+plus `mcp-tools.ts` now serve `POST /mcp` on the existing console server —
+stateless Streamable HTTP, JSON responses — exposing **13 tools**:
+
+```
+list_engagements  get_engagement  start_engagement  get_feed
+get_findings      get_proof       get_coverage      get_compliance
+escalate          reverify        abort_engagement  watch_profiles
+watch_trigger
+```
+
+Each delegates to the same route handler the console UI calls, so the safety
+core, launch validation, tier rules and approval logging all still apply. It adds
+reach, not authority. `get_feed` reads events directly rather than reusing
+`handleFeed`, because that handler is an SSE stream and cannot answer a
+request/response tool. Split across two files to stay inside the 300-line budget
+`runner/test/file-budget.test.ts` enforces (118 + 265).
+
+### A failed launch must never be invisible
+
+Starting an engagement that died before writing `state.json` produced an id and
+then `"unknown engagement"` from every read path — the operator could not tell a
+failed run from one that never happened, and the reason the runner HAD recorded
+was unreachable. Root cause: `store.list()` only emitted live entries with state
+on disk, and `handleDetail()` 404'd when `state.json` was absent.
+
+Fixed: `StoredEngagement` records target and mode at register time,
+`EngagementSummary` carries an optional error, `list()` reports state-less live
+entries from the in-memory record, and `handleDetail()` falls back to it with
+`pending: true` instead of a bare 404.
+
+### The `ssk_` token works — the repo was wrong about it
+
+Three files here claimed an API-scope (`ssk_`) token would be rejected by the
+SecScan MCP endpoint. It is not. Verified against the live server: `initialize`
+returns HTTP 200 with `serverInfo secscan/1.1.0`, and `get_account` returns the
+account's plan. The settings page itself issues this token FOR MCP clients — it
+displays the Claude Code and Cursor configurations. The wrong claim cost real
+debugging time by sending the integration after a separate "MCP-scope" token that
+does not exist as a distinct thing.
+
+### The product repo had fallen behind the app repo
+
+`harness-plugin/` and `desktop-bundle/` here had stale copies — the bundle mounted
+two rows instead of six and the plugin did not drive the team. Ported in
+`fd25a9a`. The remaining differences between the two trees are DSH's formatter
+(single quotes, no semicolons), not content: the app vendors these packages and
+reformats them; this repo keeps its own style.
+
+### Verified
+
+```
+runner          543 tests   pass 543   fail 0
+harness-plugin    5 tests   pass 5     fail 0
+mcp-endpoint      initialize -> secscan-redteam-runner 0.22.0
+                  tools/list -> 13
+                  unauth POST -> HTTP 401 JSON-RPC (not the HTML login page)
+                  GET /       -> HTTP 200 text/html (humans still get the UI)
+live engagement   seclayer.app -> status complete, verified: true
+                  verificationProof: "SecScan server lists seclayer.app as
+                  ownership-verified"; report + compliance pack + attestation
+                  + safety manifest + item verdicts all written
+gate              example.invalid -> status blocked, reason recorded
+```
+
+### Where everything lives
+
+| What | Where |
+|---|---|
+| App source (builds the Windows app) | `cc4480/secscan-redteam-desktop` |
+| Plugin, runner, docs, this file | `cc4480/secscan-redteam` |
+| Console | `http://127.0.0.1:8787`, token in `REDTEAM_UI_TOKEN` |
+| Engagements | `<runner>/engagements/live/<id>/` |
+| Build checkout | `C:\Users\Cho-zen\deepseek-harness-src` |
+
+`dsh-desktop-integration.patch` is now marked SUPERSEDED: it records the
+monorepo-side injection only, and new files never appear in a diff of tracked
+files. The standalone repo is the complete, buildable artifact.
