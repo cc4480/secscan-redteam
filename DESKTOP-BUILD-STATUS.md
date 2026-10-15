@@ -583,3 +583,57 @@ desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed
 An Authenticode certificate. Smart App Control is enforced on the build machine and blocked
 the *downloaded* dsh-desktop installer while a locally built binary ran. This installer is
 unsigned, so it will be blocked for some Windows 11 customers.
+
+---
+
+## Final layout
+
+**https://github.com/cc4480/secscan-redteam-desktop** (private, not a fork)
+
+The app's own repository. Complete source, single orphan history - no upstream commits,
+no fork linkage, so a clone is self-contained: `pnpm install && pnpm build`.
+
+```
+0f88dcc83c  Add SecScan RedTeam build and operations README
+fb45d3df8e  SecScan RedTeam Desktop - initial import    (13,329 files)
+```
+
+It was built with `git checkout --orphan` rather than by copying files to disk: the
+tree contains symlinks that Windows refuses to create without elevation, and an
+extraction attempt produced only 3,882 of 13,329 files. Doing it inside git avoids the
+filesystem entirely.
+
+The README there covers requirements, the pnpm shim, how to build and silently install,
+how to verify the red team is present (check `app.asar`, not the `.exe` - the NSIS
+payload is LZMA2 and searching it gives false negatives), and the four traps that cost
+real time.
+
+**The interim fork `cc4480/deepseek-harness` was deleted.** It existed only as a
+stepping stone while deciding the repo shape. Nothing was lost; the standalone repo
+holds the full tree.
+
+**This repository (`secscan-redteam`)** remains the working record: the plugin's own
+packaging, this status document, the integration patch, and the conformance configs.
+
+### Where things live
+
+| What | Where |
+|---|---|
+| App source (builds the Windows app) | `cc4480/secscan-redteam-desktop` |
+| Plugin, patch, build history | `cc4480/secscan-redteam` (this repo) |
+| Installed app | `%LOCALAPPDATA%\Programs\SecScan Red Team\` |
+| Installer | `apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\` in a checkout |
+| Working checkout | `C:\Users\Cho-zen\deepseek-harness-src` (remotes: `desktop`, `origin`) |
+
+### The one thing never verified
+
+The installed app exits with **code 0** on every launch attempt and never creates its
+userData directory. The most likely cause is DSH's rule that two instances cannot run at
+once - `dsh web` and the desktop app contend for the same server, and the second exits.
+Every launch attempt was made while another DSH instance was running, because the testing
+was happening from inside that instance.
+
+**Not yet confirmed:** whether the app opens normally once no other DSH instance is
+running. Quit DSH entirely, then launch **SecScan RedTeam** from the Start Menu. If it
+opens, this is closed. If it still exits immediately, it is a genuine defect and the next
+thing to investigate.
