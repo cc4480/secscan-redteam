@@ -236,7 +236,7 @@ describe("cap enforcement + execution", () => {
     const v0 = ctx.itemLedger.get("secscan:SS-016")!;
     v0.variants!.executed = 4;
     const msg = closeVariantExpansion(ctx, "secscan:SS-016", "exploit");
-    assert.match(msg, /4\/15 variants executed/);
+    assert.match(msg, /4\/20 variants executed/);
     assert.equal(ctx.itemLedger.get("secscan:SS-016")!.disposition, "executed-clean");
   });
   it("closeVariantExpansion with nothing open says so", () => {

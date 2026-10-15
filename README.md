@@ -11,7 +11,7 @@ registered in the router and can be swapped back in for the exploiter role
 with a one-line policy change.
 
 **Honest status:** the full system is test-verified against simulated
-targets (539/539 runner tests, 18/18 auth-gate tests) but has not yet
+targets (543/543 runner tests, 18/18 auth-gate tests) but has not yet
 completed a live full engagement. Anything this README calls "real" means
 *built, tested against mocks/fakes/loopback, and wired into the safety
 core* — not *proven on a live target*. Proof exists only after a real
@@ -35,7 +35,7 @@ reconciled per category × target cell **and** per item.
 Competitors reach "tens of thousands of attacks" by executing payload
 variants. We do the same depth but count it honestly:
 
-- **139 curated, non-destructive payloads** across 10 libraries
+- **216 curated, non-destructive payloads** across 10 libraries
   (SQLi, XSS, command injection, SSTI, XXE, path traversal, SSRF, open
   redirects, auth/session, headers/CORS) — mechanical data, never
   LLM-invented at runtime.
@@ -134,7 +134,7 @@ Credential testing only against authorized test accounts.
 #    dependency order and stamps each dist/ so stale builds fail loudly)
 npm install && npm run build
 npm run check-dist # fails if any dist/ is stale vs its src/
-npm test           # all workspace suites (runner 539, auth-gate 18)
+npm test           # all workspace suites (runner 543, auth-gate 18, harness-plugin 5, llm-router 9)
 npm run typecheck  # every tsconfig clean
 
 # 2. Dry run (no live target touched) — --objective and --scope are required;
@@ -150,12 +150,12 @@ node smoke-qwen.mjs
 ## Architecture
 
 - `runner/` — the engagement runner (`@secscan/redteam-runner`): phases,
-  dispatch, 26 agent tools, safety core (rate limiter, denylists,
+  dispatch, 27 agent tools, safety core (rate limiter, denylists,
   auto-halt, kill switch), proof bundles, registry, compliance packs,
   integrations, watch mode, web UI. No `runner/src` file exceeds 300
   lines (mechanically enforced by `file-budget.test.ts`).
 - `auth-gate/` — server-authoritative DNS-TXT ownership verification,
-  fails closed, 17 unit tests.
+  fails closed, 18 unit tests.
 - `llm-router/` — provider-pluggable LLM interface; DeepSeek (`deepseek-v4-pro`
   for the exploiter's reasoning, `deepseek-flash` for
   coordinator/recon/reporter). Qwen (`qwen3.8-max`) stays registered and can

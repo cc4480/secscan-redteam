@@ -40,3 +40,8 @@ engagements/queue/*
 
 # Personal project-local Claude Code settings
 .claude/settings.local.json
+
+# Local live-fire harness output. results.json is GENERATED evidence and may
+# contain target data - same reasoning as engagements/live/*. The harness and
+# its payload library are tracked; the results are not.
+livefire/results.json
