@@ -502,3 +502,84 @@ installer downloaded from the internet is blocked outright, while a locally buil
 not. So this installer will be blocked for some Windows 11 customers. Shipping needs an
 Authenticode certificate; the build already accepts `DSH_DESKTOP_WINDOWS_*` credentials.
 That is a commercial decision, not a build change.
+
+---
+
+## Round 7: branded, forked, and building clean with zero escapes
+
+### The app has a home
+
+Forked to **https://github.com/cc4480/deepseek-harness**, branch `secscan-redteam`.
+Upstream's default branch is untouched, so rebasing onto future releases stays possible.
+
+```
+b3f6e69961  Remove the last local escape: the runtime smoke passes unaided
+140fda6856  Brand the product end to end: installer UI, app menus, update feed, icon
+6c7b36d471  Wire the red team into the Desktop app as the default profile
+b382483c03  Vendor the SecScan red team as packages/redteam/*
+```
+
+Previously this was 10 uncommitted edits in a scratch clone of DeepSeek's repository -
+nothing owned it and a clean checkout could not rebuild it. That gap is closed.
+
+### Naming
+
+`productName` alone was not enough; every place that named the product was hardcoded.
+
+| Surface | Was | Now |
+|---|---|---|
+| `artifactName` | `deepseek-harness-...` | `secscan-redteam-0.1.7-rc.1-win-x64-unsigned.exe` |
+| `smoke-packaged-runtime.ts` | `DeepSeek Harness.exe` | `SecScan RedTeam.exe` |
+| `package-target.ts`, `package-macos.ts` | `DeepSeek Harness.app` | `SecScan RedTeam.app` |
+| `development-app.ts` | `CFBundleURLName` | renamed |
+| `src/main.ts` | macOS `applicationName` | renamed |
+| `installer/strings.nsh` | 6 strings, EN + ZH | renamed |
+| `src/locale.ts` | 24 strings, incl. the welcome screen | renamed |
+| `installed-update-distribution.ts` | `deepseek-harness-${version}-win-x64.exe` | `secscan-redteam-...` |
+| icons (3) | upstream DeepSeek mark | shield + reticle |
+
+**Deliberately not changed:** *"Configure official DeepSeek models to start using
+Harness."* DeepSeek is the model provider here, not the product name.
+
+The hardcoded `DeepSeek Harness.exe` in the smoke test was not cosmetic - it was why the
+build exited non-zero after writing the installer, spawning a path that no longer existed.
+
+### The Office to PDF failure was never LibreOffice
+
+This is the finding worth keeping. `prepare-runtime` starts with `rmSync(RUNTIME_ROOT)` and
+re-downloads every run from a content-addressed cache. One cache entry was corrupt - right
+size (250,910 bytes), valid ZIP header, wrong content:
+
+```
+apps/desktop/.desktop-build/downloads/5282c12b107b...
+   name says     5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+   actually is   4abf2d1530473ff0ccb6b70096c17ffa9b62b97139789f692e06c930e420dc68
+```
+
+It was the only one of 15 entries that did not hash to its own filename. The primary Python
+runtime was therefore assembled around a bad openpyxl wheel, and the LibreOffice helper -
+which runs against that runtime - failed with `exit 3221225781` (`0xC0000135`,
+`STATUS_DLL_NOT_FOUND`). Deleting that one file fixed both the checksum failure and the
+Office to PDF failure, and the last local escape became unnecessary.
+
+**The fork now carries no `DSH_LOCAL_*` escapes at all.**
+
+### Final artifact
+
+```
+secscan-redteam-0.1.7-rc.1-win-x64-unsigned.exe     269.5 MB
+sha256 6f82bf01f51e0549fcd09073f74a62d6fe30f60297340a3d225d604b9b386fd2
+win-unpacked/SecScan RedTeam.exe                    233 MB, icon embedded
+```
+
+Build completes with **exit 0**:
+
+```
+desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed
+```
+
+### Still required before shipping
+
+An Authenticode certificate. Smart App Control is enforced on the build machine and blocked
+the *downloaded* dsh-desktop installer while a locally built binary ran. This installer is
+unsigned, so it will be blocked for some Windows 11 customers.
