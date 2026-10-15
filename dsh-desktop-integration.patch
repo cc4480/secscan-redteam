@@ -12,6 +12,58 @@ index 5e309e3982..9c501ca571 100644
    },
    "devDependencies": {
      "@agentclientprotocol/sdk": "1.4.0",
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index e47bc6614b..e020c6b1ae 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -33,7 +33,8 @@
+     "package:win:x64:dir": "tsx scripts/package-target.ts win-x64 --dir",
+     "upload:mac:arm64": "tsx scripts/upload-target.ts mac-arm64",
+     "upload:mac:x64": "tsx scripts/upload-target.ts mac-x64",
+-    "upload:win:x64": "tsx scripts/upload-target.ts win-x64"
++    "upload:win:x64": "tsx scripts/upload-target.ts win-x64",
++    "package:win:x64:dir:unsigned": "tsx scripts/package-target.ts win-x64 --dir --unsigned"
+   },
+   "dependencies": {
+     "electron-updater": "^6.8.9",
+diff --git a/apps/desktop/scripts/desktop-toolchain-preflight.ts b/apps/desktop/scripts/desktop-toolchain-preflight.ts
+index ff855cfd09..f8221b345e 100644
+--- a/apps/desktop/scripts/desktop-toolchain-preflight.ts
++++ b/apps/desktop/scripts/desktop-toolchain-preflight.ts
+@@ -95,6 +95,17 @@ export async function requireDesktopToolchain(
+   platform: 'darwin' | 'win32',
+   environment: NodeJS.ProcessEnv = process.env,
+ ): Promise<void> {
++  // LOCAL BUILD DEVIATION (not upstream): this host has no MSVC toolchain and
++  // no Windows SDK, and installing them needs Administrator. The installer-UI
++  // helper (window-frame.dll) is only consumed by the NSIS target, so a
++  // directory build is possible without it. Opt in explicitly.
++  if (process.env.DSH_LOCAL_SKIP_MSVC_PREFLIGHT === '1') {
++    const skipped = await probeDesktopToolchain(platform, environment)
++    if (skipped.length > 0) {
++      console.warn(`[local-preflight-skip] ignoring ${String(skipped.length)} toolchain failure(s): ${skipped.map(f => f.tool).join(', ')}`)
++    }
++    return
++  }
+   const failures = await probeDesktopToolchain(platform, environment)
+   if (failures.length === 0) return
+   throw new Error(`desktop package: the build host cannot run this packaging sequence:\n${
+diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
+index e0a707dc32..c3d5ec18f9 100644
+--- a/apps/desktop/scripts/electron-builder-config.mjs
++++ b/apps/desktop/scripts/electron-builder-config.mjs
+@@ -115,6 +115,11 @@ export function createElectronBuilderConfig(
+     electronFuses: { runAsNode: true },
+     beforeBuild: async () => {
+       if (resolvedPlatform !== 'win32') return true
++      // LOCAL BUILD DEVIATION (not upstream): the x86 DWM helper needs MSVC +
++      // a Windows SDK, neither present here. It is embedded only by the NSIS
++      // target, so a DIRECTORY build can proceed without it. Installer targets
++      // must NOT set this - they would ship without the helper.
++      if (process.env.DSH_LOCAL_SKIP_INSTALLER_UI === '1') return true
+       await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+         fileURLToPath(new URL('./prepare-windows-installer.ps1', import.meta.url)),
+         '-OutputDirectory', join(buildPaths.root, 'installer-ui')], {
 diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
 index 7406443b26..a0e438570e 100644
 --- a/packages/boot/app-boot/src/profile.ts
