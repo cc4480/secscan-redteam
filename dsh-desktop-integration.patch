@@ -1,0 +1,28 @@
+warning: in the working copy of 'apps/cli/package.json', CRLF will be replaced by LF the next time Git touches it
+diff --git a/apps/cli/package.json b/apps/cli/package.json
+index 5e309e3982..9c501ca571 100644
+--- a/apps/cli/package.json
++++ b/apps/cli/package.json
+@@ -99,7 +99,8 @@
+     "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+     "@deepseek-ai/dsh-atomic-write": "workspace:*",
+     "@deepseek-ai/dsh-agent-preset": "workspace:*",
+-    "@deepseek-ai/dsh-experimental-voice-input-bundle": "workspace:*"
++    "@deepseek-ai/dsh-experimental-voice-input-bundle": "workspace:*",
++    "@secscan/redteam-desktop-bundle": "workspace:*"
+   },
+   "devDependencies": {
+     "@agentclientprotocol/sdk": "1.4.0",
+diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
+index 7406443b26..a0e438570e 100644
+--- a/packages/boot/app-boot/src/profile.ts
++++ b/packages/boot/app-boot/src/profile.ts
+@@ -160,7 +160,7 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
+     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
+   },
+   web: {
+-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
++    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@secscan/redteam-desktop-bundle'],
+   },
+   headless: {
+     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
