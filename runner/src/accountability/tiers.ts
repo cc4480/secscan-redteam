@@ -22,6 +22,7 @@
 
 // The nmap tier depends on the SELECTED PROFILE, not just the tool name.
 import { findProfile } from "../nmap/policy.js";
+import { XTOOLS_BY_ID } from "../xtool/registry.js";
 
 export type AutonomyTier = 0 | 1 | 2;
 
@@ -148,6 +149,15 @@ export function toolMinTier(toolName: string, args: Record<string, unknown> = {}
     if (args["action"] !== "scan") return 0;
     const id = typeof args["profile"] === "string" ? args["profile"] : "quick";
     return (findProfile(id)?.minTier ?? 0) as AutonomyTier;
+  }
+  // v0.32.0 external-tool bridge: probe runs nothing -> Tier 0; a run takes the
+  // SELECTED PROFILE's tier, same reasoning as nmap_exec — all profiles of one
+  // tool share a name, so the tool name alone cannot classify the risk.
+  if (toolName.endsWith("_exec") && XTOOLS_BY_ID.has(toolName.slice(0, -5) as never)) {
+    if (args["action"] !== "run") return 0;
+    const spec = XTOOLS_BY_ID.get(toolName.slice(0, -5) as never)!;
+    const id = typeof args["profile"] === "string" ? args["profile"] : spec.profiles[0]!.id;
+    return (spec.profiles.find((p) => p.id === id)?.minTier ?? 0) as AutonomyTier;
   }
   if (TIER0_TOOLS.has(toolName)) return 0;
   if (TIER1_TOOLS.has(toolName)) return 1;

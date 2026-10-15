@@ -20,13 +20,15 @@ import { handleHostTools } from "./host.js";
 import { handleMsfTools } from "./msf.js";
 import { handleNucleiTools } from "./nuclei.js";
 import { handleNmapTools } from "./nmap.js";
+import { handleXTool } from "./xtool.js";
+import { XTOOLS } from "../xtool/registry.js";
 import { handleMcpTools } from "./mcp.js";
 import { handleBookkeepingTools } from "./bookkeeping.js";
 async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest): Promise<DispatchResult> {
   const args = call.arguments ?? {};
   ctx.actions++;
 
-  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleNucleiTools, handleNmapTools, handleMcpTools, handleBookkeepingTools];
+  const handlers = [handleWebTools, handleHostTools, handleMsfTools, handleNucleiTools, handleNmapTools, handleXTool, handleMcpTools, handleBookkeepingTools];
   for (const h of handlers) {
     const r = await h(ctx, role, phase, call, args);
     if (r) return r;
@@ -40,6 +42,13 @@ async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPha
 // ---------------------------------------------------------------------------
 
 /** Tools whose calls generate traffic against a target host. */
+/**
+ * Tool names owned by the external-tool bridge. Kept as an explicit set because
+ * an `_exec` suffix is NOT a safe discriminator — it also matches the host-exec
+ * family (ssh_exec, smb_exec, winrm_exec, …), which has no `action` argument.
+ */
+const XTOOL_TOOL_NAMES = new Set(XTOOLS.map((t) => `${t.id}_exec`));
+
 const RATE_LIMITED_TOOLS = new Set([
   "http_probe",
   "burst_probe",
@@ -58,6 +67,10 @@ const RATE_LIMITED_TOOLS = new Set([
   "msf_exec",
   "nuclei_exec",
   "nmap_exec",
+  "sqlmap_exec",
+  "ffuf_exec",
+  "gobuster_exec",
+  "nikto_exec",
 ]);
 
 /** Best-effort target host for a tool call — undefined when the tool has no target traffic. */
@@ -70,6 +83,17 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
   // v0.31.0: nmap_exec profiles runs `nmap --version` locally — no target
   // traffic, so no limiter and no auto-halt applies.
   if (call.name === "nmap_exec" && args["action"] !== "scan") return undefined;
+  // v0.32.0: an xtool probe runs nothing; john_exec is offline entirely.
+  //
+  // The xtool names are listed EXPLICITLY rather than matched with an `_exec`
+  // suffix test. A suffix test also matches ssh_exec, smb_exec, winrm_exec and
+  // the rest of the host-exec family — none of which take an `action`
+  // argument — so it returned undefined for every one of them and silently
+  // removed them from the rate limiter and the auto-halt tracker. The chaining
+  // test caught it: a second ssh_exec against the same target fired instead of
+  // being refused.
+  if (XTOOL_TOOL_NAMES.has(call.name) && args["action"] !== "run") return undefined;
+  if (call.name === "john_exec") return undefined;
   const direct = typeof args["host"] === "string" ? (args["host"] as string).trim().toLowerCase() : "";
   if (direct) return direct;
   const url = typeof args["url"] === "string" ? (args["url"] as string) : "";
