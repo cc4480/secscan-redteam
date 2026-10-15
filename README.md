@@ -1,4 +1,4 @@
-# SecScan RedTeam — v0.27.0
+# SecScan RedTeam
 
 > Working name: **secscan-redteam** (renameable — see "Naming" below).
 
@@ -16,6 +16,22 @@ completed a live full engagement. Anything this README calls "real" means
 *built, tested against mocks/fakes/loopback, and wired into the safety
 core* — not *proven on a live target*. Proof exists only after a real
 authorized system returns direct observation or a canary marker echo.
+
+## Versions
+
+There is no single repo-wide version. Each workspace package versions
+independently, and its `package.json` is canonical:
+
+| Package | Version |
+|---|---|
+| `@secscan/redteam-runner` | 0.22.0 |
+| `@secscan/redteam-llm-router` | 0.2.0 |
+| `@secscan/redteam-harness-plugin` | 0.2.0 |
+| `@secscan/redteam-auth-gate` | 0.1.0 |
+
+The root package (`secscan-redteam`) is only the workspace shell, at 0.1.0.
+Earlier revisions of this file carried a `v0.27.0` label in the title; that was
+a documentation/release marker, never a package version, and is not maintained.
 
 ## The battery — 418 attack intents
 
