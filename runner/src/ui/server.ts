@@ -20,6 +20,7 @@ import { handleFindings, handleProof } from "./routes/findings.js";
 import { handleCoverage, handleCompliance } from "./routes/coverage.js";
 import { handleAbort, handleEscalate, handleReverify, handleJob, handleWatchProfiles, handleWatchTrigger } from "./routes/actions.js";
 import { json, notFound, readJsonBody } from "./routes/http.js";
+import { handleMcp } from "./mcp-endpoint.js";
 import type { UiServerOptions } from "./types.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,13 @@ async function route(store: UiStore, token: string, req: IncomingMessage, res: S
       json(res, 401, { error: "bad token" });
     }
     return;
+  }
+
+  // MCP face (JSON-RPC over POST). Handled before the generic auth gate below,
+  // because that gate answers a non-/api path with the HTML login page — an MCP
+  // client needs a 401 it can parse. handleMcp does its own token check.
+  if (path === "/mcp") {
+    return handleMcp(store, token, req, res);
   }
 
   // Everything else needs auth.
