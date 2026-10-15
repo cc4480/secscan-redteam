@@ -17,8 +17,82 @@ Last updated 2026-10-15. Everything below was measured on this machine, not infe
 | Injection into the profile template | ✅ done — one line in `PROFILE_TEMPLATES.web` |
 | Monorepo build | ✅ **passes** — `recorded 263 client artifact(s)`, exit 0 |
 | Profile composition | ✅ **verified** — composed tree contains `mcp-secscan` + `secscan-redteam` |
-| Desktop packaging | ❌ blocked, two independent causes (below) |
-| Windows installer | ❌ not produced |
+| Desktop packaging (`--dir`) | ✅ **app produced** — `win-unpacked/`, 1,001.7 MB |
+| Integration baked into the built app | ✅ **verified from the artifact** |
+| NSIS installer `.exe` | ❌ blocked on MSVC (window-frame.dll) |
+
+### The app is built, and the red team is in it
+
+`pnpm --dir apps/desktop run package:win:x64:dir:unsigned` now produces:
+
+```
+unsigned-artifacts/win-unpacked/
+  DeepSeek Harness.exe          233.1 MB
+  resources/app.asar            103.2 MB
+  resources/app.asar.unpacked/
+  resources/runtime/
+  (1,001.7 MB total)
+```
+
+Verified **from the built artifact**, not from source:
+
+- `targets/win-x64/dsh/node_modules/@secscan/` contains all four packages
+  (`redteam-auth-gate`, `redteam-llm-router`, `redteam-harness-plugin`,
+  `redteam-desktop-bundle`).
+- `resources/app.asar` contains the strings `redteam-desktop-bundle` and
+  `redteam-harness-plugin`.
+- The **built** `@deepseek-ai/dsh-app-boot/lib/index.js` still names the bundle at line 526 —
+  the profile template survived packaging.
+- Running the **shipped** composer end to end on an isolated `DSH_HOME`:
+
+  ```
+  node <targets>/win-x64/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js \
+       --profile verify --from-default-profile web --dump-config
+  -> exit 0, 46,326 bytes, containing:
+       mcp-secscan            PRESENT
+       secscan-redteam        PRESENT
+       secscan.us/api/mcp     PRESENT
+       redteam-harness-plugin PRESENT
+  ```
+
+  A profile created by the installed app therefore mounts the SecScan MCP client and the
+  authorization gate with no manual setup — which is the objective.
+
+### Known gap: product branding
+
+`productName` in `electron-builder-config.mjs` is still `DeepSeek Harness`, so the built app
+is named that and the exe is `DeepSeek Harness.exe`. `DSH_DESKTOP_APP_ID` was set to
+`com.secscan.redteam` in `.env.windows`, but the display name was not changed. A real
+secscan-redteam product needs `productName` (and the icon) changed too.
+
+### Third local deviation: the packaged-runtime smoke test
+
+Two failures seen in the packaging sequence are the **same known Office → PDF defect the
+dsh-desktop release notes already document** for this build:
+
+```
+LibreOffice helper returned an invalid response (exit 3221225781)
+```
+
+`3221225781` is `0xC0000135`, `STATUS_DLL_NOT_FOUND` — the LibreOffice helper cannot load a
+dependent DLL. It aborts `prepare:dsh` and then the post-build smoke.
+
+- `DSH_LOCAL_DEFER_RUNTIME_SMOKE=1` passes `--defer-runtime-smoke` to `prepare:dsh`, an
+  option upstream already uses for signed builds (`package-target.ts:488`).
+
+The post-build `smoke-packaged-runtime.ts` still fails on the same defect. That is why the
+run exits non-zero **after** `win-unpacked` has been written. Upstream's own note applies
+here: *"the packaging run reports failure when the packaged-runtime smoke test fails, but
+the installer is still produced"* — but electron-builder never reaches the NSIS step,
+because this failure is raised as a hard error before it.
+
+### The remaining fix for blocker 2
+
+`package-target.ts` now packs the four vendored packages into `buildPaths.packedDsh`
+immediately after the `release:pack --family dsh` step, because that step `rmSync`s its
+destination and the family deliberately excludes private / non-`@deepseek-ai` manifests.
+This is the change that unblocked `prepare:packages`.
+
 
 ---
 
