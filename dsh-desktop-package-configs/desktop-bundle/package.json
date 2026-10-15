@@ -1,0 +1,29 @@
+{
+  "name": "@secscan/redteam-desktop-bundle",
+  "version": "0.1.0",
+  "description": "DSH profile bundle: mounts the SecScan red team into a profile as ONE layer - the SecScan MCP client and the red-team plugin (auth gate + engagement-protocol prompt section).",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@secscan/redteam-harness-plugin": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-mcp-client": "*"
+  },
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  }
+}

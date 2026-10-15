@@ -1,0 +1,41 @@
+{
+  "dependencies": {
+    "@secscan/redteam-auth-gate": "workspace:*",
+    "@secscan/redteam-llm-router": "workspace:*"
+  },
+  "description": "DeepSeek Harness plugin for the SecScan red team: auth gate (tools/pre-execute hook) + red-team system-prompt section. The SecScan MCP connection itself is the harness-native @deepseek-ai/dsh-mcp-client (see cordis.patch.yml).",
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*"
+  },
+  "license": "UNLICENSED",
+  "main": "lib/index.js",
+  "name": "@secscan/redteam-harness-plugin",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2"
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../scripts/dist-hash.mjs write .",
+    "pack:selfcontained": "node ../scripts/pack-plugin.mjs",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
+  },
+  "type": "module",
+  "version": "0.2.0",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

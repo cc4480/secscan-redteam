@@ -1,0 +1,22 @@
+{
+  "description": "Authorization enforcement for the red-team: DNS TXT ownership proof before any active testing. Fails closed.",
+  "license": "UNLICENSED",
+  "main": "lib/index.js",
+  "name": "@secscan/redteam-auth-gate",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../scripts/dist-hash.mjs write .",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/verify.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  }
+}

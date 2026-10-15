@@ -1,4 +1,3 @@
-warning: in the working copy of 'apps/cli/package.json', CRLF will be replaced by LF the next time Git touches it
 diff --git a/apps/cli/package.json b/apps/cli/package.json
 index 5e309e3982..9c501ca571 100644
 --- a/apps/cli/package.json
@@ -26,3 +25,35 @@ index 7406443b26..a0e438570e 100644
    },
    headless: {
      bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+index 8b15b0bb7c..49f82fdb93 100644
+--- a/tsconfig.base.json
++++ b/tsconfig.base.json
+@@ -539,7 +539,11 @@
+       "@deepseek-ai/dsh-workflow-ptc": ["./packages/workflow/workflow-ptc/src"],
+       "@deepseek-ai/dsh-workspace": ["./packages/workspace/workspace/src"],
+       "@deepseek-ai/dsh-workspace/invariant": ["./packages/workspace/workspace/src/invariant.ts"],
+-      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"]
++      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"],
++      "@secscan/redteam-auth-gate": ["./packages/redteam/auth-gate/src"],
++      "@secscan/redteam-llm-router": ["./packages/redteam/llm-router/src"],
++      "@secscan/redteam-harness-plugin": ["./packages/redteam/harness-plugin/src"],
++      "@secscan/redteam-desktop-bundle": ["./packages/redteam/desktop-bundle/src"]
+       // END generated package aliases
+     }
+   }
+diff --git a/tsconfig.host.json b/tsconfig.host.json
+index 2d31d0df31..6c65ddb662 100644
+--- a/tsconfig.host.json
++++ b/tsconfig.host.json
+@@ -450,6 +450,10 @@
+     { "path": "./packages/lsp/lsp" },
+     { "path": "./packages/lsp/lsp-stdio" },
+     { "path": "./packages/lsp/tool-lsp" },
++    { "path": "./packages/redteam/auth-gate" },
++    { "path": "./packages/redteam/llm-router" },
++    { "path": "./packages/redteam/harness-plugin" },
++    { "path": "./packages/redteam/desktop-bundle" },
+     { "path": "./apps/cli" },
+     { "path": "./apps/desktop-host" },
+     { "path": "./apps/desktop/tsconfig.host.json" }
