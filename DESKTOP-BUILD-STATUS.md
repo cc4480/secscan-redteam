@@ -366,3 +366,70 @@ re-hits a corrupt entry every time rather than failing once.
 Everything that can be produced without an MSVC toolchain has been. The app builds, runs,
 and carries the red team. The installer needs Visual Studio Build Tools 2022 with
 *Desktop development with C++*, installed as Administrator.
+
+---
+
+## Round 5: Smart App Control, and why the reference installer cannot be reused
+
+### The published dsh-desktop installer is blocked on this machine
+
+Tried to avoid the MSVC requirement by reusing the five files the NSIS script needs
+(`window-frame.dll`, `brand.bmp`, `brand-2x.bmp`, `brand-dark.bmp`, `brand-dark-2x.bmp`)
+from the already-published release, since those are embedded in it:
+
+```
+https://github.com/cc4480/dsh-desktop/releases/download/v0.1.7-rc.1-unofficial/
+  deepseek-harness-0.1.7-rc.1-win-x64-unsigned.exe      299.1 MB
+  sha256 8a5bb7920d9434e9bf5a28460aa397399b746a0f863f4dc5c91bb9f9a696fc72
+```
+
+The download is authentic — that hash matches the dsh-desktop README exactly. But the file
+**cannot be run**:
+
+```
+An Application Control policy has blocked this file.
+```
+
+It is not a Mark-of-the-Web issue: the file had no `Zone.Identifier` stream, and
+`Unblock-File` did not change the outcome. `%TEMP%` had no NSIS `ns*.tmp` directory either
+before or after, so nothing was extracted and there was no `$PLUGINSDIR` to capture.
+
+`7zr.exe` cannot help: the listing is `Type = 7z` (it finds the embedded 7z payload at
+offset 829,811), and the `$PLUGINSDIR` entries live in the NSIS header, not that payload —
+zero hits for `window-frame`, `brand.bmp`, `dsh-7za` or `PLUGINSDIR` across 11,101 entries.
+`7zr` is the 7z-only build; NSIS support needs the full 7-Zip.
+
+### The wider finding: Smart App Control is enforced here, and it matters for shipping
+
+```
+HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy
+  VerifiedAndReputablePolicyState = 1        (0 = off, 1 = enforce, 2 = evaluation)
+C:\Windows\System32\CodeIntegrity\CiPolicies\Active   -> multiple .cip policies present
+```
+
+This is not just a local inconvenience. The dsh-desktop README already warns that "enterprise
+code-integrity policies can block the executable outright" — and that is now demonstrated on
+a real machine: an **unsigned installer downloaded from the internet is blocked**, while a
+locally built binary is not.
+
+**Consequence for the product:** an unsigned secscan-redteam installer will be blocked for
+some proportion of Windows 11 customers, and can never be offered through channels that
+expect a publisher identity. Distribution needs an Authenticode code-signing certificate.
+That is a commercial decision, not a build one — the build already accepts signing
+credentials through `DSH_DESKTOP_WINDOWS_*`.
+
+### The built app is fine
+
+`win-unpacked\DeepSeek Harness.exe` (233.1 MB, `NotSigned`) launches and exits with **code 0**.
+That is Electron's single-instance handoff, not a failure: this build predates the rename, so
+its `productName` was still `DeepSeek Harness` and it shares that userData path with the DSH
+instance already running. It hands off and exits immediately by design.
+
+Note the naming consequence: the exe is still `DeepSeek Harness.exe` because the last
+successful `--dir` build happened **before** `productName` was changed to `SecScan RedTeam`.
+A rebuild is needed for the new name to appear.
+
+### Also still true
+
+`SecScan RedTeam.exe` does not exist yet — the installer-target runs after the rename all
+failed (checksum, then MSVC), so `win-unpacked` still holds the pre-rename build.
