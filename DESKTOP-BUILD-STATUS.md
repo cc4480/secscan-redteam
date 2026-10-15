@@ -115,6 +115,28 @@ Options, in order of soundness:
 
 Option 1 is the smallest change that is also honest about intent.
 
+### Why dropping tarballs into `packed/dsh` does not work
+
+Tried it: packed the four redteam packages into
+`apps/desktop/.desktop-build/targets/win-x64/packed/dsh/` (314 tarballs, up from 310,
+`workspace:*` correctly rewritten to `0.2.0` by `pnpm pack`). The next run failed at the
+**same** line, because `scripts/release/pack.ts` starts with:
+
+```ts
+rmSync(destination, { recursive: true, force: true })
+mkdirSync(destination, { recursive: true })
+```
+
+The `release:pack` step therefore wipes `packed/dsh` and repacks only its family members,
+discarding anything placed there beforehand. The redteam packages must be packed **after**
+that step and **before** `prepare:packages`, or made members of the family that packs it.
+
+Concretely, the fix belongs in `package-target.ts`, between the `release:pack` step and the
+`prepare:packages` step: run `pnpm --dir packages/redteam/<pkg> pack --pack-destination
+buildPaths.packedDsh` for each of the four packages, so they are present when
+`selectDesktopPackageClosure` builds its map.
+
+
 ---
 
 ## What is proven to work
