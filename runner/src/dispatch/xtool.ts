@@ -14,12 +14,13 @@
  */
 import { BATTERY_CATEGORIES, type BatteryCategory } from "../battery.js";
 import { type TargetId, isTargetId } from "../targets.js";
-import { techniqueAllowed } from "../gate.js";
+import { techniqueAllowed, urlInScope } from "../gate.js";
 import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { findXTool, checkXToolFlags, runXTool, binPresent, type XToolSpec } from "../xtool/index.js";
+import { validateHostTarget } from "../host-exec/common.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const v = args[key];
@@ -95,6 +96,20 @@ export async function handleXTool(
         attackId,
         target: host,
       };
+    }
+    // Scope gate — fail closed BEFORE any packet, for the four network tools.
+    // The target may be a full URL (sqlmap/ffuf/gobuster/nikto) or a bare host;
+    // accept it only when its hostname is an exact in-scope host. john is offline
+    // (host is a hash-file path) and correctly skips this.
+    if (action === "run") {
+      const inScope = urlInScope(host, ctx.hosts) || validateHostTarget(host, ctx.hosts).ok;
+      if (!inScope) {
+        return {
+          result: `DENIED by scope: ${host} is not an in-scope host (scope: ${ctx.hosts.join(", ") || "(empty)"}).`,
+          attackId,
+          target: host,
+        };
+      }
     }
   }
 

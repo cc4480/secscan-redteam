@@ -133,12 +133,25 @@ footer.doc{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);col
 }
 `;
 
-/** Colour the severity words the report already writes, without emitting markup itself. */
-function decorateSeverity(html: string): string {
-  return html.replace(
-    /\b(critical|high|medium|low|info)\b(?=\s*[\)\]:,.]|\s*[-—]|\s+severity)/gi,
-    (m) => `<span class="sev sev-${m.toLowerCase()}">${m}</span>`,
-  );
+/**
+ * Colour the severity tags the report already writes, without emitting markup in
+ * a way that can land inside an attribute or a code block.
+ *
+ * The match runs on the MARKDOWN source, against the one unambiguous form the
+ * report uses — a bracketed `[critical]`/`[high]`/`[medium]`/`[low]`/`[info]`
+ * tag — and produces a NUL sentinel that survives the renderer's HTML escaping
+ * untouched. The `<span>` is substituted only AFTER rendering, so it can never
+ * appear inside an href or a `<code>` the renderer built. Colouring over
+ * finished HTML (a regex over the whole document) is what corrupted links and
+ * code by matching the word "high" inside `…/high-risk` URLs.
+ */
+function decorateSeverity(markdown: string): { body: string; tokens: string[] } {
+  const tokens: string[] = [];
+  const body = markdown.replace(/\[(critical|high|medium|low|info)\]/gi, (m, word: string) => {
+    tokens.push(word);
+    return `\u0000SEV${tokens.length - 1}\u0000`;
+  });
+  return { body, tokens };
 }
 
 export interface RenderHtmlOptions {
@@ -192,7 +205,11 @@ export function buildEngagementMeta(
 
 export function renderReportHtml(o: RenderHtmlOptions): string {
   const m = o.meta;
-  const body = decorateSeverity(renderMarkdown(o.markdown));
+  const decorated = decorateSeverity(o.markdown);
+  const body = renderMarkdown(decorated.body).replace(/\u0000SEV(\d+)\u0000/g, (_m, i: string) => {
+    const word = decorated.tokens[Number(i)];
+    return word ? `<span class="sev sev-${word.toLowerCase()}">${word}</span>` : "";
+  });
 
   const cells: string[] = [];
   if (o.showStrip !== false) {

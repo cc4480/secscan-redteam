@@ -25,6 +25,7 @@ import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { findProfile, NMAP_PROFILES } from "../nmap/index.js";
+import { validateHostTarget } from "../host-exec/common.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const v = args[key];
@@ -82,6 +83,17 @@ export async function handleNmapTools(
       attackId,
       target: host,
     };
+  }
+  // Scope gate — fail closed BEFORE any packet. The executor deliberately does
+  // NOT re-check (its contract says the dispatch layer owns the ROE host check),
+  // so this is the one and only place it happens. Every other host-touching
+  // tool (prober, scan_url, host-exec, nuclei, msf) validates here; nmap must
+  // not be the exception, or an agent can point a port sweep at any host/CIDR.
+  if (action === "scan") {
+    const scope = validateHostTarget(host, ctx.hosts);
+    if (!scope.ok) {
+      return { result: `DENIED by scope: ${scope.reason}`, attackId, target: host };
+    }
   }
 
   ctx.probesUsed++;

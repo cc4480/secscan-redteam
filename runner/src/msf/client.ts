@@ -138,6 +138,11 @@ export class MsfClient {
     if (!cid) throw new Error("[msf] console.create returned no console id");
     let output = "";
     let aborted = false;
+    // Every value written to the console becomes part of a newline-delimited
+    // command stream, so a single CR/LF in an agent-supplied module name or
+    // option value would inject an extra console command. Strip them so the
+    // stream stays one-command-per-line no matter what the caller passed.
+    const clean = (s: string): string => s.replace(/[\r\n]+/g, " ").trim();
     const write = async (data: string) => {
       await this.call("console.write", [cid, data]);
     };
@@ -155,12 +160,12 @@ export class MsfClient {
       };
       args.signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        await write(`use ${args.moduleType}/${args.fullname}\n`);
+        await write(`use ${args.moduleType}/${clean(args.fullname)}\n`);
         for (const [k, v] of Object.entries(args.options)) {
-          await write(`set ${k} ${v}\n`);
+          await write(`set ${clean(k)} ${clean(v)}\n`);
         }
-        if (args.payload) await write(`set PAYLOAD ${args.payload}\n`);
-        if (args.cmd) await write(`set CMD ${args.cmd}\n`);
+        if (args.payload) await write(`set PAYLOAD ${clean(args.payload)}\n`);
+        if (args.cmd) await write(`set CMD ${clean(args.cmd)}\n`);
         await write(`run\n`);
         const deadline = Date.now() + args.timeoutMs;
         // Race each poll against the abort signal: a hanging console.read

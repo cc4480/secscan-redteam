@@ -239,7 +239,10 @@ export class MsfExecutor {
       const timeoutMs = args.timeoutMs ?? MSF_TIMEOUT_MS;
       const options: Record<string, string> = { ...(args.options ?? {}) };
       // RHOSTS always comes from the scope-checked host — never agent-supplied.
-      if (args.moduleType === "exploit" && !options["RHOSTS"]) options["RHOSTS"] = args.host;
+      // Forcing it (rather than only filling it when absent) closes the path
+      // where an agent supplies its own RHOSTS and points the module at a host
+      // that never passed preflight's validateHostTarget.
+      if (args.moduleType === "exploit") options["RHOSTS"] = args.host;
       const res = await client.runModuleConsole({
         moduleType: args.moduleType,
         fullname: args.module,
