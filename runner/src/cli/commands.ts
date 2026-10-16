@@ -178,11 +178,23 @@ export async function main(): Promise<void> {
       console.error(`[runner] bad --max-variants ${JSON.stringify(varRaw)}; want a positive number (variants per battery item)`);
       process.exit(2);
     }
+    // Agent-action cap. The default of 60 suits a narrow engagement; a full
+    // battery is 418 items across four target families and a coordinator that
+    // reconciles them one verdict at a time exhausts 60 before it reaches a
+    // single probe, halting with the battery half-answered and no way to resume.
+    const actIdx = process.argv.indexOf("--max-actions");
+    const actRaw = actIdx >= 0 ? process.argv[actIdx + 1] : undefined;
+    const maxActions = actRaw === undefined ? undefined : Number(actRaw);
+    if (maxActions !== undefined && (!Number.isInteger(maxActions) || maxActions <= 0)) {
+      console.error(`[runner] bad --max-actions ${JSON.stringify(actRaw)}; want a positive integer (agent actions for the whole engagement)`);
+      process.exit(2);
+    }
     const result = await runEngagement(input, {
       localSandbox: flag("--local-sandbox"),
       dryRunAgents: flag("--dry-run"),
       maxRpsPerHost: maxRps,
       maxVariantsPerItem: maxVariants,
+      maxActions,
       ...parseLogRotationArgs(),
     });
     console.log(JSON.stringify({ status: result.status, engagementId: result.engagementId, blockedReason: result.blockedReason, findings: result.findings.length }, null, 2));

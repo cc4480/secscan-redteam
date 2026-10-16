@@ -71,6 +71,7 @@ export async function handleLaunch(store: UiStore, req: IncomingMessage, res: Se
     badRequest(res, (err as Error).message);
     return;
   }
+  const launch = body as UiLaunchRequest;
   const dryRun = (body as UiLaunchRequest).dryRun === true;
   const localSandbox = (body as UiLaunchRequest).localSandbox === true;
   const id = generateEngagementId();
@@ -84,6 +85,13 @@ export async function handleLaunch(store: UiStore, req: IncomingMessage, res: Se
       engagementId: id,
       dryRunAgents: dryRun,
       localSandbox,
+      // The action cap is a RunnerOption, not an EngagementInput field, so it
+      // crosses over here rather than riding along in `input`. Passing it in
+      // the input object typechecks nowhere - which is how this was caught -
+      // but the same mistake with `any` would have accepted the value and
+      // silently ignored it, leaving the operator to wonder why their cap had
+      // no effect.
+      ...(launch.maxActions === undefined ? {} : { maxActions: launch.maxActions }),
       onCtxReady: (handle) => store.setAbort(id, handle.abort),
     });
     void p.then(

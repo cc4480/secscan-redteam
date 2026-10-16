@@ -14,6 +14,8 @@ export interface UiLaunchRequest {
   client?: string;
   operatorName?: string;
   fullBattery?: boolean;
+  /** Cap on agent actions; default 60. Raise for full-battery work. */
+  maxActions?: number;
   targets?: string[];
   environment?: "staging" | "production";
   confirmProduction?: boolean;

@@ -119,6 +119,15 @@ export const TOOLS: ToolDef[] = [
         confirmProduction: { type: "boolean", description: "Required to run against production" },
         confirmTier2Production: { type: "boolean", description: "Required for Tier 2 on production" },
         fullBattery: { type: "boolean", description: "Run the full battery (default true)" },
+        maxActions: {
+          type: "integer",
+          description:
+            "Cap on agent actions for the whole engagement (default 60). A full battery is 418 items across four "
+            + "target families, and a coordinator that reconciles them one verdict at a time spends far more than the "
+            + "default before it reaches a single probe — the run then halts on the cap with the battery half-answered "
+            + "and no way to continue it. Raise this for full-battery work; the cap exists to stop a runaway loop, not "
+            + "to bound honest coverage.",
+        },
         excludedTechniques: { type: "array", items: { type: "string" } },
         dryRun: { type: "boolean", description: "Plan only; touch nothing" },
         localSandbox: { type: "boolean" },
