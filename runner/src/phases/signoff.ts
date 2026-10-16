@@ -7,8 +7,22 @@ import { type SignOffTransition, focusedExploit } from "./exploit-one.js";
 import { planPhase } from "./plan.js";
 import { agentLoop, commanderRedirect, promptCtx } from "../agents.js";
 import { coordinatorPrompt } from "../prompts.js";
+import { ledgerSummary } from "../coverage/items.js";
+import { batteryGate } from "./batterygate.js";
 
-export async function coordinatorSignOff(ctx: Ctx, transition: SignOffTransition, payload: string): Promise<void> {
+/**
+ * How many extra exploit rounds the battery gate may force before it stops.
+ * Bounded so a genuinely unreachable item cannot spin the engagement forever;
+ * the report records the battery as NOT COMPLETE when the bound is hit.
+ */
+const MAX_INCOMPLETE_ROUNDS = 3;
+
+export async function coordinatorSignOff(
+  ctx: Ctx,
+  transition: SignOffTransition,
+  payload: string,
+  incompleteRounds = 0,
+): Promise<void> {
   if (ctx.config.dryRunAgents) {
     ctx.events.append({ phase: "plan", actor: "coordinator", action: "signoff", result: `${transition} auto-approved (dry-run).` });
     return;
@@ -43,10 +57,52 @@ export async function coordinatorSignOff(ctx: Ctx, transition: SignOffTransition
     } else {
       await planPhase(ctx, reason);
     }
-    return coordinatorSignOff(ctx, transition, payload);
+    return coordinatorSignOff(ctx, transition, payload, incompleteRounds);
   }
   if (!/^\s*SIGN-OFF\s*:/im.test(text)) {
     throw new HaltError(`coordinator did not issue a clear sign-off for ${transition} — engagement halted (fail closed)`);
+  }
+
+  // The battery gate: a coordinator's approval is not sufficient while in-scope
+  // work is still pending and there is budget left to do it. The decision itself
+  // lives in batterygate.ts so it is tested directly rather than through a
+  // mocked agent loop — see that file for why prompt wording was not enough.
+  if (transition === "exploit→report" && ctx.input.fullBattery) {
+    const decision = batteryGate({
+      transition,
+      fullBattery: ctx.input.fullBattery,
+      pending: ledgerSummary(ctx.itemLedger).pending,
+      actions: ctx.actions,
+      maxActions: ctx.config.maxActions,
+      rounds: incompleteRounds,
+      maxRounds: MAX_INCOMPLETE_ROUNDS,
+    });
+    if (decision.action === "refuse-incomplete") {
+      ctx.events.append({
+        phase: "plan",
+        actor: "runner",
+        action: "signoff_refused_incomplete",
+        result:
+          `Sign-off refused: ${decision.pending} in-scope battery item(s) still pending a verdict and the action budget ` +
+          `is not exhausted (${ctx.actions}/${ctx.config.maxActions}). Round ${incompleteRounds + 1} of ` +
+          `${MAX_INCOMPLETE_ROUNDS}: sending the exploiter back to work them.`,
+      });
+      await focusedExploit(
+        ctx,
+        `Battery incomplete — ${decision.pending} in-scope items carry no verdict. Probe them, or record why not.`,
+      );
+      return coordinatorSignOff(ctx, transition, payload, incompleteRounds + 1);
+    }
+    if (decision.action === "approve-incomplete") {
+      ctx.events.append({
+        phase: "plan",
+        actor: "runner",
+        action: "signoff_allowed_incomplete",
+        result:
+          `${decision.pending} in-scope item(s) still pending, but ${decision.why}. ` +
+          `Sign-off allowed; the report records the battery as NOT COMPLETE.`,
+      });
+    }
   }
   ctx.events.append({ phase: "plan", actor: "coordinator", action: "signoff", result: `${transition} approved.` });
 }
