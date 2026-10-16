@@ -27,7 +27,7 @@ import { readEvents, readState, type LiveState } from "./events.js";
 import { runEngagement, type RunOptions } from "./phases.js";
 import { isTargetId, type TargetId } from "./targets.js";
 import { parseTier } from "./accountability/index.js";
-import type { EngagementEvent, EngagementInput, EngagementResult } from "./types.js";
+import type { EngagementInput } from "./types.js";
 
 export { runEngagement, resolveConfig } from "./phases.js";
 export type { RunOptions } from "./phases.js";
@@ -216,7 +216,11 @@ export function validateQueueInput(raw: unknown): EngagementInput {
     }
     environment = b.environment;
   }
-  return b as unknown as EngagementInput;
+  // Return the VALIDATED, normalised values rather than the raw object. `tier`
+  // is parsed from whatever form arrived in the job JSON (a string "1" is valid
+  // input), so discarding the parsed value here would let a string tier reach
+  // runEngagement and be compared as a string.
+  return { ...b, targets, tier, environment } as unknown as EngagementInput;
 }
 
 /**

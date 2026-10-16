@@ -4,7 +4,6 @@
 import { type Ctx } from "../context.js";
 import { RECON_TOOLS } from "../tools.js";
 import { agentLoop, promptCtx } from "../agents.js";
-import { join } from "node:path";
 import { reconPrompt } from "../prompts.js";
 
 export async function reconPhase(ctx: Ctx): Promise<string> {

@@ -63,7 +63,7 @@ function toEngagementInput(b: UiLaunchRequest): EngagementInput {
 }
 
 /** POST /api/engagements — launch. Returns 202 { id }. */
-export async function handleLaunch(store: UiStore, req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+export async function handleLaunch(store: UiStore, _req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   let input: EngagementInput;
   try {
     input = toEngagementInput(body as UiLaunchRequest);

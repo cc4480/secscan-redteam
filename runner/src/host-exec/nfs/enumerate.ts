@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { HOST_EXEC_TIMEOUT_MS } from "../common.js";
-import { XdrReader, xdrU32, xdrString } from "./xdr.js";
+import { XdrReader, xdrU32 } from "./xdr.js";
 import { rpcCall, rpcXid, parseRpcReply, RpcAcceptError, RPC_PROG_MISMATCH } from "./rpc.js";
 import { defaultNfsDial, type NfsConnection, type NfsDialFn } from "./connection.js";
 

@@ -3,15 +3,15 @@
  */
 import { BATTERY_CATEGORIES, type BatteryCategory } from "../battery.js";
 import { type TargetId, isTargetId } from "../targets.js";
-import { scopeHosts, techniqueAllowed } from "../gate.js";
+import { techniqueAllowed } from "../gate.js";
 import { sleep } from "../util.js";
 import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
-import { numArg, optStr } from "./prelude.js";
+import { optStr } from "./prelude.js";
 
-export async function handleMsfTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+export async function handleMsfTools(ctx: Ctx, _role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "msf_exec") return null;
 if (call.name === "msf_exec") {
   const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
@@ -105,7 +105,5 @@ if (call.name === "msf_exec") {
   }
 }
 
-// MCP tools.
-const readOnly = new Set(["get_scan_status", "get_report", "list_recent_scans", "get_account"]);
   return null;
 }

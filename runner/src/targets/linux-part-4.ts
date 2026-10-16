@@ -7,7 +7,6 @@
  */
 
 import type { TargetBatteryItem } from "./types.js";
-import { NEEDS_MSFRPCD, NEEDS_PRIVILEGED_CLIENT } from "./types.js";
 
 export const LINUX_PART_4: TargetBatteryItem[] = [
   // ============================================ PERSISTENCE FINDINGS (reported, never planted)

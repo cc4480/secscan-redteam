@@ -7,7 +7,6 @@
  */
 
 import type { TargetBatteryItem } from "./types.js";
-import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD } from "./types.js";
 
 export const WINDOWS_PART_1: TargetBatteryItem[] = [
   // ============================================ RECON — SMB / SHARES

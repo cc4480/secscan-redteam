@@ -81,7 +81,6 @@ describe("nmap_exec scope enforcement", () => {
 
 describe("network xtool scope enforcement", () => {
   it("refuses an out-of-scope sqlmap target before the executor runs", async () => {
-    let ran = false;
     const ctx = baseCtx({ xtool: {} }); // runXTool is imported from ../xtool and not easily injected; assert the denial happens first
     // sqlmap_exec requires the real runXTool only past the scope gate, so we
     // assert the denial is returned without needing a working sqlmap install.

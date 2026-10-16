@@ -6,16 +6,15 @@
  * model output, and commanderRedirect / blackout / halt plumbing keeps the
  * loop bounded and safe. HaltError is the loop's stop signal.
  */
-import { join, resolve, dirname } from "node:path";
 import { completeForRole as routerCompleteForRole, type AgentRole, type ChatMessage, type ChatResult, type JsonSchemaTool } from "@secscan/redteam-llm-router";
-import { GateVerdict, checkAuthorization, inBlackout, scopeHosts } from "./gate.js";
+import { inBlackout } from "./gate.js";
 import { isPrivateOrLoopbackHost } from "./prober.js";
 import { reconPrompt } from "./prompts.js";
 import { redactPii } from "./safety/index.js";
 import { type EngagementMode, type EngagementPhase, type RulesOfEngagement } from "./types.js";
 import { type TargetId } from "./targets.js";
 import { HaltError, type Ctx } from "./context.js";
-import { extractJsonBlock, sleep } from "./util.js";
+import { sleep } from "./util.js";
 import { dispatchTool } from "./dispatch.js";
 import { sharedStateDigest } from "./coverage/cells.js";
 import { RECON_TOOLS } from "./tools.js";

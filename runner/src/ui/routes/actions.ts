@@ -18,7 +18,7 @@
  * GET/POST /api/watch — list watch profiles in a dir; trigger one cycle.
  */
 
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { UiStore } from "../store.js";

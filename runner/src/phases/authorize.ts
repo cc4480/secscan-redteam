@@ -3,7 +3,6 @@
  */
 import { type Ctx } from "../context.js";
 import { type GateVerdict, checkAuthorization } from "../gate.js";
-import { join } from "node:path";
 
 export async function authorizePhase(ctx: Ctx): Promise<GateVerdict> {
   const verdict = await checkAuthorization(

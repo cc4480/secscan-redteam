@@ -63,7 +63,13 @@ export interface KrbTransport {
 }
 
 export interface KrbRunDeps {
-  run(cmd: string, args: string[], env: NodeJS.ProcessEnv, input?: string): Promise<{ stdout: string; stderr: string; code: number }>;
+  run(
+    cmd: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    input?: string,
+    timeoutMs?: number,
+  ): Promise<{ stdout: string; stderr: string; code: number }>;
   env: NodeJS.ProcessEnv;
 }
 
@@ -184,7 +190,7 @@ export function createKrbTransport(deps?: Partial<KrbRunDeps>): KrbTransport {
                 "and supply the ccache via REDTEAM_KRB_CCACHE_B64 instead.",
             };
           }
-          const conv = await run("ticketConverter.py", [kirbi, ccache], env, undefined);
+          const conv = await run("ticketConverter.py", [kirbi, ccache], env, undefined, timeoutMs);
           if (conv.code !== 0) {
             return { ok: false, ticketSource: "none", note: `kirbi->ccache conversion failed: ${redact(conv.stderr.slice(0, 300))}` };
           }
@@ -209,7 +215,7 @@ export function createKrbTransport(deps?: Partial<KrbRunDeps>): KrbTransport {
             return { ok: false, ticketSource: "none", note: 'MIT krb5 tool "kinit" not found on the runner host.' };
           }
           const principal = domain ? `${user}@${domain.toUpperCase()}` : user;
-          const kr = await run("kinit", ["-c", ccache, principal], { ...env, KRB5CCNAME: ccache }, `${password}\n`);
+          const kr = await run("kinit", ["-c", ccache, principal], { ...env, KRB5CCNAME: ccache }, `${password}\n`, timeoutMs);
           if (kr.code !== 0) {
             return { ok: false, ticketSource: "none", note: `kinit as the test account failed: ${redact(kr.stderr.slice(0, 300))}` };
           }
@@ -218,7 +224,7 @@ export function createKrbTransport(deps?: Partial<KrbRunDeps>): KrbTransport {
         }
 
         const childEnv = { ...env, KRB5CCNAME: ccache };
-        const kl = await run("klist", ["-c", ccache], childEnv);
+        const kl = await run("klist", ["-c", ccache], childEnv, undefined, timeoutMs);
         if (kl.code !== 0) {
           return { ok: false, ticketSource: source, note: `klist could not read the ticket cache: ${redact(kl.stderr.slice(0, 300))}` };
         }
@@ -232,7 +238,7 @@ export function createKrbTransport(deps?: Partial<KrbRunDeps>): KrbTransport {
           // NOTE: the SPN host is checked against the engagement's scope hosts
           // by the executor before this transport runs; this is defense in depth.
           void v;
-          const kv = await run("kvno", ["-c", ccache, args.spn], childEnv);
+          const kv = await run("kvno", ["-c", ccache, args.spn], childEnv, undefined, timeoutMs);
           kdcAccepted = kv.code === 0;
           kvnoNote = kdcAccepted
             ? `kvno obtained a service ticket for ${args.spn} — the KDC ACCEPTED the replayed ticket.`

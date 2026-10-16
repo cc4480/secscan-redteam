@@ -66,7 +66,6 @@ export interface ReverifyReport {
 const TARGET_CHANGED_RE =
   /unreachable|econnrefused|connection refused|enotfound|etimedout|timed out|no route to host|nxdomain|getaddrinfo|network is unreachable|dial tcp/i;
 
-const MARKER_RE = /REDTEAM-MARKER-[A-Za-z0-9_-]{1,64}/;
 
 function freshMarker(): string {
   return `REVERIFY-${Date.now().toString(36)}${Math.floor(Math.random() * 0xffffff).toString(16)}`;

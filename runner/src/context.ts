@@ -9,9 +9,9 @@
 import { completeForRole as routerCompleteForRole } from "@secscan/redteam-llm-router";
 import { EventLog } from "./events.js";
 import { McpClient } from "./mcp.js";
-import { ProberLike, WebProber } from "./prober.js";
+import { ProberLike } from "./prober.js";
 import { HostExecutor } from "./host-exec/index.js";
-import { TargetAutoHalt, TargetRateLimiter, productionConfirmed, type TestEnvironment } from "./safety/index.js";
+import { TargetAutoHalt, TargetRateLimiter, type TestEnvironment } from "./safety/index.js";
 import { ApprovalLog, type TierState } from "./accountability/index.js";
 import { type RegistryEntry, type TargetFingerprint, type VulnerabilityRegistry } from "./registry.js";
 import { type EngagementInput, type OperationPlan, type ResolvedRunnerConfig } from "./types.js";

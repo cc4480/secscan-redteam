@@ -3,8 +3,7 @@
  */
 import { BATTERY_CATEGORIES, type BatteryCategory } from "../battery.js";
 import { isTargetId } from "../targets.js";
-import { lookupTechnique } from "../attack.js";
-import { scopeHosts, techniqueAllowed } from "../gate.js";
+import { techniqueAllowed } from "../gate.js";
 import { sleep } from "../util.js";
 import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
@@ -23,7 +22,7 @@ const WAVE2_TOOLS = new Set([
   "nfs_enum",
 ]);
 
-export async function handleHostTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+export async function handleHostTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "ssh_exec" && call.name !== "smb_exec" && call.name !== "winrm_exec" && !WAVE2_TOOLS.has(call.name)) return null;
 if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm_exec") {
   const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;

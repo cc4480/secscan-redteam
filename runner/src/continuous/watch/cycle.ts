@@ -30,12 +30,9 @@ import {
   resolveMissingDrift,
   touchBaselineEntries,
 } from "../drift.js";
-import type { DriftReport, ReverifyFn } from "../drift.js";
-import type { EngagementInput, EngagementResult, EngagementStatus, Finding } from "../../types.js";
+import type { EngagementInput, EngagementResult } from "../../types.js";
 import { runEngagement } from "../../phases.js";
-import type { RunOptions } from "../../phases.js";
 import { defaultHttp } from "../../integrations/index.js";
-import type { HttpFn } from "../../integrations/index.js";
 import {
   appendHistory,
   appendSection,
@@ -47,7 +44,7 @@ import {
 } from "./helpers.js";
 
 
-import type { WatchCycleOptions, WatchCycleResult, WatchCycleStatus } from "./types.js";
+import type { WatchCycleOptions, WatchCycleResult } from "./types.js";
 
 export async function runWatchCycle(opts: WatchCycleOptions): Promise<WatchCycleResult> {
   const env = opts.env ?? process.env;

@@ -76,7 +76,7 @@ function fakeSmb(): { t: SmbTransport; calls: string[] } {
         { share: "IPC$", accessible: true, note: "tree connect accepted" },
       ];
     },
-    async listDir(args, share, path) {
+    async listDir(_args, share, path) {
       calls.push(`listDir:${share}:${path}`);
       return [{ name: "Windows", isDirectory: true }];
     },
@@ -295,12 +295,10 @@ describe("HostExecutor safety", () => {
 describe("host tools in the engagement loop", () => {
   let dir: string;
   let sshCalls: string[];
-  let eventsWithSsh: { action: string; result: string }[];
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "hostexec-"));
     sshCalls = [];
-    eventsWithSsh = [];
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -322,7 +320,7 @@ describe("host tools in the engagement loop", () => {
       name,
       arguments: args,
     });
-    return async (role: AgentRole, messages: ChatMessage[], opts: { tools?: { name: string }[] }): Promise<ChatResult> => {
+    return async (role: AgentRole, messages: ChatMessage[], _opts: { tools?: { name: string }[] }): Promise<ChatResult> => {
       const has = (s: string) => messages.some((m) => m.content.includes(s));
       if (role === "coordinator") {
         if (has("Transition awaiting sign-off")) return textOnly("SIGN-OFF: approved.");

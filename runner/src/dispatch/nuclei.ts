@@ -28,7 +28,7 @@ function strListArg(args: Record<string, unknown>, key: string): string[] | unde
   return out.length ? out : undefined;
 }
 
-export async function handleNucleiTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+export async function handleNucleiTools(ctx: Ctx, _role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "nuclei_exec") return null;
   const attackId = strArg(args, "attackId")?.toUpperCase();
   const rawCat = (strArg(args, "category") ?? "").toLowerCase();

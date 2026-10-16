@@ -77,7 +77,7 @@ const ITEM_RE = /^([A-Z]{2})-(\d{1,4})$/;
  * identify a real battery item — the caller must surface that, never
  * silently drop it.
  */
-export function resolveItemKey(raw: string, targetProfile?: string): string | undefined {
+export function resolveItemKey(raw: string, _targetProfile?: string): string | undefined {
   const s = raw.trim();
   if (!s) return undefined;
   // Qualified form: "secscan:SS-001" / "cve:CVE-2021-44228"

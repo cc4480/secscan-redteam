@@ -1,9 +1,7 @@
 /**
  * Shared-state tool handlers: registry, target map, findings, verdicts, abort (v0.19.0 refactor — extracted from dispatch.ts).
  */
-import { type Finding } from "../types.js";
 import { HaltError, type KilledLive, type LiveFinding } from "../context.js";
-import { join, resolve } from "node:path";
 import { queryRegistry, loadRegistryFile } from "../registry.js";
 import { redactPii } from "../safety/index.js";
 import { resolveItemKey, setDisposition } from "../coverage/items.js";

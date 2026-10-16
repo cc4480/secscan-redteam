@@ -11,7 +11,6 @@ import { type Ctx, HaltError } from "../context.js";
 import { type ToolCallRequest } from "@secscan/redteam-llm-router";
 import { checkTierAllows, recordExploitStep, readTierFile, TIER_NAMES } from "../accountability/index.js";
 import { isTargetDistress, readAbortFile, consumeAbortFile } from "../safety/index.js";
-import { resolve } from "node:path";
 import { type DispatchResult } from "./types.js";
 import { recordItemAttempt } from "./verdicts.js";
 import { checkVariantCap, recordVariantExecution } from "../variants/index.js";

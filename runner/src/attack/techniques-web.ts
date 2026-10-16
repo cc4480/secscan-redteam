@@ -3,7 +3,7 @@
  * live in techniques-host.ts; catalog.ts assembles TECHNIQUES in order.
  */
 
-import type { EngagementMode, EngagementPhase } from "../types.js";
+import type { EngagementPhase } from "../types.js";
 
 export type NoiseLevel = "low" | "medium" | "high";
 

@@ -14,7 +14,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server, type Socket } from "node:net";
+import { createServer, type Server } from "node:net";
 import { createHmac } from "node:crypto";
 import {
   HostExecutor,
@@ -31,11 +31,9 @@ import {
   buildX224ConnectionRequest,
   parseX224ConnectionConfirm,
   rdpValidateCredentials,
-  createRdpTransport,
   buildShadowHandoff,
   RDP_SHADOW_PREP_PS,
   createSmbPthTransport,
-  createAdTransport,
   adEnumerate,
   findDangerousAces,
   isLowPrivSid,

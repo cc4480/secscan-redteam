@@ -41,7 +41,7 @@ function strListArg(args: Record<string, unknown>, key: string): string[] | unde
 
 export async function handleNmapTools(
   ctx: Ctx,
-  role: ActorRole,
+  _role: ActorRole,
   _phase: EngagementPhase,
   call: ToolCallRequest,
   args: Record<string, unknown>,

@@ -252,7 +252,7 @@ describe("reverifyBundle", () => {
 
   it("reproduced: fresh marker echoes on every replayable step", async () => {
     const seen: string[] = [];
-    const runner: StepRunner = async (step, marker) => {
+    const runner: StepRunner = async (_step, marker) => {
       seen.push(marker);
       return { ok: true, output: `output with ${marker} echoed` };
     };

@@ -10,7 +10,7 @@ import { type DispatchResult } from "./types.js";
 
 const readOnly = new Set(["get_scan_status", "get_report", "list_recent_scans", "get_account"]);
 
-export async function handleMcpTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+export async function handleMcpTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "scan_url" && !readOnly.has(call.name)) return null;
 if (call.name === "scan_url") {
   const url = String(args["url"] ?? "");

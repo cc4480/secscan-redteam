@@ -7,7 +7,7 @@
  */
 
 import type { TargetBatteryItem } from "./types.js";
-import { NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT } from "./types.js";
+import { NEEDS_MSFRPCD, NEEDS_NUCLEI } from "./types.js";
 
 export const LINUX_PART_5: TargetBatteryItem[] = [
   // ============================================ LOGGING & DETECTION

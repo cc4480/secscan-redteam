@@ -19,8 +19,8 @@
  * The request function is injectable so tests run against a fake msfrpcd.
  */
 
-import { HOST_EXEC_TIMEOUT_MS, capOutput, checkDestructive, redactSecrets, validateHostTarget } from "../../host-exec/common.js";
-import { MsfTransportError, type MsfRequestFn } from "../protocol.js";
+import { capOutput, checkDestructive, redactSecrets, validateHostTarget } from "../../host-exec/common.js";
+import { type MsfRequestFn } from "../protocol.js";
 import { MsfAuthError } from "../client.js";
 import {
   buildMarkerCommand,

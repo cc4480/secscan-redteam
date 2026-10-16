@@ -7,7 +7,7 @@
  */
 
 import type { TargetBatteryItem } from "./types.js";
-import { NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI } from "./types.js";
+import { NEEDS_MSFRPCD, NEEDS_NUCLEI } from "./types.js";
 
 export const WINDOWS_PART_5: TargetBatteryItem[] = [
   // ============================================ EDR / AV AWARENESS

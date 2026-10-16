@@ -357,7 +357,7 @@ describe("watch cycles (integration, injected runner)", () => {
   }
 
   function runFnFor(ctx: Ctx) {
-    return async (input: EngagementInput, opts: RunOptions): Promise<EngagementResult> => {
+    return async (_input: EngagementInput, opts: RunOptions): Promise<EngagementResult> => {
       ctx.runCount++;
       const runDir = join(opts.engagementsDir!, opts.engagementId!);
       mkdirSync(join(runDir, "poc"), { recursive: true });

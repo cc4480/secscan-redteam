@@ -5,13 +5,12 @@ import { BATTERY_CATEGORIES, type BatteryCategory } from "../battery.js";
 import { type TargetId, inferTargetProfile, isTargetId } from "../targets.js";
 import { sleep } from "../util.js";
 import { techniqueAllowed } from "../gate.js";
-import { recheckVerified } from "./prelude.js";
 import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 
-export async function handleWebTools(ctx: Ctx, role: ActorRole, phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+export async function handleWebTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "http_probe" && call.name !== "burst_probe") return null;
 if (call.name === "http_probe") {
   const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;

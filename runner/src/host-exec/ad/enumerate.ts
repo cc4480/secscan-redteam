@@ -5,7 +5,7 @@
 import { escapeFilter } from "ldapts";
 import { collectSecrets, redactSecrets, type HostCredentials } from "../common.js";
 import type { AdEntry, AdTransport } from "./transport.js";
-import { findDangerousAces, isLowPrivSid, isTier0Sid } from "./security.js";
+import { findDangerousAces, isTier0Sid } from "./security.js";
 import { computeAttackPaths, sidOf, type GraphNode } from "./attack-paths.js";
 import { analyzeTemplate } from "./adcs.js";
 

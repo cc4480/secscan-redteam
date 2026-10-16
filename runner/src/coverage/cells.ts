@@ -6,7 +6,6 @@
  * result so no agent works from a stale picture. (Per-item verdicts live
  * in ./items.ts.)
  */
-import { join, resolve, dirname } from "node:path";
 import { type EngagementPhase } from "../types.js";
 import { BATTERY_CATEGORIES } from "../battery.js";
 import { TARGET_PROFILES, activeTargets, targetCellStatus } from "../targets.js";

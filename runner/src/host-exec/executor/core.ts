@@ -85,7 +85,7 @@ export class ExecutorCore {
    */
 
   preflightNoCreds(
-    transport: HostExecResult["transport"],
+    _transport: HostExecResult["transport"],
     host: string,
     scopeHosts: string[],
   ): { secrets: string[] } | { refused: string } {

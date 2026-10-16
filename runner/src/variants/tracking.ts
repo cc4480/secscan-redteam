@@ -25,7 +25,7 @@ import type { EngagementPhase } from "../types.js";
 import { TARGET_PROFILES, type TargetId } from "../targets/index.js";
 import type { TargetBatteryItem } from "../targets/types.js";
 import { resolveItemKey, setDisposition, type ItemVerdict } from "../coverage/items.js";
-import type { Variant, VariantClass, VariantPayload, VariantProgress } from "./types.js";
+import type { Variant, VariantClass, VariantPayload } from "./types.js";
 import { buildVariantsForClasses, classifyItem } from "./classify.js";
 
 /** Defaults: 25 variants/item staging, 10 production (lower blast radius). */

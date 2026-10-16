@@ -84,7 +84,7 @@ function fakeSsh(
 // WinRM listener probe (WS-010)
 // ---------------------------------------------------------------------------
 
-const fake401: WinrmProbeRequestImpl = async (req) => ({
+const fake401: WinrmProbeRequestImpl = async (_req) => ({
   statusCode: 401,
   headers: {
     "www-authenticate": ["Negotiate", "NTLM"],

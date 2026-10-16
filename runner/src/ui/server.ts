@@ -13,7 +13,7 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { UiStore } from "./store.js";
-import { authCookie, generateToken, isAuthorized, tokensEqual, assertStrongToken, UI_COOKIE } from "./auth.js";
+import { authCookie, generateToken, isAuthorized, tokensEqual, assertStrongToken } from "./auth.js";
 import { handleLaunch, handleList, handleDetail } from "./routes/engagements.js";
 import { handleFeed } from "./routes/feed.js";
 import { handleFindings, handleProof } from "./routes/findings.js";

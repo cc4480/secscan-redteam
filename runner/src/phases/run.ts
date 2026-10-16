@@ -4,7 +4,7 @@
 import { ApprovalLog, TIER_ENV, defaultTier, describeTier, parseTier, requireNamedOperator, requireTier2ProductionApproval, resolveOperatorName, tier2ProductionConfirmed, writeTierFile } from "../accountability/index.js";
 import { type BatteryCategory } from "../battery.js";
 import { type Ctx, HaltError, type RunnerDeps } from "../context.js";
-import { type EngagementInput, type EngagementResult, type ResolvedRunnerConfig } from "../types.js";
+import { type EngagementInput, type EngagementResult } from "../types.js";
 import { EventLog } from "../events.js";
 import { HostExecutor } from "../host-exec/index.js";
 import { McpClient } from "../mcp.js";

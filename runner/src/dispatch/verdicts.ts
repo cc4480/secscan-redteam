@@ -9,7 +9,6 @@ import { extractJsonBlock } from "../util.js";
 import { lookupTechnique } from "../attack.js";
 import { recordConfirmed, recordKilled, transactRegistryFile } from "../registry.js";
 import { redactPii } from "../safety/index.js";
-import { resolve } from "node:path";
 import { optStr } from "./prelude.js";
 
 export function recordItemAttempt(

@@ -14,7 +14,7 @@ import {
   isFailure,
   stepValidation,
 } from "./steps.js";
-import type { PocStep, StepValidation } from "./steps.js";
+import type { PocStep } from "./steps.js";
 
 export type ValidationTier = "execution" | "observation";
 

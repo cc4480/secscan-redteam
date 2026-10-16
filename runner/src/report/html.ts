@@ -147,7 +147,7 @@ footer.doc{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);col
  */
 function decorateSeverity(markdown: string): { body: string; tokens: string[] } {
   const tokens: string[] = [];
-  const body = markdown.replace(/\[(critical|high|medium|low|info)\]/gi, (m, word: string) => {
+  const body = markdown.replace(/\[(critical|high|medium|low|info)\]/gi, (_m, word: string) => {
     tokens.push(word);
     return `\u0000SEV${tokens.length - 1}\u0000`;
   });

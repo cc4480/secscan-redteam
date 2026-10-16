@@ -32,10 +32,8 @@ import {
   msfSecrets,
   extractCves,
   buildModuleQueries,
-  filterAndRank,
   suggestModules,
   MsfClient,
-  MsfAuthError,
 } from "../src/msf/index.js";
 import { runEngagement } from "../src/phases.js";
 import type { EngagementInput } from "../src/types.js";
@@ -135,7 +133,7 @@ async function startFakeMsf(opts: { badAuth?: boolean } = {}): Promise<FakeMsf> 
           reply({ id: "cid-1", prompt: "msf6 > " });
           return;
         case "console.write": {
-          const [, , cid, data] = decoded as unknown[];
+          const [, , _cid, data] = decoded as unknown[];
           writes.push(String(data));
           reply({ wrote: String(data).length });
           return;
@@ -410,7 +408,7 @@ describe("msf_exec wiring", () => {
   });
 
   function scriptedLlm(action: "search" | "run", outOfScope: boolean) {
-    return async (role: AgentRole, messages: ChatMessage[], opts: { tools?: { name: string }[] }): Promise<ChatResult> => {
+    return async (role: AgentRole, messages: ChatMessage[], _opts: { tools?: { name: string }[] }): Promise<ChatResult> => {
       const has = (s: string) => messages.some((m) => m.content.includes(s));
       if (role === "coordinator") {
         if (has("Transition awaiting sign-off")) return textOnly("SIGN-OFF: approved.");

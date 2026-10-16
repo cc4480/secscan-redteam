@@ -26,7 +26,6 @@ import {
   buildNucleiListArgv,
   checkNucleiTags,
   checkNucleiExtraFlags,
-  parseNucleiJsonl,
   parseTemplateList,
   filterTemplates,
   truncateIds,
@@ -34,9 +33,7 @@ import {
   mapTemplateToBattery,
   overlapHint,
   nucleiCountLine,
-  nucleiBinaryPresent,
   _resetNucleiProbeCache,
-  NUCLEI_SETUP_INSTRUCTIONS,
   type SpawnFn,
 } from "../src/nuclei/index.js";
 import { toolMinTier } from "../src/accountability/tiers.js";
