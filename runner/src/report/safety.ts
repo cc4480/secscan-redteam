@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { readEvents } from "../events.js";
 import { buildSafetyManifest, buildZeroDisruptionRecord, disruptionVerdict, renderSafetyManifestMarkdown } from "../safety/index.js";
 import { type Ctx } from "../context.js";
+import { buildEngagementMeta, renderReportHtml } from "./html.js";
 
 export function writeSafetyArtifacts(ctx: Ctx): ReturnType<typeof buildSafetyManifest> | undefined {
   let safetyManifest: ReturnType<typeof buildSafetyManifest> | undefined;
@@ -48,7 +49,17 @@ export function writeSafetyArtifacts(ctx: Ctx): ReturnType<typeof buildSafetyMan
       },
     });
     writeFileSync(join(ctx.events.dir, "safety-manifest.json"), JSON.stringify(safetyManifest, null, 2));
-    writeFileSync(join(ctx.events.dir, "safety-manifest.md"), renderSafetyManifestMarkdown(safetyManifest));
+    const manifestMd = renderSafetyManifestMarkdown(safetyManifest);
+    writeFileSync(join(ctx.events.dir, "safety-manifest.md"), manifestMd);
+    writeFileSync(
+      join(ctx.events.dir, "safety-manifest.html"),
+      renderReportHtml({
+        title: "Safety Manifest",
+        meta: buildEngagementMeta(ctx, []),
+        markdown: manifestMd,
+        showStrip: false,
+      }),
+    );
     ctx.events.append({
       phase: "report",
       actor: "runner",

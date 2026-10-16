@@ -12,6 +12,7 @@ import { buildSafetyManifest } from "../safety/index.js";
 import { resolveOperatorName } from "../accountability/index.js";
 import { type Ctx } from "../context.js";
 import { type Finding } from "../types.js";
+import { buildEngagementMeta, renderReportHtml } from "./html.js";
 
 export function writeComplianceArtifacts(
   ctx: Ctx,
@@ -43,27 +44,44 @@ export function writeComplianceArtifacts(
       autonomyTier: ctx.tier.current,
     });
     writeFileSync(join(ctx.events.dir, "compliance-pack.json"), JSON.stringify(pack, null, 2));
-    writeFileSync(join(ctx.events.dir, "compliance-pack.md"), renderCompliancePackMarkdown(pack));
+    const packMd = renderCompliancePackMarkdown(pack);
+    writeFileSync(join(ctx.events.dir, "compliance-pack.md"), packMd);
+    writeFileSync(
+      join(ctx.events.dir, "compliance-pack.html"),
+      renderReportHtml({
+        title: "Compliance Evidence Pack",
+        meta: buildEngagementMeta(ctx, findings),
+        markdown: packMd,
+        showStrip: false,
+      }),
+    );
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     for (const f of findings) {
       if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
     }
+    const letterMd = renderAttestationLetter({
+      engagementId: ctx.events.engagementId,
+      client: ctx.input.client,
+      operator: resolveOperatorName(ctx.input.operatorName),
+      // v0.17.0 accountability: the letter names the tier the operator approved.
+      tier: ctx.tier.current,
+      target: ctx.input.target,
+      mode: ctx.input.mode,
+      objective: ctx.input.objective,
+      scope: ctx.input.roe.scope,
+      testStart: new Date(ctx.startedAt).toISOString(),
+      testEnd: new Date().toISOString(),
+      findingCounts: counts,
+      exclusions: METHODOLOGY_EXCLUSIONS,
+    });
+    writeFileSync(join(ctx.events.dir, "attestation.md"), letterMd);
     writeFileSync(
-      join(ctx.events.dir, "attestation.md"),
-      renderAttestationLetter({
-        engagementId: ctx.events.engagementId,
-        client: ctx.input.client,
-        operator: resolveOperatorName(ctx.input.operatorName),
-        // v0.17.0 accountability: the letter names the tier the operator approved.
-        tier: ctx.tier.current,
-        target: ctx.input.target,
-        mode: ctx.input.mode,
-        objective: ctx.input.objective,
-        scope: ctx.input.roe.scope,
-        testStart: new Date(ctx.startedAt).toISOString(),
-        testEnd: new Date().toISOString(),
-        findingCounts: counts,
-        exclusions: METHODOLOGY_EXCLUSIONS,
+      join(ctx.events.dir, "attestation.html"),
+      renderReportHtml({
+        title: "Attestation Letter",
+        meta: buildEngagementMeta(ctx, findings),
+        markdown: letterMd,
+        showStrip: false,
       }),
     );
     ctx.events.append({

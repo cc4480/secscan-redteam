@@ -28,6 +28,7 @@ import { buildIntegrationsSection } from "./integrations.js";
 import { writeSafetyArtifacts } from "./safety.js";
 import { writeComplianceArtifacts } from "./compliance.js";
 import { extractNarrative } from "./narrative.js";
+import { buildEngagementMeta, renderReportHtml } from "./html.js";
 
 export async function reportPhase(
   ctx: Ctx,
@@ -208,6 +209,33 @@ export async function reportPhase(
   }
   reportMd += await buildIntegrationsSection(ctx, findings, pocBundleMap);
   writeFileSync(join(ctx.events.dir, "report.md"), reportMd);
+  // The HTML twin is the human-facing deliverable — self-contained, severity
+  // colour-coded, print/PDF-ready. report.md stays as the diffable, greppable
+  // record and the input to other tooling; this is the thing a person opens.
+  // Its own try/catch: a rendering problem must not break the report itself.
+  try {
+    const meta = buildEngagementMeta(ctx, findings, {
+      total: lsum.total,
+      confirmed: lsum.confirmed,
+      executedClean: lsum.executedClean,
+      killed: lsum.killed,
+      blocked: lsum.blocked,
+      na: lsum.na,
+      pending: lsum.pending,
+    });
+    writeFileSync(
+      join(ctx.events.dir, "report.html"),
+      renderReportHtml({
+        title: "Penetration Test Report",
+        subtitle: `${ctx.input.mode === "red" ? "Full-knowledge" : "Black-box"} engagement against ${ctx.input.target}`,
+        meta,
+        markdown: reportMd,
+      }),
+    );
+    ctx.events.append({ phase: "report", actor: "runner", action: "report_html_written", result: "HTML report written alongside report.md." });
+  } catch (err) {
+    ctx.events.append({ phase: "report", actor: "runner", action: "report_html_failed", result: `HTML report generation failed (report.md unaffected): ${(err as Error).message}` });
+  }
   ctx.events.append({ phase: "report", actor: "reporter", action: "report_written", result: `Report written (${findings.length} findings parsed).` });
   const safetyManifest = writeSafetyArtifacts(ctx);
   writeComplianceArtifacts(ctx, findings, batteryLine, safetyManifest);
