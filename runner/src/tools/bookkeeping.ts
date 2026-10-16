@@ -21,7 +21,9 @@ export const QUERY_REGISTRY_TOOL: JsonSchemaTool = {
 export const UPDATE_TARGET_MAP_TOOL: JsonSchemaTool = {
   name: "update_target_map",
   description:
-    "Write entries to the SHARED target map the whole team reads (recon's handoff to the exploiter, kept live). Call as you discover attack surface — method + params + auth state + ATT&CK ID per entry.",
+    "Write entries to the SHARED target map the whole team reads (recon's handoff to the exploiter, kept live). Call as you discover attack surface — method + params + auth state + ATT&CK ID per entry. "
+    + "Also the way to record the TARGET FINGERPRINT: pass stack (comma-separated technologies) and appType once you know them. "
+    + "This is the instrument, not a target: do NOT add the SecScan API endpoint or any scanning service to the map as discovered surface — the map is the target's own attack surface, and an out-of-scope host in it reads as an ROE breach.",
   parameters: {
     type: "object",
     properties: {
@@ -39,6 +41,21 @@ export const UPDATE_TARGET_MAP_TOOL: JsonSchemaTool = {
           },
           required: ["area", "method"],
         },
+      },
+      // The fingerprint used to be settable ONLY by writing a "FINGERPRINT:
+      // stack=...; appType=..." line into the recon brief, which the runner
+      // scraped with a regex. That is a fragile contract with a language model:
+      // the prompt required the line and the agent simply never emitted it, run
+      // after run, leaving the fingerprint empty — and the coordinator refused
+      // sign-off over a "fingerprint is {stack:[],appType:unknown}" it had no
+      // way to correct. A tool parameter is a contract the model can keep.
+      stack: {
+        type: "string",
+        description: 'Comma-separated technologies observed, e.g. "react-spa,cloudflare-edge,nginx". Sets the shared fingerprint.',
+      },
+      appType: {
+        type: "string",
+        description: 'What the target appears to be, e.g. "scanner-saas". Sets the shared fingerprint.',
       },
     },
     required: ["entries"],

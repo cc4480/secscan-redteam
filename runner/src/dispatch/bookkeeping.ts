@@ -61,8 +61,33 @@ if (call.name === "update_target_map") {
     });
     added++;
   }
+  // The fingerprint arrives through this tool now. It used to depend entirely
+  // on a "FINGERPRINT:" line in the recon brief that the runner scraped with a
+  // regex — a contract the agent never honoured, run after run, leaving the
+  // fingerprint empty and the coordinator refusing sign-off over a gap it had
+  // no way to close. Merged rather than replaced, so stack and appType may
+  // arrive in either order or one at a time.
+  const fps = optStr(args["stack"]);
+  const fpa = optStr(args["appType"]);
+  let fpNote = "";
+  if (fps !== undefined || fpa !== undefined) {
+    const nextStack = fps === undefined
+      ? ctx.fingerprint.stack
+      : fps.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean).slice(0, 20);
+    const nextAppType = fpa === undefined
+      ? ctx.fingerprint.appType
+      : (fpa.trim().toLowerCase().slice(0, 60) || "unknown");
+    ctx.fingerprint = { ...ctx.fingerprint, stack: nextStack, appType: nextAppType };
+    ctx.events.append({
+      phase,
+      actor: "runner",
+      action: "fingerprint",
+      result: JSON.stringify(ctx.fingerprint),
+    });
+    fpNote = ` Fingerprint recorded: stack=[${nextStack.join(",")}] appType=${nextAppType}.`;
+  }
   return {
-    result: `Target map updated: ${added} new entries (${ctx.targetMap.length} total) — the whole team sees this shared state.`,
+    result: `Target map updated: ${added} new entries (${ctx.targetMap.length} total) — the whole team sees this shared state.${fpNote}`,
     target: "target-map",
   };
 }
