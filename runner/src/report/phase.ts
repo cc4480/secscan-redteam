@@ -7,6 +7,7 @@
  * writers live in ./safety.ts, ./compliance.ts, ./proof.ts, ./integrations.ts.
  */
 import { writeFileSync } from "node:fs";
+import { groupNotApplicable, renderNotApplicable } from "./grouping.js";
 import { join } from "node:path";
 import { reporterPrompt } from "../prompts.js";
 import { type Finding } from "../types.js";
@@ -185,10 +186,17 @@ export async function reportPhase(
       reportMd += `${variantCountLine(vc)}\n\n`;
     }
     if (nonCleanItems.length > 0) {
-      reportMd += `Non-clean items (with reason):\n\n`;
-      for (const v of nonCleanItems) {
+      // Not-applicable items are grouped by target and reason; everything else
+      // is listed individually. A scoped engagement marks hundreds of items na
+      // with one family-level reason each, and listing them one per line buried
+      // the actual findings under 338 repetitions of the same sentence. The full
+      // ids remain in item-verdicts.json — see report/grouping.ts.
+      const naItems = nonCleanItems.filter((v) => v.disposition === "na");
+      const otherItems = nonCleanItems.filter((v) => v.disposition !== "na");
+      for (const v of otherItems) {
         reportMd += `- **${v.key}** [${v.disposition}]${variantProgressSuffix(v)} ${v.name}${v.reason ? ` — ${v.reason}` : ""}\n`;
       }
+      if (naItems.length > 0) reportMd += `\n${renderNotApplicable(groupNotApplicable(naItems))}\n`;
       reportMd += `\n`;
     }
     if (pendingKeys.length > 0) {
