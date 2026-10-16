@@ -11,7 +11,8 @@ registered in the router and can be swapped back in for the exploiter role
 with a one-line policy change.
 
 **Honest status:** the full system is test-verified against simulated
-targets (543/543 runner tests, 18/18 auth-gate tests) but has not yet
+targets (702 workspace tests — runner 670, auth-gate 18, llm-router 9,
+harness-plugin 5) but has not yet
 completed a live full engagement. Anything this README calls "real" means
 *built, tested against mocks/fakes/loopback, and wired into the safety
 core* — not *proven on a live target*. Proof exists only after a real
@@ -150,7 +151,7 @@ Credential testing only against authorized test accounts.
 #    dependency order and stamps each dist/ so stale builds fail loudly)
 npm install && npm run build
 npm run check-dist # fails if any dist/ is stale vs its src/
-npm test           # all workspace suites (runner 543, auth-gate 18, harness-plugin 5, llm-router 9)
+npm test           # all workspace suites (702: runner 670, auth-gate 18, llm-router 9, harness-plugin 5)
 npm run typecheck  # every tsconfig clean
 
 # 2. Dry run (no live target touched) — --objective and --scope are required;
@@ -166,10 +167,11 @@ node smoke-qwen.mjs
 ## Architecture
 
 - `runner/` — the engagement runner (`@secscan/redteam-runner`): phases,
-  dispatch, 27 agent tools, safety core (rate limiter, denylists,
-  auto-halt, kill switch), proof bundles, registry, compliance packs,
-  integrations, watch mode, web UI. No `runner/src` file exceeds 300
-  lines (mechanically enforced by `file-budget.test.ts`).
+  dispatch, 33 distinct agent tools (28 recon / 25 exploit / 1 command),
+  safety core (rate limiter, denylists, auto-halt, kill switch), proof
+  bundles, registry, compliance packs, integrations, watch mode, web UI.
+  No `runner/src` file exceeds 300 lines (mechanically enforced by
+  `file-budget.test.ts`).
 - `auth-gate/` — server-authoritative DNS-TXT ownership verification,
   fails closed, 18 unit tests.
 - `llm-router/` — provider-pluggable LLM interface; DeepSeek (`deepseek-v4-pro`
@@ -177,7 +179,9 @@ node smoke-qwen.mjs
   coordinator/recon/reporter). Qwen (`qwen3.8-max`) stays registered and can
   be reinstated for the exploiter with a one-line policy change. Adding a provider = one class +
   registration.
-- `agents/` — role system prompts with ReAct loops.
+- `agents/` — the human-readable role system prompts. Documentation only: the
+  runner's live prompts are `runner/src/prompts/`, which nothing loads from
+  these files at runtime.
 - `harness-plugin/` — DeepSeek Harness integration (auth gate as a
   `tools/pre-execute` hook, SecScan MCP via `dsh-mcp-client`).
 - `engagements/` — runbook template; live runs stream to
