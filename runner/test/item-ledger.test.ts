@@ -110,12 +110,26 @@ describe("resolveItemKey", () => {
     assert.equal(resolveItemKey("cve:CVE-2021-44228"), "cve:CVE-2021-44228");
     assert.equal(resolveItemKey("CVE-2017-0144"), "cve:CVE-2017-0144");
   });
-  it("rejects mismatches and garbage", () => {
-    assert.equal(resolveItemKey("SS-042", "seclayer"), undefined); // prefix/target mismatch
-    assert.equal(resolveItemKey("SS-042", "bogus"), undefined);
+  it("rejects garbage, and resolves a real item whatever the profile says", () => {
+    // The prefix IS the target: SS=secscan, SL=seclayer, WS=windows, LX=linux,
+    // and they are unique, so an item ID identifies its own battery without
+    // help. This assertion used to expect undefined for the two mismatches
+    // below, on the theory that a mismatched profile means a confused caller.
+    // It does not add safety — there is exactly one battery an "SS-" item can
+    // belong to — and it caused a real failure: the tools that carry a
+    // batteryItem also carry a REQUIRED targetProfile of "windows"|"linux", so
+    // the coordinator tagged web items with a host profile and every one was
+    // rejected, eight times in one run, for items already in the ledger.
+    assert.equal(resolveItemKey("SS-042", "seclayer"), "secscan:SS-042");
+    assert.equal(resolveItemKey("SS-042", "linux"), "secscan:SS-042");
+    assert.equal(resolveItemKey("SS-042", "bogus"), "secscan:SS-042");
     assert.equal(resolveItemKey("not-an-id"), undefined);
     assert.equal(resolveItemKey(""), undefined);
-    assert.equal(resolveItemKey("windows:SS-001"), undefined); // qualified mismatch
+    assert.equal(resolveItemKey("ZZ-999"), undefined);
+    // A QUALIFIED id is a claim about which battery the item belongs to, and
+    // that is still checked strictly.
+    assert.equal(resolveItemKey("windows:SS-001"), undefined);
+    assert.equal(resolveItemKey("linux:SS-042"), undefined);
   });
 });
 

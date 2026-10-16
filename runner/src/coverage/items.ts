@@ -99,18 +99,23 @@ export function resolveItemKey(raw: string, targetProfile?: string): string | un
   // CVE form without qualifier
   const cu = s.toUpperCase();
   if (CVE_RE.test(cu)) return `cve:${cu}`;
-  // Bare item form: "SS-042" — prefix determines (or confirms) the target
+  // Bare item form: "SS-042" — the prefix IS the target, so it decides.
   const m = cu.match(ITEM_RE);
   if (!m) return undefined;
   const [, prefix, num] = m as [string, string, string];
   const inferred = PREFIX_TO_TARGET[prefix];
   if (!inferred) return undefined;
-  if (targetProfile) {
-    const tl = targetProfile.toLowerCase();
-    if (!(FULL_BATTERY_TARGETS as string[]).includes(tl)) return undefined;
-    if (TARGET_PREFIXES[tl as TargetId] !== prefix) return undefined;
-    return `${tl}:${prefix}-${num.padStart(3, "0")}`;
-  }
+  // targetProfile is a HINT, not a second identifier, and for a bare item the
+  // prefix already names the target unambiguously. The tools that carry a
+  // batteryItem also carry a REQUIRED targetProfile ("windows"|"linux"), so the
+  // coordinator naturally tags a web-target item with whichever host profile
+  // the tool demanded — "SS-042" alongside targetProfile "linux". Treating that
+  // mismatch as fatal rejected items that were in the ledger all along: eight
+  // "did not resolve to a selected battery item" warnings in a single run for
+  // SS-042 through SS-048, every one of them a real secscan item.
+  //
+  // Only the qualified form above is a claim about which battery an item
+  // belongs to, and that is still checked strictly.
   return `${inferred}:${prefix}-${num.padStart(3, "0")}`;
 }
 
