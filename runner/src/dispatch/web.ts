@@ -9,6 +9,7 @@ import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
+import { noteCategoryCoverage } from "./prelude.js";
 
 export async function handleWebTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
   if (call.name !== "http_probe" && call.name !== "burst_probe") return null;
@@ -38,29 +39,12 @@ if (call.name === "http_probe") {
   }
   // The probe is really going out: count it toward the battery.
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      // Per-target cell: explicit tag wins, otherwise infer from the URL
-      // path (/api/mcp → seclayer, everything else → secscan). Host targets
-      // (windows/linux) are never inferred — they need an explicit tag.
-      const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
-      const tp: TargetId = isTargetId(rawTp) ? rawTp : inferTargetProfile(url);
-      let set = ctx.targetCoverage.get(tp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(tp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
+  // Per-target cell: explicit tag wins, otherwise infer from the URL
+  // path (/api/mcp → seclayer, everything else → secscan). Host targets
+  // (windows/linux) are never inferred — they need an explicit tag.
+  const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
+  const tp: TargetId = isTargetId(rawTp) ? rawTp : inferTargetProfile(url);
+  noteCategoryCoverage(ctx, category, tp);
   try {
     if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
     const res = await ctx.prober.probe({

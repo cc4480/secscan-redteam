@@ -21,6 +21,7 @@ import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { findXTool, checkXToolFlags, runXTool, binPresent, type XToolSpec } from "../xtool/index.js";
 import { validateHostTarget } from "../host-exec/common.js";
+import { noteCategoryCoverage } from "./prelude.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const v = args[key];
@@ -118,24 +119,7 @@ export async function handleXTool(
   }
 
   if (!offline) ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery && rawTp) {
-      let set = ctx.targetCoverage.get(rawTp as TargetId);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(rawTp as TargetId, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
+  noteCategoryCoverage(ctx, category, rawTp ? (rawTp as TargetId) : undefined);
 
   const ctrl = new AbortController();
   ctx.hostKill.controllers.add(ctrl);

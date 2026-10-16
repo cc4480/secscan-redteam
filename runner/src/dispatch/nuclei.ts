@@ -14,6 +14,7 @@ import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
+import { noteCategoryCoverage } from "./prelude.js";
 import { mapTemplateToBattery, overlapHint } from "../nuclei/index.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
@@ -54,24 +55,7 @@ export async function handleNucleiTools(ctx: Ctx, _role: ActorRole, phase: Engag
   }
   const host = String(args["host"] ?? "");
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(rawTp as TargetId);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(rawTp as TargetId, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
+  noteCategoryCoverage(ctx, category, rawTp as TargetId);
   const ctrl = new AbortController();
   ctx.hostKill.controllers.add(ctrl);
   try {

@@ -9,7 +9,7 @@ import { type Ctx } from "../context.js";
 import { type ActorRole, type EngagementPhase } from "../types.js";
 import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
-import { numArg, optStr } from "./prelude.js";
+import { noteCategoryCoverage, numArg, optStr } from "./prelude.js";
 
 const WAVE2_TOOLS = new Set([
   "winrm_probe",
@@ -58,24 +58,7 @@ function hostExecPrelude(
   const host = String(args["host"] ?? "");
   // The exec is really going out: count it toward the battery.
   ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(wantTp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(wantTp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
+  noteCategoryCoverage(ctx, category, wantTp);
   // Kill-switch wiring: register this execution's controller so a coordinator
   // abort terminates it mid-flight (shared ctx → all parallel tasks). The
   // executor checks the aborted flag before starting.
