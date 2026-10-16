@@ -18,7 +18,7 @@ const SSH_EXEC_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["linux"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "command", "category"],
+    required: ["host", "command", "category", "targetProfile"],
   },
 };
 
@@ -39,7 +39,7 @@ const SMB_EXEC_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "operation", "category"],
+    required: ["host", "operation", "category", "targetProfile"],
   },
 };
 
@@ -60,7 +60,7 @@ const WINRM_EXEC_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "command", "category"],
+    required: ["host", "command", "category", "targetProfile"],
   },
 };
 
@@ -79,7 +79,7 @@ const WINRM_PROBE_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 
@@ -97,7 +97,7 @@ const RDP_AUTH_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 
@@ -114,7 +114,7 @@ const RDP_SHADOW_PREP_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 
@@ -132,7 +132,7 @@ const SMB_PTH_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 
@@ -153,7 +153,7 @@ const AD_ENUM_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "operations", "category"],
+    required: ["host", "operations", "category", "targetProfile"],
   },
 };
 
@@ -171,7 +171,7 @@ const KRB_PTT_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["windows"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 
@@ -190,7 +190,7 @@ const SSH_AGENT_AUDIT_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["linux"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "mode", "category"],
+    required: ["host", "mode", "category", "targetProfile"],
   },
 };
 
@@ -207,7 +207,7 @@ const NFS_ENUM_TOOL: JsonSchemaTool = {
       targetProfile: { type: "string", enum: ["linux"] },
       hypothesis: { type: "string" },
     },
-    required: ["host", "category"],
+    required: ["host", "category", "targetProfile"],
   },
 };
 

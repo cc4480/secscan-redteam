@@ -7,6 +7,15 @@
  */
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Generate a fresh engagement id, or validate an operator-supplied one. */
+export function safeEngagementId(candidate?: string): string {
+  const id = candidate ?? `eng-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,120}$/.test(id)) {
+    throw new Error(`[runner] invalid engagement id: ${JSON.stringify(id)}`);
+  }
+  return id;
+}
+
 export function extractJsonBlock(text: string): unknown | null {
   const fenced = text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : text;

@@ -100,7 +100,7 @@ if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm
       return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
     }
     const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
-    return { result: `${res.summary}.${out}`, attackId, target: host };
+    return { result: `${res.summary}.${out}`, attackId, target: host, ok: res.ok };
   } finally {
     ctx.hostKill.controllers.delete(ctrl);
   }
@@ -184,7 +184,7 @@ if (WAVE2_TOOLS.has(call.name)) {
       return { result: `DENIED by host-exec safety core: ${res.refused}`, attackId, target: host };
     }
     const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
-    return { result: `${res.summary}.${out}`, attackId, target: host };
+    return { result: `${res.summary}.${out}`, attackId, target: host, ok: res.ok };
   } finally {
     ctx.hostKill.controllers.delete(ctrl);
   }

@@ -187,7 +187,10 @@ export function resolveAdCredentials(env: NodeJS.ProcessEnv = process.env): Host
 export function collectSecrets(creds: HostCredentials): string[] {
   const out: string[] = [];
   for (const v of [creds.password, creds.privateKey, creds.ntHash]) {
-    if (v && v.length >= 4 && !v.startsWith("__KEY_PATH__:")) out.push(v);
+    // Redact every non-empty secret. The old `length >= 4` guard dropped 1–3
+    // character passwords from the redaction list, so a short credential could
+    // reach a summary or event in the clear.
+    if (v && !v.startsWith("__KEY_PATH__:")) out.push(v);
   }
   return out;
 }

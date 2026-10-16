@@ -90,18 +90,25 @@ export function resolveBinPath(spec: XToolSpec, env: NodeJS.ProcessEnv = process
     }
     return join(home, "bin", "john-avx-non-omp.exe");
   }
-  if (spec.id === "sqlmap") return dir || "C:\\Users\\Cho-zen\\tools\\sqlmap";
-  if (spec.id === "nikto") return dir || "C:\\Users\\Cho-zen\\tools\\nikto\\program";
+  // Neutral defaults, not a developer's home dir. The per-tool env vars
+  // (REDTEAM_SQLMAP_DIR / REDTEAM_NIKTO_DIR) still override; this only stops
+  // shipped code from silently pointing at C:\Users\<someone>\tools on a host
+  // that is not that person's machine.
+  if (spec.id === "sqlmap") return dir || "C:\\tools\\sqlmap";
+  if (spec.id === "nikto") return dir || "C:\\tools\\nikto\\program";
   return spec.id;
 }
 
 export function binPresent(spec: XToolSpec, env: NodeJS.ProcessEnv = process.env): boolean {
-  const explicit = env[spec.envBin]?.trim() || (spec.envDir ? env[spec.envDir]?.trim() : undefined);
-  if (explicit) return true;
   try {
     if (spec.id === "john") return existsSync(resolveBinPath(spec, env));
     if (spec.id === "sqlmap") return existsSync(join(resolveBinPath(spec, env), "sqlmap.py"));
     if (spec.id === "nikto") return existsSync(join(resolveBinPath(spec, env), "nikto.pl"));
+    // ffuf / gobuster: an explicit env path must actually exist, otherwise the
+    // binary is looked up on PATH. A set-but-nonexistent env var must not report
+    // "present" and then fail with a confusing ENOENT at spawn time.
+    const explicitBin = env[spec.envBin]?.trim();
+    if (explicitBin) return existsSync(explicitBin);
     const cmd = process.platform === "win32" ? "where" : "which";
     execFileSync(cmd, [spec.id], { stdio: "ignore", timeout: 5000 });
     return true;
@@ -191,6 +198,19 @@ export async function runXTool(
     };
   }
 
+  // A target that begins with '-' can be read as a flag — for flag-style tools
+  // (where it follows -u/-h) and for john's positional hash-file argument alike.
+  // No legitimate URL, host, or hash-file path starts with '-', so refuse.
+  if (opts.target.startsWith("-")) {
+    return {
+      ok: false,
+      tool: spec.id,
+      action: "run",
+      binary: bin,
+      message: `refused: target ${JSON.stringify(opts.target)} begins with '-' — a value must not be read as a flag.`,
+    };
+  }
+
   const cwd = spec.id === "sqlmap" || spec.id === "nikto" ? bin : undefined;
   const profile = spec.profiles.find((p) => p.id === opts.profileId) ?? spec.profiles[0]!;
   const argv = buildXToolArgv(spec, {
@@ -230,8 +250,12 @@ export async function runXTool(
 
   const head = r.stdout.trim().split("\n").slice(0, 40).join("\n");
   const tail = r.stderr.trim().split("\n").slice(0, 6).join("\n");
+  // sqlmap exits 0 on "clean" and 1 on "injectable parameter found" — both are a
+  // completed run whose result we report, never a failure. The other tools use 0
+  // for success. Collapsing everything to `code === 0` inverted sqlmap's result.
+  const ok = r.code === 0 || (spec.id === "sqlmap" && r.code === 1);
   return {
-    ok: r.code === 0,
+    ok,
     tool: spec.id,
     action: "run",
     binary: bin,

@@ -94,8 +94,10 @@ export function startVariantExpansion(ctx: Ctx, key: string, phase: EngagementPh
   const planned = all.slice(0, cap).map((p, i) => toVariant(p, item.id, i));
   let reopened = false;
   if (v.disposition === "executed-clean") {
-    // Deeper testing reopens the item — executed-clean is not final.
-    setDisposition(ctx.itemLedger, key, "pending", { reason: "Variant expansion opened — deeper testing in progress" });
+    // Deeper testing reopens the item — executed-clean is not final. This is a
+    // deliberate reopen, flagged the same way reverify is, so the state machine's
+    // "never backwards" guard lets it through.
+    setDisposition(ctx.itemLedger, key, "pending", { reason: "Variant expansion opened — deeper testing in progress", viaReverify: true });
     reopened = true;
   }
   v.variants = {

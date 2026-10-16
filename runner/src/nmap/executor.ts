@@ -160,10 +160,23 @@ export class NmapExecutor {
       };
     }
     if (r.code !== 0) {
+      // nmap exits 1 when some hosts are down — a completed answer, not a
+      // failure. Parse the XML regardless; only when nothing parses is it an
+      // error. Discarding the XML on any non-zero exit lost a normal
+      // "host down / partial" result and reported it as a hard failure.
+      const run = parseNmapXml(r.stdout);
+      if (run.hosts.length > 0) {
+        return {
+          ok: true,
+          action: "scan",
+          run,
+          message: `${run.summary} (profile ${profile.id}, ${run.elapsedS.toFixed(1)}s, ${run.upHostCount} host(s) up, exit ${r.code} = some hosts down/partial). Command: nmap ${argv.slice(1).join(" ")}`,
+        };
+      }
       return {
         ok: false,
         action: "scan",
-        message: `nmap exited ${r.code}. ${r.stderr.trim().split("\n").slice(0, 3).join(" / ") || "(no stderr)"}`,
+        message: `nmap exited ${r.code} with no parseable output. ${r.stderr.trim().split("\n").slice(0, 3).join(" / ") || "(no stderr)"}`,
       };
     }
     const run = parseNmapXml(r.stdout);

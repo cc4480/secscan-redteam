@@ -13,6 +13,7 @@
  * not on PATH at all.
  */
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { NMAP_ENV_BIN } from "./policy.js";
 
 let probeCache: boolean | undefined;
@@ -26,8 +27,10 @@ export function nmapBinaryPresent(env: NodeJS.ProcessEnv = process.env): boolean
   if (probeCache !== undefined) return probeCache;
   const explicit = (env[NMAP_ENV_BIN] ?? "").trim();
   if (explicit) {
-    probeCache = true;
-    return true;
+    // A set-but-nonexistent env path must not report "present" and then fail
+    // with a confusing ENOENT at spawn time.
+    probeCache = existsSync(explicit);
+    return probeCache;
   }
   const cmd = process.platform === "win32" ? "where" : "which";
   try {

@@ -142,11 +142,15 @@ describe("disposition transitions", () => {
     assert.equal(ledger.get("secscan:SS-001")!.disposition, "confirmed");
   });
 
-  it("blocked → executed-clean when the prerequisite is met in practice", () => {
+  it("markAttempted does not erase a blocked (prerequisite-unmet) verdict", () => {
     const ledger = buildItemLedger(["windows"]);
     assert.equal(ledger.get("windows:WS-065")!.disposition, "blocked");
+    // A tagged execution cannot have genuinely tested an item whose prerequisite
+    // is unmet — flipping blocked → executed-clean here would record an untested
+    // item as tested-clean and erase the honest "prerequisite not met" reason.
     assert.ok(markAttempted(ledger, "windows:WS-065"));
-    assert.equal(ledger.get("windows:WS-065")!.disposition, "executed-clean");
+    assert.equal(ledger.get("windows:WS-065")!.disposition, "blocked");
+    assert.match(ledger.get("windows:WS-065")!.reason ?? "", /Prerequisite not met/);
   });
 
   it("killed records the decisive observation", () => {

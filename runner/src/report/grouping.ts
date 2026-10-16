@@ -49,13 +49,25 @@ export function groupNotApplicable(items: VerdictRow[]): VerdictGroup[] {
  * The id range is included so a reader can see the span at a glance without the
  * report becoming the enumeration again.
  */
+/** A count-plus-span for a group's ids, honest about gaps in the sequence. */
+function idSpan(ids: string[]): string {
+  if (ids.length === 0) return "";
+  if (ids.length === 1) return ` (${ids[0]})`;
+  const sorted = [...ids].sort();
+  // Contiguous only when every id shares a numeric suffix that increments by 1.
+  const nums = sorted.map((id) => /-(\d+)$/.exec(id)?.[1]);
+  const contiguous = nums.every((n) => n !== undefined) && nums.slice(1).every((n, i) => Number(n) === Number(nums[i]) + 1);
+  return contiguous
+    ? ` (${sorted[0]} … ${sorted[sorted.length - 1]})`
+    : ` (${sorted[0]}, ${sorted[1]}, … ${sorted.length} items)`;
+}
+
 export function renderNotApplicable(groups: VerdictGroup[]): string {
   if (groups.length === 0) return "";
   const total = groups.reduce((n, g) => n + g.ids.length, 0);
   const out: string[] = [`Not-applicable, grouped (\`${total}\` items — full ids in item-verdicts.json):`, ""];
   for (const g of groups) {
-    const range = g.ids.length > 1 ? ` (${g.ids[0]} … ${g.ids[g.ids.length - 1]})` : ` (${g.ids[0]})`;
-    out.push(`- **${g.target}:** ${g.ids.length} item${g.ids.length === 1 ? "" : "s"}${range} — ${g.reason}`);
+    out.push(`- **${g.target}:** ${g.ids.length} item${g.ids.length === 1 ? "" : "s"}${idSpan(g.ids)} — ${g.reason}`);
   }
   return out.join("\n");
 }

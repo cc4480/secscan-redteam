@@ -112,9 +112,9 @@ export const XTOOLS: readonly XToolSpec[] = [
     purpose: "content and directory discovery against ONE scope-checked host",
     command: (bin) => [bin],
     profiles: [
-      { id: "dirs", description: "Directory/file discovery using the configured wordlist.", minTier: 0, args: ["-mc", "200,204,301,302,307,401,403", "-t", "20"], target: "flag", wordlist: true },
-      { id: "vhosts", description: "Virtual-host discovery by Host header fuzzing.", minTier: 1, args: ["-mc", "200,204,301,302,307,401,403", "-t", "20"], target: "flag", wordlist: true },
-      { id: "extensions", description: "Discovery with common script extensions appended.", minTier: 0, args: ["-mc", "200,204,301,302,307,401,403", "-t", "20", "-e", ".php,.asp,.aspx,.jsp,.html,.txt"], target: "flag", wordlist: true },
+      { id: "dirs", description: "Directory/file discovery using the configured wordlist.", minTier: 0, args: ["-json", "-s", "-mc", "200,204,301,302,307,401,403", "-t", "20"], target: "flag", wordlist: true },
+      { id: "vhosts", description: "Virtual-host discovery by Host header fuzzing.", minTier: 1, args: ["-json", "-s", "-mc", "200,204,301,302,307,401,403", "-t", "20"], target: "flag", wordlist: true },
+      { id: "extensions", description: "Discovery with common script extensions appended.", minTier: 0, args: ["-json", "-s", "-mc", "200,204,301,302,307,401,403", "-t", "20", "-e", ".php,.asp,.aspx,.jsp,.html,.txt"], target: "flag", wordlist: true },
     ],
     targetFlag: "-u",
     jsonOutput: true,

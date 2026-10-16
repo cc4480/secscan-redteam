@@ -182,7 +182,10 @@ export function buildEngagementMeta(
   const snap = ctx.events.snapshot;
   const counts: NonNullable<ReportMeta["findings"]> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const f of findings) {
-    if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
+    // Coerce and guard against prototype keys: a finding with severity "High"
+    // must still count, and `"constructor" in counts` must not read a prototype.
+    const sev = String(f.severity ?? "").toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(counts, sev)) counts[sev as keyof typeof counts]++;
   }
   return {
     engagementId: ctx.events.engagementId,

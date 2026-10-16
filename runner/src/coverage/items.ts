@@ -105,17 +105,9 @@ export function resolveItemKey(raw: string, targetProfile?: string): string | un
   const [, prefix, num] = m as [string, string, string];
   const inferred = PREFIX_TO_TARGET[prefix];
   if (!inferred) return undefined;
-  // targetProfile is a HINT, not a second identifier, and for a bare item the
-  // prefix already names the target unambiguously. The tools that carry a
-  // batteryItem also carry a REQUIRED targetProfile ("windows"|"linux"), so the
-  // coordinator naturally tags a web-target item with whichever host profile
-  // the tool demanded — "SS-042" alongside targetProfile "linux". Treating that
-  // mismatch as fatal rejected items that were in the ledger all along: eight
-  // "did not resolve to a selected battery item" warnings in a single run for
-  // SS-042 through SS-048, every one of them a real secscan item.
-  //
-  // Only the qualified form above is a claim about which battery an item
-  // belongs to, and that is still checked strictly.
+  // targetProfile is a HINT, not a veto: the prefix already names the target
+  // unambiguously (a "windows"|"linux" host profile is irrelevant to SS-042).
+  // Only the qualified form above claims a battery, and is still checked strictly.
   return `${inferred}:${prefix}-${num.padStart(3, "0")}`;
 }
 
@@ -171,9 +163,10 @@ export function buildItemLedger(targets: TargetId[]): Map<string, ItemVerdict> {
 }
 
 /**
- * Record that an item was genuinely attempted (a clean tool execution
- * tagged with its ID). pending/blocked → executed-clean. Already
- * decided items are untouched. Returns false when the key is unknown.
+ * Record a genuine attempt (a clean tool execution tagged with the ID).
+ * pending → executed-clean. `blocked` is NOT auto-flipped: an unmet-prerequisite
+ * item cannot have been tested, so recording it as clean would erase the honest
+ * reason. Unblocking needs an explicit setDisposition with evidence.
  */
 export function markAttempted(
   ledger: Map<string, ItemVerdict>,
@@ -182,7 +175,7 @@ export function markAttempted(
 ): boolean {
   const v = ledger.get(key);
   if (!v) return false;
-  if (v.disposition === "pending" || v.disposition === "blocked") {
+  if (v.disposition === "pending") {
     v.disposition = "executed-clean";
     v.reason = undefined;
     v.decidedAt = new Date().toISOString();
@@ -217,6 +210,15 @@ export function setDisposition(
   }
   if (isFinal && opts?.viaReverify && disposition !== "pending") {
     throw new Error(`reverify reopen may only move ${key} back to pending`);
+  }
+  // Non-final backwards moves are refused too: once attempted (executed-clean)
+  // an item cannot be walked back to pending/blocked, and a prerequisite-blocked
+  // item cannot be quietly re-opened as pending while its prerequisite is unmet.
+  const backwards =
+    (v.disposition === "executed-clean" && (disposition === "pending" || disposition === "blocked")) ||
+    (v.disposition === "blocked" && disposition === "pending");
+  if (backwards && !opts?.viaReverify) {
+    throw new Error(`${key} may not move backwards from "${v.disposition}" to "${disposition}"`);
   }
   v.disposition = disposition;
   v.reason = reason;

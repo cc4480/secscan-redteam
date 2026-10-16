@@ -229,7 +229,11 @@ export async function startUiServer(opts: UiServerOptions = {}): Promise<UiServe
     console.error(`[ui] WARNING: listening on ${listen} (not loopback). This console drives live pentest tooling — bind it to 127.0.0.1 unless you know exactly what you are doing.`);
   }
   console.log(`[ui] RedTeam console listening on http://${listen}:${boundPort}`);
-  console.log(`[ui] UI token (do not share): ${token}`);
+  // An explicitly-set token must not be echoed into logs (log aggregation,
+  // CI, systemd all persist stdout) — it is already in the operator's env.
+  // A generated token is printed because it is the only copy and the operator
+  // needs it to log in.
+  console.log(explicitToken ? `[ui] UI token: using REDTEAM_UI_TOKEN from the environment (not logged).` : `[ui] UI token (do not share): ${token}`);
   console.log(`[ui] engagements dir: ${store.engagementsDir}`);
 
   const close = () =>

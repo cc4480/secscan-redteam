@@ -95,7 +95,16 @@ function toolTargetHost(call: ToolCallRequest): string | undefined {
   if (XTOOL_TOOL_NAMES.has(call.name) && args["action"] !== "run") return undefined;
   if (call.name === "john_exec") return undefined;
   const direct = typeof args["host"] === "string" ? (args["host"] as string).trim().toLowerCase() : "";
-  if (direct) return direct;
+  if (direct) {
+    // URL-taking tools (sqlmap/ffuf/gobuster/nikto) take the target in `host`
+    // as a full URL. Key on the hostname so varying the path/query/scheme cannot
+    // mint a fresh rate-limit bucket (and defeat auto-halt) for the same host.
+    try {
+      return new URL(direct).hostname.toLowerCase();
+    } catch {
+      return direct;
+    }
+  }
   const url = typeof args["url"] === "string" ? (args["url"] as string) : "";
   if (url) {
     try {
@@ -126,7 +135,8 @@ export function refreshTierFromDisk(ctx: Ctx, phase: EngagementPhase): void {
     action: "tier_changed",
     result:
       `Autonomy tier changed mid-run: Tier ${from} (${TIER_NAMES[from]}) → Tier ${tf.tier} (${TIER_NAMES[tf.tier]})` +
-      `${tf.by ? ` by ${tf.by}` : ""}${tf.reason ? ` — ${tf.reason}` : ""}. Recorded in approvals.jsonl; no restart needed.`,
+      `${tf.by ? ` by ${tf.by}` : ""}${tf.reason ? ` — ${tf.reason}` : ""}. ` +
+      `Picked up from tier.json; see approvals.jsonl for the operator approval record. No restart needed.`,
   });
 }
 
@@ -234,7 +244,13 @@ export async function dispatchTool(ctx: Ctx, role: ActorRole, phase: EngagementP
     }
     // v0.17.0 accountability: a successful validated exploit step consumes
     // the Tier 1 per-target chain budget. Denials, halts, and failures don't.
-    const clean = !/^(DENIED|HALTED)/i.test(d.result) && !d.result.startsWith("probe failed");
+    // A failed host-exec or msf call (connection refused, non-zero exit, marker
+    // not echoed) carries ok:false and must not consume the budget — the old
+    // string heuristic treated "ssh host failed: …" as clean and permanently
+    // wedged the target after one failed attempt.
+    const clean = d.ok === undefined
+      ? !/^(DENIED|HALTED)/i.test(d.result) && !d.result.startsWith("probe failed")
+      : d.ok;
     if (clean) recordExploitStep(ctx.tier, call.name, args, host);
   }
   // v0.18.0 per-item verdicts: a clean execution tagged with batteryItem

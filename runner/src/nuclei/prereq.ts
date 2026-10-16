@@ -7,6 +7,7 @@
  * probe fallback. Called at ledger build, never on a hot path.
  */
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { NUCLEI_ENV_BIN } from "./policy.js";
 
 let probeCache: boolean | undefined;
@@ -20,11 +21,15 @@ export function nucleiBinaryPresent(env: NodeJS.ProcessEnv = process.env): boole
   if (probeCache !== undefined) return probeCache;
   const explicit = (env[NUCLEI_ENV_BIN] ?? "").trim();
   if (explicit) {
-    probeCache = true;
-    return true;
+    // A set-but-nonexistent env path must not report "present" and then fail
+    // with a confusing ENOENT at spawn time. Also drop the shell: `sh -c
+    // "command -v nuclei"` always failed on Windows, where there is no sh.
+    probeCache = existsSync(explicit);
+    return probeCache;
   }
   try {
-    execFileSync("sh", ["-c", "command -v nuclei"], { stdio: "ignore", timeout: 5000 });
+    const cmd = process.platform === "win32" ? "where" : "which";
+    execFileSync(cmd, ["nuclei"], { stdio: "ignore", timeout: 5000 });
     probeCache = true;
   } catch {
     probeCache = false;

@@ -34,7 +34,11 @@ export function engagementDir(base: string, id: string): string | undefined {
 }
 
 export function generateEngagementId(): string {
-  return `eng-${new Date().toISOString().slice(0, 10)}-${randomBytes(2).toString("hex")}`;
+  // 4 bytes (32 bits) of entropy — the old 16 bits gave a ~50% collision chance
+  // at ~256 same-day launches, and two colliding ids would share one directory
+  // and one live-map entry, corrupting the first run. 32 bits is still short
+  // enough to read but makes an accidental same-day collision negligible.
+  return `eng-${new Date().toISOString().slice(0, 10)}-${randomBytes(4).toString("hex")}`;
 }
 
 export interface EngagementSummary {

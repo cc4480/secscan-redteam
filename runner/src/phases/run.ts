@@ -18,6 +18,7 @@ import { activeTargets } from "../targets.js";
 import { buildItemLedger } from "../coverage/items.js";
 import { fireSlack, reportPhase } from "../report.js";
 import { inTestWindow, scopeHosts } from "../gate.js";
+import { safeEngagementId } from "../util.js";
 import { join } from "node:path";
 import { authorizePhase } from "./authorize.js";
 import { planPhase } from "./plan.js";
@@ -78,8 +79,7 @@ export interface OperatorAbortHandle {
 }
 
 export async function runEngagement(input: EngagementInput, opts: RunOptions = {}): Promise<EngagementResult> {
-  // Stale compiled dist/ is a silent-safety bug (e.g. an old model policy
-  // running after a src-only change). Fail fast — before any target touch.
+  // Stale compiled dist/ is a silent-safety bug (an old model policy running after a src-only change). Fail fast — before any target touch.
   assertDistFresh();
   const config = resolveConfig(process.env, opts);
   const deps = opts.deps ?? {};
@@ -114,7 +114,7 @@ export async function runEngagement(input: EngagementInput, opts: RunOptions = {
   const hosts = scopeHosts(input.roe);
   if (hosts.length === 0) throw new Error("[runner] ROE scope produced no parseable hosts — refusing to run.");
 
-  const engagementId = opts.engagementId ?? `eng-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
+  const engagementId = safeEngagementId(opts.engagementId);
   const dir = join(config.engagementsDir, engagementId);
   // v0.26.0: log rotation — CLI/env overrides, then env defaults. events.jsonl
   // and engagement.md rotate together when the cap is hit (see EventLog).

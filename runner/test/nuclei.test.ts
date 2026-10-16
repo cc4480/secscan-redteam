@@ -278,8 +278,12 @@ describe("nuclei tiers and prerequisites", () => {
 
   it("prerequisiteMet: nuclei binary via env override", () => {
     _resetNucleiProbeCache();
-    process.env.REDTEAM_NUCLEI_BIN = "/usr/bin/nuclei";
+    // A set env path is only "present" when the file actually exists.
+    process.env.REDTEAM_NUCLEI_BIN = process.execPath; // node.exe exists
     assert.equal(prerequisiteMet("nuclei binary"), true);
+    process.env.REDTEAM_NUCLEI_BIN = "C:\\does-not-exist\\nuclei.exe";
+    _resetNucleiProbeCache();
+    assert.equal(prerequisiteMet("nuclei binary"), false);
     delete process.env.REDTEAM_NUCLEI_BIN;
     _resetNucleiProbeCache();
     // Real PATH probe: nuclei is not installed in this test env.

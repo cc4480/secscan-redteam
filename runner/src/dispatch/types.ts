@@ -6,5 +6,8 @@ export interface DispatchResult {
   attackId?: string;
   target?: string;
   opsec?: string;
+  /** True when the call actually succeeded. Absent for handlers that do not
+   * distinguish; the router falls back to a string heuristic in that case. */
+  ok?: boolean;
 }
 

@@ -225,10 +225,11 @@ export const TOOLS: ToolDef[] = [
       properties: {
         id: req("Engagement id"),
         tier: { type: "integer", enum: [0, 1, 2] },
-        operator: req("Named operator approving the change"),
-        reason: req("Justification, recorded in the approval log"),
+        operator: str("Named operator approving a raise"),
+        reason: str("Justification, recorded in the approval log"),
+        confirmTier2Production: { type: "boolean", description: "Required to raise to Tier 2 on production" },
       },
-      required: ["id", "tier", "operator", "reason"],
+      required: ["id", "tier"],
       additionalProperties: false,
     },
     run: async (store, a) => {
@@ -239,11 +240,11 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "reverify",
-    description: "Replay a proof-of-exploitation bundle with a fresh canary.",
+    description: "Replay a proof-of-exploitation bundle with a fresh canary. The bundle is resolved from the engagement's own poc/ directory.",
     inputSchema: {
       type: "object",
-      properties: { id: req("Engagement id"), finding: str("Finding id") },
-      required: ["id"],
+      properties: { id: req("Engagement id"), finding: req("Finding id (the poc/<finding>.json bundle to replay)") },
+      required: ["id", "finding"],
       additionalProperties: false,
     },
     run: async (store, a) => {
@@ -267,7 +268,7 @@ export const TOOLS: ToolDef[] = [
     description: "Fire a watch profile: a continuous-testing run with rolling baselines and drift classification.",
     inputSchema: {
       type: "object",
-      properties: { profile: str("Watch profile name"), id: str("Engagement id to baseline against") },
+      properties: { profile: req("Watch profile name"), trigger: str("Optional drift trigger") },
       required: ["profile"],
       additionalProperties: false,
     },

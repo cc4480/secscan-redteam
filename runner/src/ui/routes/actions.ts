@@ -20,7 +20,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { UiStore } from "../store.js";
 import { engagementDir } from "../store.js";
 import { readState } from "../../events.js";
@@ -118,7 +118,8 @@ export function handleEscalate(store: UiStore, res: ServerResponse, id: string, 
 }
 
 interface ReverifyBody {
-  bundlePath?: string;
+  id?: string;
+  finding?: string;
   scope?: string[];
   execute?: boolean;
 }
@@ -126,13 +127,31 @@ interface ReverifyBody {
 /** POST /api/reverify — plan (sync) or execute (background job). */
 export async function handleReverify(store: UiStore, res: ServerResponse, body: unknown): Promise<void> {
   const b = (body ?? {}) as ReverifyBody;
-  if (!b.bundlePath || typeof b.bundlePath !== "string" || !existsSync(b.bundlePath)) {
-    badRequest(res, "bundlePath is required and must exist");
+  // The bundle is resolved from the engagement's OWN poc/ directory, never from
+  // a caller-supplied filesystem path. Accepting a raw bundlePath let a token
+  // holder read and replay an arbitrary file on disk; the schema always said
+  // { id, finding }, so this handler was lying about what it actually consumed.
+  if (!b.id || typeof b.id !== "string") {
+    badRequest(res, "id (engagement id) is required");
+    return;
+  }
+  const dir = engagementDir(store.engagementsDir, b.id);
+  if (!dir) {
+    json(res, 404, { error: "unknown engagement" });
+    return;
+  }
+  if (!b.finding || typeof b.finding !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(b.finding)) {
+    badRequest(res, "finding (finding id) is required and must be a safe id");
+    return;
+  }
+  const bundlePath = join(dir, "poc", `${b.finding}.json`);
+  if (!existsSync(bundlePath)) {
+    json(res, 404, { error: "no proof bundle for finding" });
     return;
   }
   let bundle: PocBundle;
   try {
-    bundle = JSON.parse(readFileSync(b.bundlePath, "utf8")) as PocBundle;
+    bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as PocBundle;
   } catch (err) {
     badRequest(res, `bad bundle JSON: ${(err as Error).message}`);
     return;
@@ -176,7 +195,7 @@ export async function handleReverify(store: UiStore, res: ServerResponse, body: 
       const report = await reverifyBundle(bundle, createReplayer({ scope: b.scope as string[], killSwitch }));
       let tickets: unknown = null;
       try {
-        const mapping = loadTicketMapping(join(b.bundlePath as string, ".."));
+        const mapping = loadTicketMapping(dir);
         if (mapping) {
           const { attempts } = await updateTicketsForReverify(mapping, bundle, report);
           tickets = attempts;
@@ -205,9 +224,15 @@ export function handleJob(store: UiStore, res: ServerResponse, jobId: string): v
   json(res, 200, job);
 }
 
-/** GET /api/watch/profiles?dir= — list parseable watch profiles. */
-export function handleWatchProfiles(res: ServerResponse, query: URLSearchParams): void {
-  const dir = query.get("dir") || process.cwd();
+/** The single directory watch profiles live in — never a caller-supplied path. */
+function watchProfilesDir(): string {
+  const d = process.env["REDTEAM_WATCH_DIR"]?.trim();
+  return d ? d : join(process.cwd(), "watch");
+}
+
+/** GET /api/watch/profiles — list parseable watch profiles in the fixed dir. */
+export function handleWatchProfiles(res: ServerResponse, _query: URLSearchParams): void {
+  const dir = watchProfilesDir();
   let files: string[] = [];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".json"));
@@ -228,18 +253,25 @@ export function handleWatchProfiles(res: ServerResponse, query: URLSearchParams)
   json(res, 200, out);
 }
 
-/** POST /api/watch/trigger { profilePath, trigger? } — one cycle, background job. */
+/** POST /api/watch/trigger { profile, trigger? } — one cycle, background job. */
 export function handleWatchTrigger(store: UiStore, res: ServerResponse, body: unknown): void {
-  const b = (body ?? {}) as { profilePath?: string; trigger?: string };
-  if (!b.profilePath || typeof b.profilePath !== "string") {
-    badRequest(res, "profilePath is required");
+  const b = (body ?? {}) as { profile?: string; trigger?: string };
+  if (!b.profile || typeof b.profile !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(b.profile)) {
+    badRequest(res, "profile (watch profile name) is required");
+    return;
+  }
+  const dir = watchProfilesDir();
+  const profilePath = join(dir, b.profile.endsWith(".json") ? b.profile : `${b.profile}.json`);
+  // Confine to the watch directory: a profile name is not a path.
+  if (!resolve(profilePath).startsWith(resolve(dir) + sep)) {
+    badRequest(res, "profile name escapes the watch directory");
     return;
   }
   const job = store.createJob("watch-trigger");
   json(res, 202, { jobId: job.id });
   void (async () => {
     try {
-      const result = await runWatchCycle({ profilePath: b.profilePath as string, once: true, trigger: b.trigger });
+      const result = await runWatchCycle({ profilePath, once: true, trigger: b.trigger });
       store.finishJob(job.id, {
         status: result.status,
         engagementId: result.engagementId,

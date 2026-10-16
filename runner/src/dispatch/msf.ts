@@ -99,7 +99,7 @@ if (call.name === "msf_exec") {
     }
     const cveTag = /^CVE-\d{4}-\d{4,7}$/i.test(String(args["cve"] ?? "")) ? ` [${String(args["cve"]).toUpperCase()}]` : "";
     const out = res.output ? ` Output: ${res.output.slice(0, 600)}` : "";
-    return { result: `${res.summary}.${cveTag}${out}`, attackId, target: host };
+    return { result: `${res.summary}.${cveTag}${out}`, attackId, target: host, ok: res.ok };
   } finally {
     ctx.hostKill.controllers.delete(ctrl);
   }

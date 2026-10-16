@@ -4,7 +4,7 @@
 import { type Finding } from "../types.js";
 import { HaltError, type KilledLive, type LiveFinding } from "../context.js";
 import { join, resolve } from "node:path";
-import { queryRegistry } from "../registry.js";
+import { queryRegistry, loadRegistryFile } from "../registry.js";
 import { redactPii } from "../safety/index.js";
 import { resolveItemKey, setDisposition } from "../coverage/items.js";
 import { type Ctx } from "../context.js";
@@ -19,7 +19,10 @@ export async function handleBookkeepingTools(ctx: Ctx, role: ActorRole, phase: E
   if (!["query_registry","update_target_map","record_finding","record_killed","record_item_verdict","abort_engagement","variant_list"].includes(call.name)) return null;
 if (call.name === "query_registry") {
   const limit = Math.min(Math.max(Number(args["limit"] ?? 5) || 5, 1), 10);
-  const hits = queryRegistry(ctx.registry, {
+  // Read the file, not the snapshot: a concurrent engagement's write-through
+  // updates the file but not this ctx's copy, so the snapshot is stale.
+  const registry = loadRegistryFile(ctx.registryPath) ?? ctx.registry;
+  const hits = queryRegistry(registry, {
     vulnClass: optStr(args["vulnClass"]),
     stack: optStr(args["stack"]) ?? ctx.fingerprint.stack.join(","),
     appType: optStr(args["appType"]) ?? ctx.fingerprint.appType,

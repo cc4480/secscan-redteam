@@ -57,7 +57,8 @@ export function writeComplianceArtifacts(
     );
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     for (const f of findings) {
-      if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
+      const sev = String(f.severity ?? "").toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(counts, sev)) counts[sev as keyof typeof counts]++;
     }
     const letterMd = renderAttestationLetter({
       engagementId: ctx.events.engagementId,
