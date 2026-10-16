@@ -21,7 +21,13 @@ export async function reconPhase(ctx: Ctx): Promise<string> {
       (ctx.input.mode === "red"
         ? "Use scan_url with aggressive=true for the active tier."
         : "Start with the passive tier (scan_url without aggressive). Escalate only if the plan calls for it.") +
-      ` Deliver the attack-surface brief when done.`,
+      // The shared target map is the handoff the coordinator actually reviews.
+      // Asking only for a brief let an agent spend every turn on scanners, write
+      // nothing to the map, and loop until the run died — the work was real but
+      // invisible to the rest of the team.
+      ` Write each discovery to the shared target map with update_target_map as you make it — ` +
+      `the map is what the coordinator reviews at sign-off, and it is refused while the map is empty. ` +
+      `Finish with the attack-surface brief and end it with the FINGERPRINT: line.`,
     RECON_TOOLS,
     ctx.config.maxReconTurns,
   );

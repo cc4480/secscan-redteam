@@ -159,7 +159,15 @@ export function validateTasks(ctx: Ctx, raw: Array<Record<string, unknown>>, cap
       category = c as BatteryCategory;
     }
     const maxTurns = Math.min(Math.max(Number(r["maxTurns"]) || 6, 2), 8);
-    const batteryItem = typeof r["batteryItem"] === "string" && r["batteryItem"].trim() ? r["batteryItem"].trim().slice(0, 40) : undefined;
+    // A batteryItem only means something on a probe task: it names the battery
+    // item the probe is evidence for, and the dispatch layer reconciles the
+    // result against it. A recon task has no such item, so a batteryItem on one
+    // is noise the coordinator invented to fill a field the prompt showed it.
+    // It is dropped here rather than passed down, because passing it through
+    // produces "did not resolve to a selected battery item" on every call and
+    // invites the reader to think something failed when nothing did.
+    const rawItem = typeof r["batteryItem"] === "string" ? r["batteryItem"].trim() : "";
+    const batteryItem = kind === "probe" && rawItem ? rawItem.slice(0, 40) : undefined;
     tasks.push({ id: `task-${++taskCounter}`, kind, brief, attackId, category, batteryItem, maxTurns });
   }
   return tasks;
