@@ -1,7 +1,7 @@
 /**
  * MCP surface for the runner's EXECUTOR tools (v0.30.0).
  *
- * The 13 tools in mcp-tools.ts drive ENGAGEMENTS. These 26 drive the tools
+ * The 13 tools in mcp-tools.ts drive ENGAGEMENTS. These 32 drive the tools
  * INSIDE a running engagement: nuclei_exec, msf_exec, http_probe, ssh_exec,
  * ad_enum, query_registry, and the rest. Without them an operator could start
  * an engagement and read its results but never reach the tooling itself, which

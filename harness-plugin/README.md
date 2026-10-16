@@ -19,8 +19,10 @@ Stated plainly, because the rest of this repo states things plainly:
 - The plugin is **built and test-verified** (smoke tests for the pre-execute hook and the
   prompt section). It has **not** been exercised in a live engagement from inside a DSH
   session.
-- `REDTEAM_PROFILE` in `redteam-profile.ts` is **consumed by nothing**. It is scaffolding for a
-  future team-spawning plugin that does not exist in this repo. See the `void` in `index.ts`.
+- `REDTEAM_PROFILE` in `redteam-profile.ts` **drives the injected section**: `index.ts` builds
+  the specialist roster and the task DAG from it. It is still **not a spawner** — nothing in this
+  repo starts those members as separate subagents; the section tells the session's Lead to do
+  that with the Agent Teams tools.
 - The gate **fails closed**. If `SECSCAN_MCP_TOKEN` is unset, the `mcp__secscan__*` tools
   simply do not appear — and the gate denies active work anyway.
 
@@ -88,8 +90,10 @@ For a developer machine that already has DSH Desktop (or a DSH CLI) installed.
    (`$profile\cordis.patch.yml`). That file is a top-level YAML **array** of patch entries and is
    applied after every bundle layer, so the two `insert` blocks append cleanly.
 
-4. **Set the MCP token.** Create an **MCP-scope** token at <https://secscan.us/settings>
-   (AI editors). An API-scope `ssk_` token does **not** work — the scopes are separate.
+4. **Set the MCP token.** Create a token at <https://secscan.us/settings> — the settings page
+   issues it for MCP clients and displays the Claude Code and Cursor configurations. The
+   `ssk_`-prefixed API token works against the MCP endpoint; an earlier version of this file
+   claimed a separate "MCP scope" existed, which was wrong and cost real debugging time.
    Then set `SECSCAN_MCP_TOKEN` in the environment DSH runs under. With it unset, DSH still
    starts; the `mcp__secscan__*` tools just do not appear.
 

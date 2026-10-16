@@ -22,22 +22,37 @@ const WAVE2_TOOLS = new Set([
   "nfs_enum",
 ]);
 
-export async function handleHostTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
-  if (call.name !== "ssh_exec" && call.name !== "smb_exec" && call.name !== "winrm_exec" && !WAVE2_TOOLS.has(call.name)) return null;
-if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm_exec") {
-  const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
-  const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
-  const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
+/**
+ * Shared preflight for EVERY host-exec tool, wave 1 and wave 2 alike.
+ *
+ * The ROE technique check, the pinned targetProfile check, probe counting and
+ * the coverage bookkeeping were byte-for-byte identical in both families, one
+ * copy per wave. Keeping them in one place is the point: the nmap scope gap
+ * came from a safety check that existed in some handlers and not others, and
+ * duplicated checks drift the same way. One source, one fix.
+ *
+ * Returns a ready-to-return refusal, or the scope-checked host plus the
+ * kill-switch controller the caller must release in its `finally`.
+ */
+function hostExecPrelude(
+  ctx: Ctx,
+  call: ToolCallRequest,
+  args: Record<string, unknown>,
+  attackId: string | undefined,
+  category: BatteryCategory | undefined,
+  wantTp: "linux" | "windows",
+): { refused: DispatchResult } | { host: string; ctrl: AbortController } {
   if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
-    return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") };
+    return { refused: { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") } };
   }
   const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
-  const wantTp = call.name === "ssh_exec" ? "linux" : "windows";
   if (!isTargetId(rawTp) || rawTp !== wantTp) {
     return {
-      result: `DENIED: ${call.name} requires targetProfile "${wantTp}" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
-      attackId,
-      target: String(args["host"] ?? ""),
+      refused: {
+        result: `DENIED: ${call.name} requires targetProfile "${wantTp}" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
+        attackId,
+        target: String(args["host"] ?? ""),
+      },
     };
   }
   const host = String(args["host"] ?? "");
@@ -61,11 +76,23 @@ if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm
       },
     });
   }
-  // Kill-switch wiring: register this execution's controller so a
-  // coordinator abort terminates it mid-flight (shared ctx → all parallel
-  // tasks). The executor checks the aborted flag before starting.
+  // Kill-switch wiring: register this execution's controller so a coordinator
+  // abort terminates it mid-flight (shared ctx → all parallel tasks). The
+  // executor checks the aborted flag before starting.
   const ctrl = new AbortController();
   ctx.hostKill.controllers.add(ctrl);
+  return { host, ctrl };
+}
+
+export async function handleHostTools(ctx: Ctx, _role: ActorRole, _phase: EngagementPhase, call: ToolCallRequest, args: Record<string, unknown>): Promise<DispatchResult | null> {
+  if (call.name !== "ssh_exec" && call.name !== "smb_exec" && call.name !== "winrm_exec" && !WAVE2_TOOLS.has(call.name)) return null;
+if (call.name === "ssh_exec" || call.name === "smb_exec" || call.name === "winrm_exec") {
+  const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
+  const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
+  const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
+  const pre = hostExecPrelude(ctx, call, args, attackId, category, call.name === "ssh_exec" ? "linux" : "windows");
+  if ("refused" in pre) return pre.refused;
+  const { host, ctrl } = pre;
   try {
     if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
     const exec = ctx.hostExecutor;
@@ -115,40 +142,10 @@ if (WAVE2_TOOLS.has(call.name)) {
   const attackId = typeof args["attackId"] === "string" ? (args["attackId"] as string).toUpperCase() : undefined;
   const rawCat = typeof args["category"] === "string" ? (args["category"] as string).toLowerCase() : "";
   const category = (BATTERY_CATEGORIES as string[]).includes(rawCat) ? (rawCat as BatteryCategory) : undefined;
-  if (!techniqueAllowed(attackId, ctx.input.mode, ctx.input.roe)) {
-    return { result: `DENIED by ROE: technique ${attackId} is excluded for this engagement.`, attackId, target: String(args["host"] ?? "") };
-  }
-  const rawTp = typeof args["targetProfile"] === "string" ? (args["targetProfile"] as string).toLowerCase() : "";
   const wantTp = call.name === "ssh_agent_audit" || call.name === "nfs_enum" ? "linux" : "windows";
-  if (!isTargetId(rawTp) || rawTp !== wantTp) {
-    return {
-      result: `DENIED: ${call.name} requires targetProfile "${wantTp}" (host targets are never inferred) — got ${JSON.stringify(args["targetProfile"] ?? null)}.`,
-      attackId,
-      target: String(args["host"] ?? ""),
-    };
-  }
-  const host = String(args["host"] ?? "");
-  ctx.probesUsed++;
-  if (category) {
-    ctx.coverage.add(category);
-    if (ctx.input.fullBattery) {
-      let set = ctx.targetCoverage.get(wantTp);
-      if (!set) {
-        set = new Set();
-        ctx.targetCoverage.set(wantTp, set);
-      }
-      set.add(category);
-    }
-    ctx.events.updateState({
-      batteryCoverage: {
-        logic: ctx.coverage.has("logic") ? 1 : 0,
-        functionality: ctx.coverage.has("functionality") ? 1 : 0,
-        validation: ctx.coverage.has("validation") ? 1 : 0,
-      },
-    });
-  }
-  const ctrl = new AbortController();
-  ctx.hostKill.controllers.add(ctrl);
+  const pre = hostExecPrelude(ctx, call, args, attackId, category, wantTp);
+  if ("refused" in pre) return pre.refused;
+  const { host, ctrl } = pre;
   try {
     if (ctx.input.mode === "black") await sleep(Math.random() * 2500); // jitter
     const exec = ctx.hostExecutor;

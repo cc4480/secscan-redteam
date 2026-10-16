@@ -8,14 +8,15 @@
  * spawn the coordinator + specialists as durable continuable subagents.
  *
  * HONEST STATUS: no such team plugin exists in this repo yet. Today the
- * harness path (index.ts `apply()`) only installs the auth gate and injects
- * one system-prompt section (USAGE_SECTION) describing this same team to a
- * single agent — it does not spawn these members as separate subagents.
- * The live multi-agent implementation is the standalone runner
- * (runner/src/agents.ts + runner/src/prompts/), which is independent of this
- * profile. This file is forward scaffolding for when/if a harness team
- * plugin is built; REDTEAM_PROFILE is currently unconsumed (see the `void`
- * reference in index.ts) and kept as a shape reference, not live config.
+ * harness path (index.ts `apply()`) installs the auth gate and injects one
+ * system-prompt section (USAGE_SECTION) that is BUILT FROM this profile — the
+ * specialist roster and the task DAG are generated from REDTEAM_PROFILE.members
+ * and .tasks. What it does NOT do is spawn those members as separate
+ * subagents; the section instructs a single Lead to do that with the Agent
+ * Teams tools. The live multi-agent implementation the runner drives is
+ * independent of this profile (runner/src/agents.ts + runner/src/prompts/).
+ * So this file IS live config for the injected section, and is only forward
+ * scaffolding in the narrower sense that nothing spawns the members for you.
  *
  * Per-role models are PULLED from llm-router's ROLE_MODEL_POLICY (the
  * actual routing policy used by the runner) rather than hardcoded here, so
@@ -30,7 +31,12 @@ export interface TeamMember {
   provider: string;
   model: string;
   reasoning_effort?: string;
-  /** System-prompt file for this role (see ../../agents/). */
+  /**
+   * Pointer to the FULLER role definition in `../../agents/`, for humans.
+   * Nothing loads this file at runtime: the injected roster uses
+   * `executionPrompt` below, and the runner has its own prompts under
+   * `runner/src/prompts/`. Kept as a breadcrumb, not as live config.
+   */
   promptFile: string;
   executionPrompt?: string;
 }

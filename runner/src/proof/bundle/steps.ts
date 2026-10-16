@@ -33,7 +33,6 @@ const OBSERVATION_TOOLS = new Set([
   "ssh_agent_audit",
   "rdp_shadow_prep",
   "scan_url",
-  "get_report",
 ]);
 
 /** Command-execution tools: only a marker echo validates (execution tier). */
