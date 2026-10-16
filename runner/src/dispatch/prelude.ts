@@ -32,6 +32,18 @@ export function numArg(v: unknown): number | undefined {
 }
 
 /**
+ * Optional string-list arg: trimmed non-empty entries, or undefined when the
+ * arg is absent or yields nothing. Was copy-pasted identically into the nmap,
+ * nuclei and xtool handlers.
+ */
+export function strListArg(args: Record<string, unknown>, key: string): string[] | undefined {
+  const v = args[key];
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
+  return out.length ? out : undefined;
+}
+
+/**
  * Record a tagged battery category against the engagement's coverage — the
  * identical bookkeeping every target-facing handler performs before it sends
  * traffic. It appeared, byte-for-byte apart from the cell key, in six handlers

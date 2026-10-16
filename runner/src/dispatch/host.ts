@@ -11,7 +11,10 @@ import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { noteCategoryCoverage, numArg, optStr } from "./prelude.js";
 
-const WAVE2_TOOLS = new Set([
+/** Host-exec tools landed after the ssh/smb/winrm trio. Exported so
+ *  test/tool-family-consistency.test.ts can pin the family against the
+ *  rate-limit set and the proof-action set. */
+export const WAVE2_TOOLS = new Set([
   "winrm_probe",
   "rdp_auth",
   "rdp_shadow_prep",

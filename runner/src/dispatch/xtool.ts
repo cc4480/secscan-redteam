@@ -21,18 +21,11 @@ import type { ToolCallRequest } from "@secscan/redteam-llm-router";
 import { type DispatchResult } from "./types.js";
 import { findXTool, checkXToolFlags, runXTool, binPresent, type XToolSpec } from "../xtool/index.js";
 import { validateHostTarget } from "../host-exec/common.js";
-import { noteCategoryCoverage } from "./prelude.js";
+import { noteCategoryCoverage, strListArg } from "./prelude.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const v = args[key];
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
-}
-
-function strListArg(args: Record<string, unknown>, key: string): string[] | undefined {
-  const v = args[key];
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
-  return out.length ? out : undefined;
 }
 
 /** Resolve which tool a call names, by the `<id>_exec` naming convention. */

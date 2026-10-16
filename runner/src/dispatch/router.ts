@@ -48,7 +48,17 @@ async function dispatchToolInner(ctx: Ctx, role: ActorRole, phase: EngagementPha
  */
 const XTOOL_TOOL_NAMES = new Set(XTOOLS.map((t) => `${t.id}_exec`));
 
-const RATE_LIMITED_TOOLS = new Set([
+/**
+ * Tools whose calls generate traffic against a target host. Tools without a
+ * resolvable target host (shared-state tools, MCP read-only tools) skip the
+ * limiter — they generate no target traffic.
+ *
+ * Exported so test/tool-family-consistency.test.ts can assert that every host
+ * tool the runner exposes is actually rate-limited and auto-halt tracked. A
+ * tool missing from this set fires real traffic with no limiter at all, which
+ * is exactly the class of gap the nmap scope check fell into.
+ */
+export const RATE_LIMITED_TOOLS = new Set([
   "http_probe",
   "burst_probe",
   "scan_url",
