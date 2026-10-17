@@ -258,13 +258,14 @@ downgraded from "verified" to "design-only" (R1 desktop half, R5 CDP execution h
 | R7 operator policy file (allow/deny, deny-wins) | **done** — parse + glob matcher + dispatch enforcement | `policy/rules.ts` |
 | R4 risk profiles + arbitration | **done with G1 fixed** — unknown tools resolve to a fail-closed profile and never throw; scorer, rollback plan, ranking | `safety/risk.ts` |
 | R6 operator pairing | **done** — 6-digit, single-use, TTL, lockout, re-arm; opt-in via `REDTEAM_PAIRING=1` | `ui/pairing.ts` |
-| R1 Windows PC-agent channel | **interface contract** — config gating, closed tool allow-list, MCP handshake over injected fetch; on-host smoke test still required | `host-exec/pc-agent.ts` |
-| R5 browser/CDP driver | **interface contract** — config gating + operations over an injected CDP transport; transport and on-host verification still required | `browser/cdp.ts` |
+| R1 Windows PC-agent channel | **verified on-host** — paired with a real AlterEgo agent over MCP Streamable HTTP and executed `system_info` + `list_dir`; the session-id echo was a real defect the smoke caught, and off-allow-list tools are refused locally | `host-exec/pc-agent.ts`, `scripts/smoke-pc-agent.mjs` |
+| R5 browser/CDP driver | **verified on-host** — real headless Chrome: endpoint discovery, CDP handshake, navigate, snapshot, fillField, evalJs, and non-http(s) refusal all pass | `browser/cdp.ts`, `browser/cdp-transport.ts`, `scripts/smoke-cdp.mjs` |
 | Readiness | `doctor` now also reports the two optional backends | `tools/readiness.ts` |
 
-Verification at landing: `typecheck` clean, build clean, **746 tests pass** (runner 714, including
-15 new tests across hooks/policy/risk and the optional backends). R1/R5 remain *contracts* until
-exercised against a real Windows agent and a real browser — that boundary is deliberate.
+Verification at landing: `typecheck` clean, build clean, **752 tests pass** (runner 720, including the hooks/policy/risk, optional-backend and CDP
+transport suites). R1 and R5 are no longer contracts: both are exercised against real software by
+the on-host smoke scripts (`smoke:pc-agent`, `smoke:cdp`), and the browser smoke already caught one
+real defect (MCP Streamable HTTP requires echoing `Mcp-Session-Id`).
 
 ### 8.1 Also fixed during implementation
 - A PowerShell-5.1 patching pass had mangled non-ASCII characters in twelve touched files

@@ -17,16 +17,20 @@ import { readinessReport } from "../src/tools/readiness.js";
 
 type Captured = { url: string; body: string; headers: Record<string, string> };
 
-/** Fake fetch that records requests and replies with an SSE data line. */
+/** Fake fetch that records requests, issues a session id on initialize, and replies with SSE. */
 function fakeFetch(reply: (body: unknown) => unknown): { fetchImpl: never; calls: Captured[] } {
   const calls: Captured[] = [];
   const fetchImpl = async (url: string, init: { method: string; headers: Record<string, string>; body: string }) => {
     calls.push({ url, body: init.body, headers: init.headers });
-    const parsed = reply(JSON.parse(init.body));
+    const request = JSON.parse(init.body) as { method?: string };
+    const parsed = reply(request);
+    // Streamable HTTP: the server issues a session id on initialize and requires it after.
+    const sessionId = request.method === "initialize" ? "sid-smoke" : null;
     return {
       ok: true,
-      status: 200,
-      text: async () => `event: message\ndata: ${JSON.stringify(parsed)}\n`,
+      status: request.method === "notifications/initialized" ? 202 : 200,
+      headers: { get: (name: string) => (name.toLowerCase() === "mcp-session-id" ? sessionId : null) },
+      text: async () => (parsed === undefined ? "" : `event: message\ndata: ${JSON.stringify(parsed)}\n`),
     };
   };
   return { fetchImpl: fetchImpl as never, calls };
@@ -48,11 +52,14 @@ describe("PC-agent backend contract", () => {
     });
     const client = createPcAgentClient({ url: "http://127.0.0.1:8765/mcp", token: "0123456789abcdef0123" }, fetchImpl);
     const out = await client.call("shell_exec", { cmd: "whoami" });
-    assert.match(out, /"ok"/);
+    assert.equal(out, "ok", "the content text is returned, not the raw JSON-RPC envelope");
     assert.equal(calls.length, 3, "initialize + initialized + tools/call");
     assert.equal(calls[0]!.headers["authorization"], "Bearer 0123456789abcdef0123");
     assert.ok(calls[2]!.body.includes("shell_exec"));
     assert.ok(calls[2]!.body.includes("whoami"));
+    // The session id issued by initialize must be echoed on every later request.
+    assert.equal(calls[1]!.headers["mcp-session-id"], "sid-smoke");
+    assert.equal(calls[2]!.headers["mcp-session-id"], "sid-smoke");
   });
 
   it("refuses any tool outside the closed allow-list", async () => {
