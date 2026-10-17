@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { join, basename } from "node:path";
 import { readEvents, readState, type LiveState } from "./events.js";
 import { runEngagement, type RunOptions } from "./phases.js";
-import { isTargetId, type TargetId } from "./targets.js";
+import { ALL_TARGETS, isTargetId, type TargetId } from "./targets.js";
 import { parseTier } from "./accountability/index.js";
 import type { EngagementInput } from "./types.js";
 
@@ -204,7 +204,7 @@ export function validateQueueInput(raw: unknown): EngagementInput {
   if (b.targets !== undefined) {
     if (!Array.isArray(b.targets)) throw new Error("targets must be an array");
     const bad = (b.targets as unknown[]).filter((t) => typeof t !== "string" || !isTargetId(t));
-    if (bad.length > 0) throw new Error(`bad targets ${JSON.stringify(bad)}; want subset of secscan,seclayer,windows,linux`);
+    if (bad.length > 0) throw new Error(`bad targets ${JSON.stringify(bad)}; want subset of ${ALL_TARGETS.join(",")}`);
     targets = b.targets as TargetId[];
   }
   let tier: 0 | 1 | 2 | undefined;

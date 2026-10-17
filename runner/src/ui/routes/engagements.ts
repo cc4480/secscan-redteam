@@ -10,7 +10,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { runEngagement } from "../../phases.js";
-import { isTargetId, type TargetId } from "../../targets.js";
+import { ALL_TARGETS, isTargetId, type TargetId } from "../../targets.js";
 import { parseTier } from "../../accountability/index.js";
 import type { EngagementInput } from "../../types.js";
 import { readState } from "../../events.js";
@@ -29,7 +29,7 @@ function toEngagementInput(b: UiLaunchRequest): EngagementInput {
   let targets: TargetId[] | undefined;
   if (b.targets && b.targets.length > 0) {
     const bad = b.targets.filter((t) => !isTargetId(t));
-    if (bad.length > 0) throw new Error(`bad targets ${JSON.stringify(bad)}; want subset of secscan,seclayer,windows,linux`);
+    if (bad.length > 0) throw new Error(`bad targets ${JSON.stringify(bad)}; want subset of ${ALL_TARGETS.join(",")}`);
     targets = b.targets as TargetId[];
   }
   let tier: 0 | 1 | 2 | undefined;

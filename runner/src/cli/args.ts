@@ -4,7 +4,7 @@
  */
 
 import type { EngagementInput, EngagementMode, RulesOfEngagement } from "../types.js";
-import { isTargetId } from "../targets.js";
+import { ALL_TARGETS, isTargetId } from "../targets.js";
 import type { TargetId } from "../targets.js";
 import { parseTier } from "../accountability/index.js";
 import type { AutonomyTier } from "../accountability/index.js";
@@ -56,7 +56,7 @@ export function parseLogRotationArgs(): { maxLogBytes?: number; maxLogArchives?:
 
 export function usage(): never {
   console.error(`Usage:
-  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--tier 0|1|2] [--confirm-tier2-production] [--operator "<name>"] [--local-sandbox] [--dry-run]
+  redteam-runner start --target <domain|url> --mode <red|black> --objective "<text>" --scope <host> [--scope <host>...] [--exclude <Txxxx>...] [--blackout "02:00-04:00 America/Chicago"...] [--client "<name>"] [--full-battery] [--targets secscan,seclayer,webapp,windows,linux] [--env staging|production] [--confirm-production] [--max-rps <n>] [--tier 0|1|2] [--confirm-tier2-production] [--operator "<name>"] [--local-sandbox] [--dry-run]
   redteam-runner start --target secscan+seclayer --mode red --objective "<text>" --scope secscan.us   # full-battery unified engagement (web targets only)
   redteam-runner queue  --target ... (same flags)   # enqueue for the watcher / console
   redteam-runner watch [--queue <dir>]              # run queued jobs until aborted
@@ -81,8 +81,9 @@ export function usage(): never {
 target-specific batteries (3 categories × selected targets). The coordinator
 prompt carries the selected batteries as the plan skeleton; coverage counts
 complete only when every cell is probed or honestly BLOCKED.
---targets <csv>: subset of secscan,seclayer,windows,linux for a full-battery run
-(default: all four). Only applies with --full-battery. Several battery items
+--targets <csv>: subset of secscan,seclayer,webapp,windows,linux for a full-battery run
+(default: the four vendor targets; add webapp to opt in the generic client-webapp battery).
+Only applies with --full-battery. Several battery items
 carry honest prerequisites (each tagged [needs: ...] in the plan skeleton,
 e.g. the Metasploit items need msfrpcd and the Nuclei items need the nuclei
 binary); three need more than operator tooling — WS-064: kerberos ticket
@@ -191,7 +192,7 @@ export function buildInput(): EngagementInput {
     const parsed = arg("--targets")!.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0);
     const bad = parsed.filter((s) => !isTargetId(s));
     if (bad.length > 0) {
-      console.error(`[runner] bad --targets ${JSON.stringify(bad)}; want comma-separated subset of secscan,seclayer,windows,linux`);
+      console.error(`[runner] bad --targets ${JSON.stringify(bad)}; want comma-separated subset of ${ALL_TARGETS.join(",")}`);
       process.exit(2);
     }
     targets = parsed as TargetId[];

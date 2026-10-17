@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { readEvents } from "../events.js";
 import { PocBundle, buildNegativeProof, buildPocBundle, bundleSummary } from "../proof/index.js";
 import { type Finding } from "../types.js";
-import { TARGET_PROFILES } from "../targets.js";
+import { TARGET_PROFILES, activeTargets, type TargetId } from "../targets.js";
 import { type Ctx } from "../context.js";
 
 export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: Map<string, PocBundle>): string {
@@ -42,8 +42,14 @@ export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: M
       target: ctx.input.target,
       operator: ctx.input.operatorName || process.env["REDTEAM_OPERATOR"]?.trim() || "(operator name not supplied — set REDTEAM_OPERATOR)",
     };
+    // Attribute a confirmed finding's PoC to a battery item from a battery that
+    // actually RAN in this engagement. Without the selected-target filter the
+    // first-wins walk could credit a generic webapp item (WA-*) for a host
+    // finding, because TARGET_PROFILES order puts webapp before windows/linux.
+    const selected = new Set<TargetId>(activeTargets({ targets: ctx.input.targets }));
     const attackToItem = new Map<string, string>();
     for (const [tid, profile] of Object.entries(TARGET_PROFILES)) {
+      if (!selected.has(tid as TargetId)) continue;
       for (const item of profile.battery) {
         if (item.attackId && !attackToItem.has(item.attackId.toUpperCase())) {
           attackToItem.set(item.attackId.toUpperCase(), `${tid}:${item.id}`);

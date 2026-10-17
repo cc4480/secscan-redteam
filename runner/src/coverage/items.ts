@@ -4,10 +4,9 @@
  * The coverage contract used to be cell-level (3 categories × selected
  * targets = 12 cells): a cell could report "done" while individual battery
  * items inside it had never been attempted. This module closes that gap
- * mechanically: every selected battery item (418 static items across the
- * four target profiles, plus dynamic per-CVE runtime instances from
- * msf_exec) carries exactly one disposition per engagement, and the battery
- * may not report complete while any item is still `pending`.
+ * mechanically: every selected battery item (418 static across the four default
+ * profiles, the 120-item WA-* family when selected, plus runtime CVE instances)
+ * carries one disposition per engagement; completion requires none pending.
  *
  * Dispositions: pending (not attempted) · confirmed (validated finding) ·
  * executed-clean (executed, no finding) · killed (ruled out — negative
@@ -22,7 +21,7 @@
  */
 
 import type { BatteryCategory } from "../battery.js";
-import { FULL_BATTERY_TARGETS, TARGET_PREFIXES, TARGET_PROFILES } from "../targets/index.js";
+import { ALL_TARGETS, TARGET_PREFIXES, TARGET_PROFILES } from "../targets/index.js";
 import type { TargetId } from "../targets/index.js";
 import type { VariantProgress } from "../variants/types.js";
 import { nucleiBinaryPresent } from "../nuclei/prereq.js";
@@ -63,6 +62,7 @@ const FINAL_DISPOSITIONS: ItemDisposition[] = ["confirmed", "killed", "na"];
 const PREFIX_TO_TARGET: Record<string, TargetId> = {
   SS: "secscan",
   SL: "seclayer",
+  WA: "webapp",
   WS: "windows",
   LX: "linux",
 };
@@ -89,7 +89,7 @@ export function resolveItemKey(raw: string, _targetProfile?: string): string | u
       const cu = item.trim().toUpperCase();
       return CVE_RE.test(cu) ? `cve:${cu}` : undefined;
     }
-    if (!(FULL_BATTERY_TARGETS as string[]).includes(tl)) return undefined;
+    if (!(ALL_TARGETS as string[]).includes(tl)) return undefined;
     const m = item.trim().toUpperCase().match(ITEM_RE);
     if (!m) return undefined;
     const [, prefix, num] = m as [string, string, string];

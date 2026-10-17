@@ -119,6 +119,11 @@ export const TOOLS: ToolDef[] = [
         confirmProduction: { type: "boolean", description: "Required to run against production" },
         confirmTier2Production: { type: "boolean", description: "Required for Tier 2 on production" },
         fullBattery: { type: "boolean", description: "Run the full battery (default true)" },
+        targets: {
+          type: "array",
+          items: { type: "string", enum: ["secscan", "seclayer", "webapp", "windows", "linux"] },
+          description: "Optional battery subset. Omit for the default vendor targets. Use [\"webapp\"] to run the WA-* battery against a client web application.",
+        },
         maxActions: {
           type: "integer",
           description:

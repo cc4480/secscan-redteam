@@ -179,3 +179,23 @@ See `docs/coverage.md` for the per-item contract.
 - ATT&CK mappings are advisory: web flaw classes map imperfectly onto an
   endpoint/intrusion framework. Where no technique honestly fits, the OWASP
   reference stands alone.
+
+## Client web applications (WA-*): the opt-in fifth target (v0.35.0)
+
+The four targets above are the vendor's own surfaces. The runner also carries a
+fifth, **opt-in** family for attacking a client's own web application:
+**120 items, `WA-001`...`WA-120`**, in 19 blocks - headers and cookies, TLS,
+DNS and email authentication, mail transport, exposed files, client-side
+secrets, SCA/CVE, injection, XXE and SSRF, access control, JWT and session, API
+surface, BaaS and storage, cloud/perimeter, client-side trust, AI features,
+business logic, supplied-repository SAST, and coverage honesty.
+
+It is not part of `FULL_BATTERY_TARGETS` and does not change the 418-item
+contract: a full-battery engagement against the four vendor targets never
+carries it. Select it explicitly with `--targets webapp` (or `start_engagement`
+with `targets: ["webapp"]`); `http_probe` also accepts
+`targetProfile: "webapp"`. Items whose prerequisite is met execute; the rest
+report under Honest limits exactly like the host prerequisites above. See
+[webapp-battery.md](webapp-battery.md) for the 19 blocks, the tool per block,
+every `needs` value and the provenance from the SecScan and Seclayer scan
+corpora.

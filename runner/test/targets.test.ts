@@ -1,8 +1,10 @@
 /**
  * Full-battery tests (v0.8.0) — EXHAUSTIVE target-specific SecScan (120+) +
  * SecLayer (80+) + Windows (100+) + Linux (100+) batteries run as ONE unified
- * engagement, with honest host-exec tooling scoping. No network, no API
- * keys: fake LLM, fake prober, injected server gate.
+ * engagement, with honest host-exec tooling scoping. v0.35.0 adds the opt-in
+ * generic webapp battery (WA-*, 120 items): a registered target that stays
+ * OUTSIDE FULL_BATTERY_TARGETS, so the 418-item contract is unchanged. No
+ * network, no API keys: fake LLM, fake prober, injected server gate.
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +13,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AgentRole, ChatMessage, ChatResult, ToolCallRequest } from "@secscan/redteam-llm-router";
 import {
+  ALL_TARGETS,
   TARGET_PROFILES,
   BATTERY_ITEM_COUNTS,
   FULL_BATTERY_TARGETS,
@@ -21,6 +24,7 @@ import {
   NEEDS_NUCLEI,
   NEEDS_PRIVILEGED_CLIENT,
   TARGET_PREFIXES,
+  TOTAL_BATTERY_ITEMS,
   activeTargets,
   fullBatteryPlanSkeleton,
   fullBatteryChecklistText,
@@ -53,32 +57,53 @@ function promptCtx(fullBattery?: boolean, targets?: TargetId[]) {
 }
 
 describe("target registry", () => {
-  it("isTargetId accepts the four targets, rejects unknown", () => {
-    for (const t of ["secscan", "seclayer", "windows", "linux", "SecScan", "WINDOWS"]) assert.ok(isTargetId(t), t);
+  it("isTargetId accepts the five targets, rejects unknown", () => {
+    for (const t of ["secscan", "seclayer", "webapp", "windows", "linux", "SecScan", "WINDOWS", "WEBAPP"]) {
+      assert.ok(isTargetId(t), t);
+    }
     assert.ok(!isTargetId("nope") && !isTargetId(""), "rejects unknown");
   });
-  it("FULL_BATTERY_TARGETS is all four; activeTargets defaults and filters", () => {
+  it("FULL_BATTERY_TARGETS is all four; ALL_TARGETS adds webapp; activeTargets defaults and filters", () => {
     assert.deepEqual(FULL_BATTERY_TARGETS, ["secscan", "seclayer", "windows", "linux"]);
+    assert.deepEqual(ALL_TARGETS, ["secscan", "seclayer", "windows", "linux", "webapp"]);
     assert.deepEqual(activeTargets({}), ["secscan", "seclayer", "windows", "linux"]);
     assert.deepEqual(activeTargets({ targets: ["secscan", "seclayer"] }), ["secscan", "seclayer"]);
     assert.deepEqual(activeTargets({ targets: ["windows", "nope" as TargetId] }), ["windows"]);
     assert.deepEqual(activeTargets({ targets: [] }), ["secscan", "seclayer", "windows", "linux"]);
+    // webapp is opt-in only: the default set never gains it, an explicit selection wins.
+    assert.deepEqual(activeTargets({ targets: ["webapp"] }), ["webapp"]);
+    assert.deepEqual(activeTargets({ targets: ["webapp", "windows"] }), ["webapp", "windows"]);
+  });
+  it("webapp contract constants: WA prefix, 120 items, TOTAL_BATTERY_ITEMS still 418", () => {
+    assert.equal(TARGET_PREFIXES.webapp, "WA");
+    assert.equal(BATTERY_ITEM_COUNTS.webapp, 120);
+    assert.equal(TOTAL_BATTERY_ITEMS, 418, "webapp stays outside FULL_BATTERY_TARGETS");
   });
 });
 
 describe("target profile integrity", () => {
-  it("four profiles present; battery floors met (120/80/100/100)", () => {
-    assert.deepEqual(Object.keys(TARGET_PROFILES).sort(), ["linux", "seclayer", "secscan", "windows"]);
-    const floors: Record<TargetId, number> = { secscan: 120, seclayer: 80, windows: 100, linux: 100 };
+  it("five profiles present; battery floors met (120/80/120/100/100)", () => {
+    assert.deepEqual(Object.keys(TARGET_PROFILES).sort(), ["linux", "seclayer", "secscan", "webapp", "windows"]);
+    const floors: Record<TargetId, number> = { secscan: 120, seclayer: 80, webapp: 120, windows: 100, linux: 100 };
     for (const [id, floor] of Object.entries(floors)) {
       const n = TARGET_PROFILES[id as TargetId].battery.length;
-      assert.ok(n >= floor, `${id} has ${n}, want ≥${floor}`);
+      assert.ok(n >= floor, `${id} has ${n}, want at least ${floor}`);
     }
-    // Every category represented on every target (the 12-cell coverage contract).
+    // Every category represented on every target (the 3 x N coverage contract).
     for (const profile of Object.values(TARGET_PROFILES)) {
       for (const cat of BATTERY_CATEGORIES) {
         assert.ok(targetItemsFor(profile, cat).length > 0, `${profile.id}:${cat} non-empty`);
       }
+    }
+  });
+  it("webapp profile: kind webapp, name names Web, battery length === BATTERY_ITEM_COUNTS.webapp", () => {
+    const profile = TARGET_PROFILES.webapp;
+    assert.equal(profile.id, "webapp");
+    assert.equal(profile.kind, "webapp");
+    assert.ok(profile.name.includes("Web"), profile.name);
+    assert.equal(profile.battery.length, BATTERY_ITEM_COUNTS.webapp);
+    for (const cat of BATTERY_CATEGORIES) {
+      assert.ok(targetItemsFor(profile, cat).length > 0, `webapp:${cat} non-empty`);
     }
   });
   it("ids unique per target, prefix shape, every item has category/name/brief/what/owasp", () => {
@@ -97,9 +122,11 @@ describe("target profile integrity", () => {
       }
     }
   });
-  it("lookupTargetProfile resolves all four, rejects unknown", () => {
+  it("lookupTargetProfile resolves all five, rejects unknown", () => {
     assert.equal(lookupTargetProfile("secscan")?.name.includes("SecScan"), true);
     assert.equal(lookupTargetProfile("SECLAYER")?.name.includes("SecLayer"), true);
+    assert.equal(lookupTargetProfile("webapp")?.kind, "webapp");
+    assert.equal(lookupTargetProfile("WEBAPP")?.name.includes("Web"), true);
     assert.equal(lookupTargetProfile("windows")?.kind, "host-windows");
     assert.equal(lookupTargetProfile("LINUX")?.kind, "host-linux");
     assert.equal(lookupTargetProfile("nope"), undefined);
@@ -130,6 +157,19 @@ describe("target profile integrity", () => {
     const text = fullBatteryChecklistText("red", ["windows", "linux"]);
     assert.ok(text.includes("WS-001") && text.includes("LX-001"), "host batteries present");
     assert.ok(!text.includes("SS-001") && !text.includes("SL-001"), "web batteries excluded");
+  });
+  it("webapp checklist carries every WA id and only the webapp battery", () => {
+    const text = targetBatteryChecklistText(TARGET_PROFILES.webapp, "red");
+    for (let n = 1; n <= BATTERY_ITEM_COUNTS.webapp; n++) {
+      const id = `WA-${String(n).padStart(3, "0")}`;
+      assert.ok(text.includes(id), `${id} present in the webapp compact checklist`);
+    }
+    const listed = text.match(/^- WA-\d{3} /gm) ?? [];
+    assert.equal(listed.length, BATTERY_ITEM_COUNTS.webapp, "every WA item rendered exactly once");
+    const only = fullBatteryChecklistText("red", ["webapp"]);
+    assert.ok(only.includes("WA-001") && only.includes("WA-120"), "webapp checklist present");
+    assert.ok(!only.includes("SS-001") && !only.includes("SL-001"), "vendor batteries excluded");
+    assert.ok(!only.includes("WS-001") && !only.includes("LX-001"), "host batteries excluded");
   });
 });
 
@@ -203,11 +243,21 @@ describe("unified plan", () => {
       prev = i;
     }
     assert.ok(s.includes("3 × 4 = 12 cells"), "coverage rule stated");
+    assert.ok(!s.includes("EXPLOIT Webapp battery"), "webapp battery is opt-in, never in the default plan");
     assert.ok(
       s.includes(`WS-*, ${BATTERY_ITEM_COUNTS.windows} items`) &&
         s.includes("All items are executable via the host tools"),
       "host execution reality stated with the real item count",
     );
+  });
+  it("webapp-only skeleton: 3 x 1 = 3 cells, Webapp phase, tag enum narrowed", () => {
+    const s = fullBatteryPlanSkeleton(["webapp"]);
+    assert.ok(s.includes("3 \u00d7 1 = 3 cells"), "one target = 3 coverage cells");
+    assert.ok(s.includes("EXPLOIT Webapp battery"), "Webapp phase present");
+    assert.ok(s.includes(`WA-*, ${BATTERY_ITEM_COUNTS.webapp} items`), "real webapp item count stated");
+    assert.ok(!s.includes("EXPLOIT SecScan battery") && !s.includes("EXPLOIT Windows battery"), "vendor phases omitted");
+    assert.ok(s.includes('"webapp"'), "tag enum narrowed to webapp");
+    assert.ok(!s.includes('"secscan" | "seclayer"'), "vendor tag enum omitted");
   });
   it("subset skeleton: two targets → 6 cells, host phases omitted", () => {
     const s = fullBatteryPlanSkeleton(["secscan", "seclayer"]);
@@ -215,12 +265,18 @@ describe("unified plan", () => {
     assert.ok(!s.includes("EXPLOIT Windows battery"));
     assert.ok(s.includes('"secscan" | "seclayer"'), "tag enum narrowed");
   });
-  it("inferTargetProfile routes /api/mcp to seclayer; never invents host targets", () => {
+  it("inferTargetProfile: mcp path -> seclayer, vendor hosts -> their battery, other hosts -> webapp", () => {
     assert.equal(inferTargetProfile("https://secscan.us/api/mcp"), "seclayer");
     assert.equal(inferTargetProfile("https://secscan.us/api/mcp?x=1"), "seclayer");
     assert.equal(inferTargetProfile("https://secscan.us/scan"), "secscan");
-    assert.equal(inferTargetProfile("https://10.9.0.11/"), "secscan", "host URLs default to secscan — explicit tag required");
-    assert.equal(inferTargetProfile("not a url"), "secscan");
+    assert.equal(inferTargetProfile("https://secscan.us"), "secscan");
+    assert.equal(inferTargetProfile("https://app.secscan.us/"), "secscan", "subdomain of secscan.us");
+    assert.equal(inferTargetProfile("https://seclayer.app/"), "seclayer");
+    assert.equal(inferTargetProfile("https://api.seclayer.app/mcp"), "seclayer", "subdomain of seclayer.app");
+    assert.equal(inferTargetProfile("https://10.9.0.11/"), "webapp", "unknown hosts are the generic webapp battery, never a host target");
+    assert.equal(inferTargetProfile("https://shop.example.com/search"), "webapp");
+    assert.equal(inferTargetProfile("https://secscan.us.evil.example/"), "webapp", "host matching is anchored, not a loose substring");
+    assert.equal(inferTargetProfile("not a url"), "webapp");
   });
 });
 

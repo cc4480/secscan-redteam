@@ -9,18 +9,31 @@
 
 import type { BatteryCategory } from "../battery.js";
 
-export type TargetId = "secscan" | "seclayer" | "windows" | "linux";
+export type TargetId = "secscan" | "seclayer" | "webapp" | "windows" | "linux";
+
+/**
+ * The four targets a FULL-BATTERY engagement covers by default. These are the
+ * vendor's own surfaces plus the two host families. The v0.35.0 `webapp`
+ * family (WA-*, a generic client web application) is deliberately NOT in this
+ * default set: it is selected explicitly with --targets webapp (or the
+ * start_engagement `targets` argument), because against secscan.us/seclayer.app
+ * the generic webapp battery would duplicate the SS-* / SL-* work.
+ */
 export const FULL_BATTERY_TARGETS: TargetId[] = ["secscan", "seclayer", "windows", "linux"];
+
+/** Every target a caller may select, including the opt-in generic webapp family. */
+export const ALL_TARGETS: TargetId[] = [...FULL_BATTERY_TARGETS, "webapp"];
 
 /** Guard for user-supplied target ids (--targets, probe args). */
 export function isTargetId(s: string): s is TargetId {
-  return (FULL_BATTERY_TARGETS as string[]).includes(s.toLowerCase());
+  return (ALL_TARGETS as string[]).includes(s.toLowerCase());
 }
 
-/** Battery id prefixes per target: SS-*, SL-*, WS-*, LX-*. */
+/** Battery id prefixes per target: SS-*, SL-*, WA-*, WS-*, LX-*. */
 export const TARGET_PREFIXES: Record<TargetId, string> = {
   secscan: "SS",
   seclayer: "SL",
+  webapp: "WA",
   windows: "WS",
   linux: "LX",
 };
@@ -35,6 +48,7 @@ export const TARGET_PREFIXES: Record<TargetId, string> = {
 export const BATTERY_ITEM_COUNTS: Record<TargetId, number> = {
   secscan: 120,
   seclayer: 80,
+  webapp: 120,
   windows: 108,
   linux: 110,
 };

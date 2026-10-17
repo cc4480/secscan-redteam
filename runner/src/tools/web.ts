@@ -43,7 +43,7 @@ export const MCP_TOOLS: JsonSchemaTool[] = [
 export const PROBE_TOOL: JsonSchemaTool = {
   name: "http_probe",
   description:
-    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis. Full-battery engagements: also include targetProfile (secscan|seclayer|windows|linux) — host targets are never inferred from the URL, tag them explicitly.",
+    "Send ONE HTTP request to an in-scope host to test a specific hypothesis. In-scope hosts only (runner-enforced), non-destructive. Include attackId (ATT&CK, e.g. T1190), category (logic|functionality|validation), and a one-sentence hypothesis. Full-battery engagements: also include targetProfile (secscan|seclayer|webapp|windows|linux) — host targets are never inferred from the URL, tag them explicitly. Use webapp for a client web application.",
   parameters: {
     type: "object",
     properties: {
@@ -53,7 +53,7 @@ export const PROBE_TOOL: JsonSchemaTool = {
       body: { type: "string" },
       attackId: { type: "string" },
       category: { type: "string", enum: ["logic", "functionality", "validation"] },
-      targetProfile: { type: "string", enum: ["secscan", "seclayer", "windows", "linux"] },
+      targetProfile: { type: "string", enum: ["secscan", "seclayer", "webapp", "windows", "linux"] },
       hypothesis: { type: "string" },
     },
     required: ["method", "url", "category"],

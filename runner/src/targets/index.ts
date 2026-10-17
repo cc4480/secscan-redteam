@@ -5,6 +5,10 @@
  * against their REAL surfaces:
  *  - SecScan (scanner webapp, 120 items) + SecLayer (MCP/API layer, 80 items)
  *  - Windows host + AD (100+ items) + Linux host (100+ items)
+ *  - Webapp (v0.35.0, WA-*, 120 items): a GENERIC client web application,
+ *    opt-in with --targets webapp / start_engagement targets. This is the
+ *    customer-facing family: it encodes the SecScan + Seclayer scan corpus
+ *    (see docs/webapp-battery.md) rather than the two products' own surfaces.
  *
  * Target-specific beats generic because the same flaw class lands
  * differently on each surface: IDOR on a scan report is not IDOR on a
@@ -37,18 +41,20 @@
 import type { BatteryCategory } from "../battery.js";
 import { BATTERY_CATEGORIES, CATEGORY_LABELS } from "../battery.js";
 import type { TargetBatteryItem, TargetId, TargetKind, TargetProfile } from "./types.js";
-import { BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId } from "./types.js";
+import { ALL_TARGETS, BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId } from "./types.js";
 import { SECSCAN_PROFILE } from "./secscan.js";
 import { SECLAYER_PROFILE } from "./seclayer.js";
+import { WEBAPP_PROFILE } from "./webapp.js";
 import { WINDOWS_PROFILE } from "./windows.js";
 import { LINUX_PROFILE } from "./linux.js";
 
 export type { TargetBatteryItem, TargetId, TargetKind, TargetProfile };
-export { BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId };
+export { ALL_TARGETS, BATTERY_ITEM_COUNTS, FULL_BATTERY_TARGETS, HOST_EXEC_TOOLING, NEEDS_HUMAN_OPERATOR, NEEDS_KERBEROS_TICKET, NEEDS_MSFRPCD, NEEDS_NUCLEI, NEEDS_PRIVILEGED_CLIENT, TARGET_PREFIXES, TOTAL_BATTERY_ITEMS, isTargetId };
 
 export const TARGET_PROFILES: Record<TargetId, TargetProfile> = {
   secscan: SECSCAN_PROFILE,
   seclayer: SECLAYER_PROFILE,
+  webapp: WEBAPP_PROFILE,
   windows: WINDOWS_PROFILE,
   linux: LINUX_PROFILE,
 };
@@ -59,8 +65,10 @@ export function lookupTargetProfile(id: string): TargetProfile | undefined {
 }
 
 /**
- * Selected targets for a full-battery engagement. Defaults to all four;
- * --targets narrows the subset (e.g. secscan,seclayer for the web-only run).
+ * Selected targets for a full-battery engagement. Defaults to the four vendor
+ * targets; --targets narrows the subset or opt in the generic webapp family
+ * (e.g. --targets webapp for a client web application, or
+ * --targets webapp,windows for a client app plus its Windows host).
  */
 export function activeTargets(input: { targets?: TargetId[] }): TargetId[] {
   if (input.targets && input.targets.length > 0) {
@@ -91,15 +99,23 @@ export function allBatteryAttackIds(): string[] {
   return [...ids].sort();
 }
 
-/** Infer which target a probe URL belongs to: the MCP path is SecLayer, everything else is the webapp. Host targets are never inferred — they need an explicit tag. */
+/**
+ * Infer which target a probe URL belongs to: the MCP path is SecLayer, the two
+ * vendor hostnames are their own batteries, and every other web host is the
+ * generic client-webapp battery (WA-*). Host targets are never inferred - they
+ * need an explicit tag.
+ */
 export function inferTargetProfile(url: string): TargetId {
   try {
-    const path = new URL(url).pathname.toLowerCase();
-    if (path.startsWith("/api/mcp")) return "seclayer";
+    const u = new URL(url);
+    if (u.pathname.toLowerCase().startsWith("/api/mcp")) return "seclayer";
+    const host = u.hostname.toLowerCase();
+    if (host === "secscan.us" || host.endsWith(".secscan.us")) return "secscan";
+    if (host === "seclayer.app" || host.endsWith(".seclayer.app")) return "seclayer";
   } catch {
-    /* unparseable — default to the webapp */
+    /* unparseable - fall through to the generic webapp battery */
   }
-  return "secscan";
+  return "webapp";
 }
 
 /**
@@ -156,6 +172,7 @@ export function fullBatteryChecklistText(mode: "red" | "black", targets?: Target
 const PLAN_PHASE_NAMES: Record<TargetId, string> = {
   secscan: "EXPLOIT SecScan battery (SS-*) — the scanner webapp: intake, SSRF guard, DNS gate, lifecycle, reports, shares, opt-out, rate limits, auth, API, efficacy canaries.",
   seclayer: "EXPLOIT SecLayer battery (SL-*) — the MCP/API layer: handshake, tools/list, per-tool per-param attacks, JSON-RPC layer, HTTP layer, auth layer, notifications, quotas, oracles.",
+  webapp: `EXPLOIT Webapp battery (WA-*, ${BATTERY_ITEM_COUNTS.webapp} items) — a generic client web application: headers/cookies, TLS, DNS and email auth, mail transport, exposed files and tech templates, client-side secrets, SCA/CVE, injection (XSS, SQLi error/time/boolean, command, SSTI, LFI, LDAP/XPath, CRLF, XXE), SSRF, access control (IDOR/BOLA/BFLA/mass-assignment/i18n), JWT and session, API surface, BaaS and storage, cloud/perimeter recon, client-side behaviours, AI features, business logic, repository/SAST, and coverage honesty. Executed through http_probe/burst_probe, nmap_exec, nuclei_exec, sqlmap_exec, ffuf/gobuster/nikto, msf_exec and the CDP browser; items whose prerequisite is absent are tagged [needs: …] and report under Honest limits. Non-destructive: dry-run writes only, no real data extraction.`,
   windows: `EXPLOIT Windows battery (WS-*, ${BATTERY_ITEM_COUNTS.windows} items) — host + AD: recon, auth attacks (test accounts only), AD attack paths, privesc, lateral movement, credential-exposure audit, persistence findings. All items are executable via the host tools (smb_exec/smb_pth, winrm_exec/winrm_probe, rdp_auth, ad_enum, krb_ptt) plus the Metasploit/Nuclei methodology items (WS-105–108). Items needing operator-supplied prerequisites are tagged [needs: …] in the checklist; two need more than operator tooling — WS-064 (kerberos ticket material) and WS-065 (a human operator for the shadowing act itself; use rdp_shadow_prep to prepare the handoff — never pretend the runner shadowed a session). HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.`,
   linux: `EXPLOIT Linux battery (LX-*, ${BATTERY_ITEM_COUNTS.linux} items) — host: recon, SSH, privesc, exposed services, file-permission audit, persistence findings. All items are executable via the host tools (ssh_exec, ssh_agent_audit, nfs_enum) plus the Metasploit/Nuclei methodology items (LX-107–110). Items needing operator-supplied prerequisites are tagged [needs: …] in the checklist; LX-041's mount+file proof needs a privileged test client (REDTEAM_NFS_TEST_CLIENT, in scope) — the export enumeration itself runs unprivileged. HTTP(S) banner/TLS/headers recon via http_probe IS executable and counts toward the validation cell.`,
 };
