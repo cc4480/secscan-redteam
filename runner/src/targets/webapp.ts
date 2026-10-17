@@ -1,7 +1,7 @@
 /**
- * Webapp target profile - a GENERIC client web application (v0.35.0).
+ * Webapp target profile - a GENERIC client web application (v0.36.0).
  *
- * This is the customer-facing battery (WA-001..WA-120). It is the executable
+ * This is the customer-facing battery (WA-001..WA-144). It is the executable
  * form of the SecScan (VibeScan-Enterprise-Build) and Seclayer (seclayer.io2026)
  * scan corpora, so the agents run those checks natively against a client's
  * application instead of only through the two scanner products.
@@ -28,6 +28,8 @@ import { WEBAPP_PART_2 } from "./webapp-part-2.js";
 import { WEBAPP_PART_3 } from "./webapp-part-3.js";
 import { WEBAPP_PART_4 } from "./webapp-part-4.js";
 import { WEBAPP_PART_5 } from "./webapp-part-5.js";
+import { WEBAPP_PART_6 } from "./webapp-part-6.js";
+import { WEBAPP_PART_7 } from "./webapp-part-7.js";
 
 const WEBAPP_BATTERY: TargetBatteryItem[] = [
   ...WEBAPP_PART_1,
@@ -35,6 +37,8 @@ const WEBAPP_BATTERY: TargetBatteryItem[] = [
   ...WEBAPP_PART_3,
   ...WEBAPP_PART_4,
   ...WEBAPP_PART_5,
+  ...WEBAPP_PART_6,
+  ...WEBAPP_PART_7,
 ];
 
 export const WEBAPP_PROFILE: TargetProfile = {

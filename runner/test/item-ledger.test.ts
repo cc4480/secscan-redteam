@@ -97,14 +97,14 @@ describe("buildItemLedger", () => {
     assert.ok(!ledger.has("windows:WS-001"));
   });
 
-  it("a webapp-only ledger is exactly BATTERY_ITEM_COUNTS.webapp (120), outside the 418 contract", () => {
+  it("a webapp-only ledger is exactly BATTERY_ITEM_COUNTS.webapp (144), outside the 418 contract", () => {
     const ledger = buildItemLedger(["webapp"]);
     assert.equal(ledger.size, BATTERY_ITEM_COUNTS.webapp);
-    assert.equal(BATTERY_ITEM_COUNTS.webapp, 120);
+    assert.equal(BATTERY_ITEM_COUNTS.webapp, 144);
     // FATAL drift guard: adding webapp to FULL_BATTERY_TARGETS would move this.
     assert.equal(TOTAL_BATTERY_ITEMS, 418, "webapp must stay outside FULL_BATTERY_TARGETS");
     assert.ok(ledger.has("webapp:WA-001"), "first WA item");
-    assert.ok(ledger.has("webapp:WA-120"), "last WA item");
+    assert.ok(ledger.has("webapp:WA-144"), "last WA item");
     assert.ok(!ledger.has("secscan:SS-001"), "vendor batteries not selected");
     assert.ok(!ledger.has("windows:WS-001"), "host batteries not selected");
     for (const v of ledger.values()) assert.equal(v.target, "webapp", `${v.key} belongs to the webapp battery`);

@@ -1,5 +1,5 @@
 /**
- * WEBAPP battery - part 3 of 5 (blocks 8-10: injection, SSRF, access control).
+ * WEBAPP battery - part 3 of 7 (blocks 8-10: injection, SSRF, access control).
  * WA-053..WA-073.
  *
  * Generic client web application battery (opt-in --targets webapp). This is the

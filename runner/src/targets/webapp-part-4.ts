@@ -1,5 +1,5 @@
 /**
- * WEBAPP battery - part 4 of 5 (blocks 11-14, WA-074..WA-096).
+ * WEBAPP battery - part 4 of 7 (blocks 11-14, WA-074..WA-096).
  *
  * Blocks: 11 JWT and session tokens, 12 API surface, 13 BaaS and storage,
  * 14 cloud and perimeter. Assembled by webapp.ts.

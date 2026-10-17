@@ -48,7 +48,7 @@ export const TARGET_PREFIXES: Record<TargetId, string> = {
 export const BATTERY_ITEM_COUNTS: Record<TargetId, number> = {
   secscan: 120,
   seclayer: 80,
-  webapp: 120,
+  webapp: 144,
   windows: 108,
   linux: 110,
 };

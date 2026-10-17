@@ -5,7 +5,7 @@
  * against their REAL surfaces:
  *  - SecScan (scanner webapp, 120 items) + SecLayer (MCP/API layer, 80 items)
  *  - Windows host + AD (100+ items) + Linux host (100+ items)
- *  - Webapp (v0.35.0, WA-*, 120 items): a GENERIC client web application,
+ *  - Webapp (v0.36.0, WA-*, 144 items): a GENERIC client web application,
  *    opt-in with --targets webapp / start_engagement targets. This is the
  *    customer-facing family: it encodes the SecScan + Seclayer scan corpus
  *    (see docs/webapp-battery.md) rather than the two products' own surfaces.

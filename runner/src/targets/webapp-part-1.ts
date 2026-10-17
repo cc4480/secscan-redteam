@@ -1,5 +1,5 @@
 /**
- * WEBAPP battery - part 1 of 5 (v0.35.0 split).
+ * WEBAPP battery - part 1 of 7 (v0.36.0 split).
  * Blocks 1-4: headers & cookies (WA-001..WA-011), TLS / transport (WA-012..WA-018),
  * DNS & email authentication (WA-019..WA-025), mail transport (WA-026..WA-028).
  *

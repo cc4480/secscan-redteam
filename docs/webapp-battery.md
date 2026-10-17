@@ -1,7 +1,7 @@
-# The Web Application Battery (WA-*) - the opt-in fifth target (v0.35.0)
+# The Web Application Battery (WA-*) - the opt-in fifth target (v0.36.0)
 
-The red team's battery family for a **client's own web application**: 120
-attack items, `WA-001`...`WA-120`, each one a distinct attacker intent with a
+The red team's battery family for a **client's own web application**: 144
+attack items, `WA-001`...`WA-144`, each one a distinct attacker intent with a
 concrete request, flow or parameter and the exact evidence that proves it.
 Not a sample and not a representative subset - every check the two scanner
 products perform against a customer site, encoded as an executable intent.
@@ -41,19 +41,19 @@ profile (`kind: "webapp"`), not a relabelled SS/SL item.
 
 ## The numbers
 
-- **120 attack items** (`WA-001`...`WA-120`): validation 72, logic 41,
-  functionality 7. All three categories are non-empty, so a webapp-only run
+- **144 attack items** (`WA-001`...`WA-144`): validation 89, logic 46,
+  functionality 9. All three categories are non-empty, so a webapp-only run
   produces the usual **3 categories x 1 target = 3 coverage cells**.
-- **19 blocks** (table below), authored in five part files
-  (`runner/src/targets/webapp-part-1.ts` ... `webapp-part-5.ts`, assembled by
+- **21 blocks** (table below), authored in seven part files
+  (`runner/src/targets/webapp-part-1.ts` ... `webapp-part-7.ts`, assembled by
   `runner/src/targets/webapp.ts`).
-- **41 items carry an honest prerequisite** - 17 distinct `needs` values,
+- **49 items carry an honest prerequisite** - 19 distinct `needs` values,
   listed below. The rest need nothing beyond scope and network reachability.
 - `TOTAL_BATTERY_ITEMS` stays **418**; the contract count for the new target
-  is `BATTERY_ITEM_COUNTS.webapp = 120`, and a webapp-only item ledger has
-  exactly 120 entries.
+  is `BATTERY_ITEM_COUNTS.webapp = 144`, and a webapp-only item ledger has
+  exactly 144 entries.
 
-## The 19 blocks
+## The 21 blocks
 
 | # | Block | Items | Ids | Executed by |
 |---:|---|---:|---|---|
@@ -76,8 +76,26 @@ profile (`kind: "webapp"`), not a relabelled SS/SL item.
 | 17 | Business logic | 4 | WA-108..WA-111 | `http_probe`, `burst_probe` (rate-limit shape) |
 | 18 | Supplied-repository SAST | 5 | WA-112..WA-116 | none - operator-supplied repository review; `needs: GitHub repository supplied` |
 | 19 | Coverage honesty | 4 | WA-117..WA-120 | none - report and coverage content, no new traffic |
+| 20 | Request-surface, transport, BaaS and CI gaps | 12 | WA-121..WA-132 | `http_probe`, `burst_probe`, repo read |
+| 21 | Repo policy, metadata and client surfaces | 12 | WA-133..WA-144 | `http_probe`, repo read |
 
-The 19 blocks sum to **120 items**, in id order, with no gaps and no
+Blocks 20 and 21 close the 24 check types that the v0.36.0 gap analysis found
+in the SecScan and Seclayer corpora but not in the original 120 items. Block
+20 covers the request surface and transport: the HTTP method surface
+(TRACE/CONNECT and advertised write methods), NoSQL operator injection,
+host-header injection, server-side prototype pollution, plaintext HTTP /
+redirect enforcement, rate limiting, API field over-sharing, Supabase Storage
+bucket listing, Supabase email confirmation, runtime edge-function auth
+bypass, and GitHub Actions secret printing / write-all permissions. Block 21
+covers repository policy and informational surfaces: Supabase RLS policy
+review, TLS certificate verification disabled in source, structured data and
+social metadata, inner-route header and cookie consistency, Next.js
+`__NEXT_DATA__` secrets, GraphQL field suggestions, JWT sensitive claims,
+health-endpoint disclosure, WordPress XML-RPC / user enumeration, verbose
+server banner, `X-XSS-Protection` disabled, and `Cache-Control` / HSTS
+preload.
+
+The 21 blocks sum to **144 items**, in id order, with no gaps and no
 duplicates (the file-budget test and the item ledger both enforce this).
 
 Execution follows the same rule as the rest of the battery: the block name is
@@ -103,17 +121,19 @@ exact text below - never as passed, and never silently dropped.
 | `OAST collaborator for out-of-band callback confirmation` | external callback collector proving blind XXE and blind SSRF | WA-064, WA-066 |
 | `nuclei binary for template-driven CVE sweep` | nuclei binary plus templates for library CVE matching | WA-052 |
 | `nmap binary` | port/service sweep for high-risk exposed services | WA-093 |
-| `a bearer JWT observed or supplied` | a current session token to decode, mutate and replay | WA-074..WA-077 |
+| `a bearer JWT observed or supplied` | a current session token to decode, mutate and replay | WA-074..WA-077, WA-139 |
 | `authorized test login credentials` | an authenticated session for session-token, CSRF and price checks | WA-078, WA-097, WA-108 |
-| `client-side Supabase key discovered` | a Supabase anon/service key found in client code | WA-085, WA-086, WA-087 |
+| `authorized test session` | an authenticated session with which to inspect an API response for over-shared fields | WA-128 |
+| `client-side Supabase key discovered` | a Supabase anon/service key found in client code | WA-085, WA-086, WA-087, WA-129, WA-130 |
+| `deployed edge function endpoint discovered` | a deployed edge-function URL to call without an Authorization header | WA-131 |
 | `client-side Firebase config discovered` | a Firebase project config found in client code | WA-088 |
 | `client-side credential discovered` | any client-side credential to chain into backend access | WA-091 |
 | `AI endpoint or key observed in client code` | a discovered AI endpoint or provider key | WA-103, WA-104 |
 | `AI endpoint discovered` | a confirmed AI-backed endpoint to probe | WA-105, WA-107 |
 | `AI endpoint discovered; OAST collaborator` | both of the above, for tool-use SSRF | WA-106 |
-| `GitHub repository supplied` | the customer repository handed to the engagement for SAST | WA-112..WA-116 |
+| `GitHub repository supplied` | the customer repository handed to the engagement for SAST | WA-112..WA-116, WA-132..WA-134 |
 
-That is 41 items across 17 distinct prerequisites. The prerequisite text is
+That is 49 items across 19 distinct prerequisites. The prerequisite text is
 rendered verbatim in the report, so an operator can see exactly what to
 provision to turn a blocked item into an executable one.
 

@@ -1,5 +1,5 @@
 /**
- * WEBAPP battery - part 2 of 5 (blocks 5-7: exposed files and templates,
+ * WEBAPP battery - part 2 of 7 (blocks 5-7: exposed files and templates,
  * client-side secrets, SCA/CVE). Items WA-029..WA-052 in manifest order.
  *
  * Pure data split: the webapp profile assembles the parts. Content provenance

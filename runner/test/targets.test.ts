@@ -2,7 +2,7 @@
  * Full-battery tests (v0.8.0) — EXHAUSTIVE target-specific SecScan (120+) +
  * SecLayer (80+) + Windows (100+) + Linux (100+) batteries run as ONE unified
  * engagement, with honest host-exec tooling scoping. v0.35.0 adds the opt-in
- * generic webapp battery (WA-*, 120 items): a registered target that stays
+ * generic webapp battery (WA-*, 144 items): a registered target that stays
  * OUTSIDE FULL_BATTERY_TARGETS, so the 418-item contract is unchanged. No
  * network, no API keys: fake LLM, fake prober, injected server gate.
  */
@@ -74,17 +74,17 @@ describe("target registry", () => {
     assert.deepEqual(activeTargets({ targets: ["webapp"] }), ["webapp"]);
     assert.deepEqual(activeTargets({ targets: ["webapp", "windows"] }), ["webapp", "windows"]);
   });
-  it("webapp contract constants: WA prefix, 120 items, TOTAL_BATTERY_ITEMS still 418", () => {
+  it("webapp contract constants: WA prefix, 144 items, TOTAL_BATTERY_ITEMS still 418", () => {
     assert.equal(TARGET_PREFIXES.webapp, "WA");
-    assert.equal(BATTERY_ITEM_COUNTS.webapp, 120);
+    assert.equal(BATTERY_ITEM_COUNTS.webapp, 144);
     assert.equal(TOTAL_BATTERY_ITEMS, 418, "webapp stays outside FULL_BATTERY_TARGETS");
   });
 });
 
 describe("target profile integrity", () => {
-  it("five profiles present; battery floors met (120/80/120/100/100)", () => {
+  it("five profiles present; battery floors met (120/80/144/100/100)", () => {
     assert.deepEqual(Object.keys(TARGET_PROFILES).sort(), ["linux", "seclayer", "secscan", "webapp", "windows"]);
-    const floors: Record<TargetId, number> = { secscan: 120, seclayer: 80, webapp: 120, windows: 100, linux: 100 };
+    const floors: Record<TargetId, number> = { secscan: 120, seclayer: 80, webapp: 144, windows: 100, linux: 100 };
     for (const [id, floor] of Object.entries(floors)) {
       const n = TARGET_PROFILES[id as TargetId].battery.length;
       assert.ok(n >= floor, `${id} has ${n}, want at least ${floor}`);
@@ -104,6 +104,17 @@ describe("target profile integrity", () => {
     assert.equal(profile.battery.length, BATTERY_ITEM_COUNTS.webapp);
     for (const cat of BATTERY_CATEGORIES) {
       assert.ok(targetItemsFor(profile, cat).length > 0, `webapp:${cat} non-empty`);
+    }
+  });
+  it("webapp battery is 144 items and parts 6-7 supply WA-121..WA-144 (a truncated part fails loudly)", () => {
+    const profile = TARGET_PROFILES.webapp;
+    // Literal on purpose: this is the promised contract size, pinned so a
+    // silently shortened parts chain cannot pass through BATTERY_ITEM_COUNTS.
+    assert.equal(profile.battery.length, 144, "webapp battery grew 120 -> 144");
+    const ids = new Set(profile.battery.map((b) => b.id));
+    for (let n = 121; n <= 144; n++) {
+      const id = `WA-${String(n).padStart(3, "0")}`;
+      assert.ok(ids.has(id), `${id} present in the webapp profile battery`);
     }
   });
   it("ids unique per target, prefix shape, every item has category/name/brief/what/owasp", () => {
@@ -167,7 +178,7 @@ describe("target profile integrity", () => {
     const listed = text.match(/^- WA-\d{3} /gm) ?? [];
     assert.equal(listed.length, BATTERY_ITEM_COUNTS.webapp, "every WA item rendered exactly once");
     const only = fullBatteryChecklistText("red", ["webapp"]);
-    assert.ok(only.includes("WA-001") && only.includes("WA-120"), "webapp checklist present");
+    assert.ok(only.includes("WA-001") && only.includes("WA-144"), "webapp checklist present");
     assert.ok(!only.includes("SS-001") && !only.includes("SL-001"), "vendor batteries excluded");
     assert.ok(!only.includes("WS-001") && !only.includes("LX-001"), "host batteries excluded");
   });
