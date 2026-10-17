@@ -1,0 +1,6 @@
+packages:
+  - harness-plugin
+  - llm-router
+  - auth-gate
+  - runner
+  - desktop-bundle

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Traversal / SSRF / open-redirect variant libraries (v0.20.0).
  *
  * Honesty rule inherited from the battery's SSRF items: these are SHAPES
@@ -12,7 +12,7 @@ function v(kind: VariantClass, payload: string, whatItTests: string): VariantPay
   return { kind, payload, whatItTests };
 }
 
-/** Path traversal Ã¢â‚¬â€ separators, encodings, bypass shapes. Read-only targets. */
+/** Path traversal — separators, encodings, bypass shapes. Read-only targets. */
 export const TRAVERSAL_VARIANTS: VariantPayload[] = [
   v("traversal", "../../../etc/passwd", "classic dot-dot-slash"),
   v("traversal", "..\\..\\..\\windows\\win.ini", "windows backslash"),
@@ -38,7 +38,7 @@ export const TRAVERSAL_VARIANTS: VariantPayload[] = [
 ];
 
 /**
- * SSRF Ã¢â‚¬â€ guard-verdict shapes. Every "internal-looking" value below is a
+ * SSRF — guard-verdict shapes. Every "internal-looking" value below is a
  * canary-shaped probe: the question is whether the GUARD refuses it, not
  * whether a fetch succeeds. Never a real internal address.
  */
@@ -65,7 +65,7 @@ export const SSRF_VARIANTS: VariantPayload[] = [
   v("ssrf", "http://target.com\t@{{CANARY}}/", "tab-in-userinfo parser confusion"),
 ];
 
-/** Open redirect Ã¢â‚¬â€ landing-control shapes. */
+/** Open redirect — landing-control shapes. */
 export const REDIRECT_VARIANTS: VariantPayload[] = [
   v("redirect", "//evil.example/", "scheme-relative redirect"),
   v("redirect", "https://evil.example/", "absolute external URL"),

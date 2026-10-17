@@ -135,6 +135,8 @@ export interface EngagementEvent {
   result: string;
   /** Black-mode OPSEC notes (detection signals, backoff decisions…). */
   opsec?: string;
+  /** seq of the event this one was caused by, when one action is a consequence of another (causality). */
+  causedBy?: number;
 }
 
 export interface PlanStep {

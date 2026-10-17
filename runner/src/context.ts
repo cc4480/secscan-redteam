@@ -21,6 +21,8 @@ import { MsfExecutor } from "./msf/index.js";
 import { NucleiExecutor } from "./nuclei/index.js";
 import { NmapExecutor } from "./nmap/index.js";
 import { type ItemVerdict } from "./coverage/items.js";
+import { type PolicyRules } from "./policy/rules.js";
+import { type HookRegistry } from "./hooks/index.js";
 
 export interface RunnerDeps {
   verify?: (domain: string, cfg: { endpoint: string; token: string }) => Promise<boolean>;
@@ -74,6 +76,10 @@ export interface Ctx {
   config: ResolvedRunnerConfig;
   deps: RunnerDeps;
   events: EventLog;
+  /** Optional operator policy (allow/deny rules), enforced before every dispatch. */
+  policy?: PolicyRules;
+  /** Optional tool lifecycle hooks (pre/post), evaluated around every dispatch. */
+  hooks?: HookRegistry;
   mcp: McpClient;
   prober: ProberLike;
   /** Host execution (ssh/smb/winrm) — every call flows through the safety core. */

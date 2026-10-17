@@ -22,6 +22,7 @@ import { type DispatchResult } from "./types.js";
 import { findXTool, checkXToolFlags, runXTool, binPresent, type XToolSpec } from "../xtool/index.js";
 import { validateHostTarget } from "../host-exec/common.js";
 import { noteCategoryCoverage, strListArg } from "./prelude.js";
+import { resolveWordlist, wordlistCandidates } from "../xtool/wordlist.js";
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const v = args[key];
@@ -120,10 +121,21 @@ export async function handleXTool(
     if (ctx.hostKill.aborted) {
       return { result: "ABORTED by operator (kill switch) — no process started.", attackId, target: host };
     }
-    const wordlist =
-      strArg(args, "wordlist") ??
-      process.env["REDTEAM_WORDLIST"] ??
-      "C:\\Users\\Cho-zen\\tools\\wordlists\\common.txt";
+    // Resolve through the shared resolver (arg → REDTEAM_WORDLIST → bundled
+    // assets → operator override). A missing list is a returned setup message,
+    // never one machine's hardcoded absolute path — the old default made every
+    // ffuf run fail on a fresh install.
+    const wordlist = resolveWordlist(strArg(args, "wordlist"));
+    if (action === "run" && profile && profile.wordlist && !wordlist) {
+      return {
+        result:
+          `UNAVAILABLE: no wordlist found for profile ${JSON.stringify(profile.id)} — ` +
+          `set REDTEAM_WORDLIST or pass a wordlist argument. Searched: ` +
+          wordlistCandidates(strArg(args, "wordlist")).join(", "),
+        attackId,
+        target: host,
+      };
+    }
     const res = await runXTool(spec, {
       action,
       target: host,

@@ -161,6 +161,13 @@ async function runEscalate(): Promise<void> {
 
 export async function main(): Promise<void> {
   const cmd = process.argv[2];
+  if (cmd === "doctor") {
+    const { readinessReport, formatReadiness } = await import("../tools/readiness.js");
+    const report = await readinessReport(process.env);
+    if (flag("--json")) console.log(JSON.stringify(report, null, 2));
+    else console.log(formatReadiness(report));
+    process.exit(report.ok ? 0 : 1);
+  }
   if (cmd === "start") {
     const input = buildInput();
     const rpsIdx = process.argv.indexOf("--max-rps");
@@ -190,6 +197,10 @@ export async function main(): Promise<void> {
       process.exit(2);
     }
     const result = await runEngagement(input, {
+      // Without this the engagement was written under the process cwd while the
+      // console looked in --engagements-dir: artifacts reported `false` and the
+      // feed said "unknown engagement" for a run that had in fact completed.
+      engagementsDir: arg("--engagements-dir"),
       localSandbox: flag("--local-sandbox"),
       dryRunAgents: flag("--dry-run"),
       maxRpsPerHost: maxRps,

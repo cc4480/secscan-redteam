@@ -143,6 +143,7 @@ findings, the tier, and the scope.
     # 1 not-reproduced, 2 target-changed.
 
   redteam-runner ui [--port 8787] [--listen <addr>] [--engagements-dir <dir>]
+  redteam-runner doctor [--json]                    # check external tools, wordlist, MSF RPC and required credentials
     # v0.22.0 web console: loopback-only (127.0.0.1) token-authenticated
     # dashboard wired directly to these same CLI code paths — launch
     # engagements, stream the operation feed, browse findings with proof

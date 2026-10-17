@@ -1,9 +1,9 @@
-﻿/**
- * Injection variant libraries (v0.20.0) Ã¢â‚¬â€ SQLi, XSS, command injection,
+/**
+ * Injection variant libraries (v0.20.0) — SQLi, XSS, command injection,
  * SSTI, XXE. Curated, reviewed payload lists. Every payload is a DETECTION
  * probe: read-only or benign-canary. Destructive SQL (DROP/DELETE/UPDATE/
  * INSERT/ALTER), destructive commands, and XXE billion-laughs shapes are
- * excluded by policy Ã¢â‚¬â€ they don't exist in these lists.
+ * excluded by policy — they don't exist in these lists.
  */
 import type { VariantClass, VariantPayload } from "./types.js";
 
@@ -11,7 +11,7 @@ function v(kind: VariantClass, payload: string, whatItTests: string): VariantPay
   return { kind, payload, whatItTests };
 }
 
-/** SQL injection Ã¢â‚¬â€ tautologies, unions, time-based, stacked, encodings. */
+/** SQL injection — tautologies, unions, time-based, stacked, encodings. */
 export const SQLI_VARIANTS: VariantPayload[] = [
   v("sqli", "' OR '1'='1", "classic tautology, single-quote context"),
   v("sqli", "' OR '1'='1' -- ", "tautology with line comment"),
@@ -43,7 +43,7 @@ export const SQLI_VARIANTS: VariantPayload[] = [
   v("sqli", "' AND CAST('a' AS INT)=1-- ", "error-based CAST probe (detection only)"),
 ];
 
-/** Cross-site scripting Ã¢â‚¬â€ contexts, event handlers, encoding bypasses. */
+/** Cross-site scripting — contexts, event handlers, encoding bypasses. */
 export const XSS_VARIANTS: VariantPayload[] = [
   v("xss", "<script>alert(1)</script>", "classic script context"),
   v("xss", "<img src=x onerror=alert(1)>", "event-handler vector"),
@@ -75,7 +75,7 @@ export const XSS_VARIANTS: VariantPayload[] = [
 ];
 
 /**
- * OS command injection Ã¢â‚¬â€ benign commands only (id/echo/sleep). The agent
+ * OS command injection — benign commands only (id/echo/sleep). The agent
  * substitutes its canary marker for VARIANT where a marker echo proves
  * execution. No destructive commands exist in this list.
  */
@@ -104,7 +104,7 @@ export const CMDI_VARIANTS: VariantPayload[] = [
   v("cmdi", "`echo VARIANT`", "backtick echo-canary substitution"),
 ];
 
-/** Server-side template injection Ã¢â‚¬â€ detection markers only, no sandbox escapes. */
+/** Server-side template injection — detection markers only, no sandbox escapes. */
 export const SSTI_VARIANTS: VariantPayload[] = [
   v("ssti", "{{7*7}}", "Jinja2/Twig math detection"),
   v("ssti", "${7*7}", "Freemarker/Velocity detection"),
@@ -129,9 +129,9 @@ export const SSTI_VARIANTS: VariantPayload[] = [
 ];
 
 /**
- * XXE Ã¢â‚¬â€ detection shapes only. `{{CANARY}}` = operator canary host
+ * XXE — detection shapes only. `{{CANARY}}` = operator canary host
  * placeholder (agent substitutes). No billion-laughs / quadratic-blowup
- * shapes Ã¢â‚¬â€ those are DoS and excluded by policy.
+ * shapes — those are DoS and excluded by policy.
  */
 export const XXE_VARIANTS: VariantPayload[] = [
   v("xxe", '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><r>&xxe;</r>', "classic external entity, read-only file probe"),

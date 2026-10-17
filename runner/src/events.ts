@@ -14,6 +14,7 @@ import { basename, join } from "node:path";
 import type { EngagementEvent, EngagementMode, EngagementPhase, EngagementStatus, Finding, OperationPlan } from "./types.js";
 import type { BatteryCategory } from "./battery.js";
 import { maybeRotateLog, type LogRotationConfig } from "./safety/rotation.js";
+import { redact } from "./events/redact.js";
 
 export interface LiveState {
   engagementId: string;
@@ -157,8 +158,12 @@ export class EventLog {
       engagementId: this.engagementId,
       ...partial,
     };
-    appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(ev) + "\n");
-    const mdLine = `| ${ev.ts} | ${ev.phase} | ${ev.actor} | ${ev.action}${ev.attackId ? ` (${ev.attackId})` : ""} | ${oneLine(ev.result)} |\n`;
+    // Secrets must never reach the audit trail: redact both by secret-named key
+    // and by known literal values before writing. The in-memory event keeps the
+    // raw data for callers; only the persisted copies are redacted.
+    const safe = redact(ev);
+    appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(safe) + "\n");
+    const mdLine = `| ${safe.ts} | ${safe.phase} | ${safe.actor} | ${safe.action}${safe.attackId ? ` (${safe.attackId})` : ""} | ${oneLine(safe.result)} |\n`;
     appendFileSync(join(this.dir, "engagement.md"), mdLine);
     this.state.eventCount = ev.seq;
     this.state.phase = ev.phase;

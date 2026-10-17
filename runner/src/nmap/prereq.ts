@@ -13,7 +13,6 @@
  * not on PATH at all.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { NMAP_ENV_BIN } from "./policy.js";
 
 let probeCache: boolean | undefined;
@@ -25,16 +24,13 @@ export function _resetNmapProbeCache(): void {
 
 export function nmapBinaryPresent(env: NodeJS.ProcessEnv = process.env): boolean {
   if (probeCache !== undefined) return probeCache;
-  const explicit = (env[NMAP_ENV_BIN] ?? "").trim();
-  if (explicit) {
-    // A set-but-nonexistent env path must not report "present" and then fail
-    // with a confusing ENOENT at spawn time.
-    probeCache = existsSync(explicit);
-    return probeCache;
-  }
-  const cmd = process.platform === "win32" ? "where" : "which";
+  // Run `--version`, not just resolve a path: a present-but-unrunnable nmap
+  // (missing Npcap driver or the VC++ runtime, which surface as a DLL load
+  // failure) used to report "present" and then fail mid-engagement. Executing it
+  // is the only honest probe.
+  const candidate = (env[NMAP_ENV_BIN] ?? "").trim() || "nmap";
   try {
-    execFileSync(cmd, ["nmap"], { stdio: "ignore", timeout: 5000 });
+    execFileSync(candidate, ["--version"], { stdio: "ignore", timeout: 8000 });
     probeCache = true;
   } catch {
     probeCache = false;
