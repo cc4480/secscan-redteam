@@ -1,0 +1,69 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: dependency audit (production tree)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      # npm audit resolves the production tree from package-lock.json, so no
+      # install step is needed. Exit status is non-zero for high or critical
+      # advisories; the job is intentionally blocking on those.
+      - name: Audit production dependencies
+        continue-on-error: false
+        run: npm audit --omit=dev --audit-level=high
+
+  secret-scan:
+    name: secret scan (gitleaks, full history)
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 gives gitleaks the commit history it scans.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # gitleaks-action@v3 is the Node 24 release; v2 ran on the retired
+      # Node 20 action runtime.
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Keep this lane read-only: report in the job summary and SARIF
+          # artifact instead of commenting on the pull request.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+
+  codeql:
+    name: codeql (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      # JavaScript/TypeScript is interpreted, so analysis extracts sources
+      # without a build step, and the default query suite is the standard
+      # CodeQL security query set (no custom `queries` input is needed).
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
+      - uses: github/codeql-action/analyze@v4
