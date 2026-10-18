@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildXToolArgv, type XRunOptions, type XToolSpec } from "./registry.js";
+import { resolveExternalBinary } from "../toolchain.js";
 
 export interface XSpawnOpts {
   file: string;
@@ -66,50 +67,32 @@ export const realXSpawn: XSpawnFn = async (opts) =>
   });
 
 /**
- * John ships CPU-specific binaries and no generic john.exe on Windows, so the
- * right one is chosen by asking the CPU rather than by guessing AVX2 and
- * failing on older hardware. An explicit env override always wins.
+ * Resolve the binary (or, for the script tools, the directory they run from).
+ *
+ * The precedence lives in toolchain.ts and is shared with nmap and nuclei, so
+ * "explicit env wins, then the bundled tools directory, then PATH" has exactly
+ * one implementation. This wrapper exists so the executor's callers keep their
+ * signature: resolveBinPath(spec, env) -> string.
  */
-const JOHN_VARIANTS = [
-  "john-avx2-non-omp.exe",
-  "john-avx-non-omp.exe",
-  "john-sse41-non-omp.exe",
-  "john-sse2-non-omp.exe",
-  "john-xop-non-omp.exe",
-];
-
 export function resolveBinPath(spec: XToolSpec, env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env[spec.envBin]?.trim();
-  if (explicit) return explicit;
-  const dir = spec.envDir ? env[spec.envDir]?.trim() : undefined;
-  if (spec.id === "john") {
-    const home = dir || "C:\\metasploit\\john";
-    for (const v of JOHN_VARIANTS) {
-      const p = join(home, "bin", v);
-      if (existsSync(p)) return p;
-    }
-    return join(home, "bin", "john-avx-non-omp.exe");
-  }
-  // Neutral defaults, not a developer's home dir. The per-tool env vars
-  // (REDTEAM_SQLMAP_DIR / REDTEAM_NIKTO_DIR) still override; this only stops
-  // shipped code from silently pointing at C:\Users\<someone>\tools on a host
-  // that is not that person's machine.
-  if (spec.id === "sqlmap") return dir || "C:\\tools\\sqlmap";
-  if (spec.id === "nikto") return dir || "C:\\tools\\nikto\\program";
-  return spec.id;
+  return resolveExternalBinary(spec.id, { env, envBin: spec.envBin, envDir: spec.envDir }).path;
 }
 
 export function binPresent(spec: XToolSpec, env: NodeJS.ProcessEnv = process.env): boolean {
+  const resolved = resolveExternalBinary(spec.id, { env, envBin: spec.envBin, envDir: spec.envDir });
+  // sqlmap / nikto run FROM a directory: the known script inside it is the
+  // presence test, whatever source chose the directory.
+  if (spec.id === "sqlmap") return existsSync(join(resolved.path, "sqlmap.py"));
+  if (spec.id === "nikto") return existsSync(join(resolved.path, "nikto.pl"));
+  // An explicit value or a bundled payload is present only when the file is
+  // there: a set-but-nonexistent env var must not report "present" and then fail
+  // with a confusing ENOENT at spawn time.
+  if (resolved.source !== "path") return resolved.exists;
+  // The neutral tier is either a bare command name (ffuf, gobuster, john) that
+  // only the OS can find, or John's legacy Metasploit path already checked above.
+  if (resolved.exists) return true;
+  const cmd = process.platform === "win32" ? "where" : "which";
   try {
-    if (spec.id === "john") return existsSync(resolveBinPath(spec, env));
-    if (spec.id === "sqlmap") return existsSync(join(resolveBinPath(spec, env), "sqlmap.py"));
-    if (spec.id === "nikto") return existsSync(join(resolveBinPath(spec, env), "nikto.pl"));
-    // ffuf / gobuster: an explicit env path must actually exist, otherwise the
-    // binary is looked up on PATH. A set-but-nonexistent env var must not report
-    // "present" and then fail with a confusing ENOENT at spawn time.
-    const explicitBin = env[spec.envBin]?.trim();
-    if (explicitBin) return existsSync(explicitBin);
-    const cmd = process.platform === "win32" ? "where" : "which";
     execFileSync(cmd, [spec.id], { stdio: "ignore", timeout: 5000 });
     return true;
   } catch {

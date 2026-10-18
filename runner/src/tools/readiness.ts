@@ -23,7 +23,11 @@ import { connect as netConnect } from "node:net";
 import { existsSync } from "node:fs";
 
 import { XTOOLS, type XToolId } from "../xtool/registry.js";
-import { nmapBinaryPresent } from "../nmap/prereq.js";
+import { nmapBinaryPresent, resolveNmapCommand } from "../nmap/prereq.js";
+import { NUCLEI_SETUP_INSTRUCTIONS } from "../nuclei/policy.js";
+import { nucleiBinaryPresent, resolveNucleiCommand } from "../nuclei/prereq.js";
+import { binPresent } from "../xtool/executor.js";
+import { describeSource, resolveExternalBinary, toolsDir, TOOLS_DIR_ENV, type ResolvedBinary } from "../toolchain.js";
 import { resolveWordlist } from "../xtool/wordlist.js";
 import { pcAgentConfigured } from "../host-exec/pc-agent.js";
 import { browserConfigured, BROWSER_SETUP_GUIDANCE } from "../browser/cdp.js";
@@ -78,6 +82,15 @@ export function probeTcp(host: string, port: number, timeoutMs = 1000): Promise<
 }
 
 /**
+ * Detail line for a resolved binary: the path AND the source that picked it.
+ * "Not found" is only actionable when the report says whether the operator's
+ * env, the bundled tools directory or PATH was tried.
+ */
+function resolvedDetail(resolved: ResolvedBinary, present: boolean): string {
+  return `${resolved.path} [from ${describeSource(resolved)}]${present ? "" : " -- not found"}`;
+}
+
+/**
  * Build the full readiness report.
  *
  * `env` is injectable for tests; the RPC probe is async because it opens a
@@ -86,25 +99,55 @@ export function probeTcp(host: string, port: number, timeoutMs = 1000): Promise<
 export async function readinessReport(env: NodeJS.ProcessEnv = process.env): Promise<ReadinessReport> {
   const items: ReadinessItem[] = [];
 
+  // --- bundled tools directory --------------------------------------------
+  // The desktop app exports REDTEAM_TOOLS_DIR pointing at its shipped payloads.
+  // Optional: without it the bridges fall back to PATH, so a partially
+  // provisioned install still runs with whatever the operator already has.
+  const bundledDir = toolsDir(env);
+  const bundledDirExists = Boolean(bundledDir && existsSync(bundledDir));
+  items.push({
+    id: "tools_dir",
+    label: `bundled tools directory (${TOOLS_DIR_ENV})`,
+    state: bundledDirExists ? "ready" : bundledDir ? "missing" : "not-configured",
+    detail: bundledDir ?? "(unset -- external tools resolve from PATH)",
+    fix: bundledDirExists
+      ? undefined
+      : `Optional: set ${TOOLS_DIR_ENV} to the directory laid out as <tool>/<exe> (the desktop app points it at its bundled resources/tools). Without it the bridges resolve binaries from PATH.`,
+    required: false,
+  });
+
   // --- bridge binaries -----------------------------------------------------
   // nmap uses its own honest probe (it runs --version, so a present-but-broken
-  // binary — missing Npcap or VC++ runtime — is reported as missing).
+  // binary — missing Npcap or VC++ runtime — is reported as missing). The
+  // resolved path and source are reported even when missing.
+  const nmapResolved = resolveNmapCommand(env);
   const nmapReady = nmapBinaryPresent(env);
-  const nmapBin = (env["REDTEAM_NMAP_BIN"] ?? "").trim() || "nmap";
   items.push({
     id: "nmap",
     label: "nmap (port/service discovery)",
     state: nmapReady ? "ready" : "missing",
-    detail: nmapReady ? nmapBin : undefined,
+    detail: resolvedDetail(nmapResolved, nmapReady),
     fix: nmapReady
       ? undefined
-      : "Install nmap and put it on PATH (or set REDTEAM_NMAP_BIN). Windows: the official build needs the VC++ 2015-2022 x86 runtime; SYN scans additionally need Npcap + elevation (the runner falls back to connect scans without them).",
+      : "Install nmap and put it on PATH (or set REDTEAM_NMAP_BIN), or ship it in the bundled tools directory. Windows: the official build needs the VC++ 2015-2022 x86 runtime; SYN scans additionally need Npcap + elevation (the runner falls back to connect scans without them).",
     required: true,
   });
 
+  const nucleiResolved = resolveNucleiCommand(env);
+  const nucleiReady = nucleiBinaryPresent(env);
+  items.push({
+    id: "nuclei",
+    label: "nuclei (template-based checks)",
+    state: nucleiReady ? "ready" : "missing",
+    detail: resolvedDetail(nucleiResolved, nucleiReady),
+    fix: nucleiReady ? undefined : NUCLEI_SETUP_INSTRUCTIONS,
+    required: false,
+  });
+
   for (const spec of XTOOLS) {
-    const bin = (env[spec.envBin] ?? "").trim() || spec.id;
-    const present = existsSync(bin) || probeBinary(bin, ["-V"]) !== undefined || probeBinary(bin, ["--version"]) !== undefined;
+    const resolved = resolveExternalBinary(spec.id, { env, envBin: spec.envBin, envDir: spec.envDir });
+    // Use the dispatcher's own presence test so doctor and probe never disagree.
+    const present = binPresent(spec, env);
     // The content-discovery tools are optional: the web battery degrades but the
     // host battery still runs. john is offline-only and never required.
     const required = false;
@@ -112,7 +155,7 @@ export async function readinessReport(env: NodeJS.ProcessEnv = process.env): Pro
       id: spec.id,
       label: `${spec.id} (${spec.purpose})`,
       state: present ? "ready" : "missing",
-      detail: present ? bin : undefined,
+      detail: resolvedDetail(resolved, present),
       fix: present ? undefined : spec.setup.join(" "),
       required,
     });

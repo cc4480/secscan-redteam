@@ -25,6 +25,8 @@
  * All pure functions — tested directly, no subprocess.
  */
 
+import { resolveExternalBinary } from "../toolchain.js";
+
 export const NMAP_ENV_BIN = "REDTEAM_NMAP_BIN";
 export const NMAP_ENV_TIMEOUT = "REDTEAM_NMAP_TIMEOUT_S";
 
@@ -128,11 +130,14 @@ export function findProfile(id: string): NmapProfile | undefined {
   return NMAP_PROFILES.find((p) => p.id === id.trim().toLowerCase());
 }
 
-/** Resolve the nmap binary — explicit env wins, else PATH lookup. */
+/**
+ * Resolve the nmap binary through the shared toolchain resolver: explicit env
+ * wins, then the payload bundled at REDTEAM_TOOLS_DIR, then PATH. The operator's
+ * explicit value is authoritative even when it is missing (readiness reports
+ * that honestly); only when none is set does the bundled copy get a turn.
+ */
 export function resolveNmapBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env[NMAP_ENV_BIN]?.trim();
-  if (explicit) return explicit;
-  return "nmap";
+  return resolveExternalBinary("nmap", { env }).path;
 }
 
 /** Run timeout in seconds — env override, sane default. */

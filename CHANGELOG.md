@@ -3,6 +3,25 @@
 Notable changes to the secscan-redteam runner. This file starts at 0.35.0; no
 prior release history is reconstructed here.
 
+## [0.37.0] - 2026-10-17
+
+- **Zero-install toolchain: one resolver, bundled payload first.** New
+  `src/toolchain.ts` resolves nmap, nuclei and every xtool in a single order -
+  explicit environment value (authoritative, reported not-found when missing),
+  then `REDTEAM_TOOLS_DIR/<tool>/<executable>`, then PATH - and nmap/nuclei/xtool
+  executors plus their presence probes all delegate to it, so a binary shipped
+  with the application actually runs instead of only being reported.
+- **`doctor` reports the source.** Every bridge line now carries the resolved
+  path and whether it came from an explicit override, the bundled tools
+  directory or PATH; a new optional `bundled tools directory` row and an
+  optional `nuclei` row were added. Required items and exit semantics are
+  unchanged, and a set-but-missing explicit override still reports not-found.
+- **Docs**: `docs/toolchain.md` describes the order, the bundled layout, the
+  tiers/licenses and the one-line zero-install verification.
+- **Tests**: 743 pass (was 726), including a new `test/toolchain.test.ts` for
+  precedence, john variant selection, sqlmap/nikto directory shapes and the
+  Windows/POSIX suffix rule.
+
 ## [0.36.0] - 2026-10-17
 
 - **WA-*: gap closure, 24 new items.** `WA-121`...`WA-144` add the check types

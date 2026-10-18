@@ -20,6 +20,8 @@
  * All pure functions — tested directly, no subprocess.
  */
 
+import { resolveExternalBinary } from "../toolchain.js";
+
 export const NUCLEI_ENV_BIN = "REDTEAM_NUCLEI_BIN";
 export const NUCLEI_ENV_TEMPLATES = "REDTEAM_NUCLEI_TEMPLATES";
 export const NUCLEI_ENV_TIMEOUT = "REDTEAM_NUCLEI_TIMEOUT_S";
@@ -46,11 +48,14 @@ export const NUCLEI_DENIED_TAGS = ["dos"];
  */
 const FORBIDDEN_FLAGS = new Set(["-update-templates", "-ut", "-uncover", "-duc"]);
 
-/** Resolve the nuclei binary path — explicit env wins, else PATH lookup. */
+/**
+ * Resolve the nuclei binary through the shared toolchain resolver: explicit env
+ * wins, then the payload bundled at REDTEAM_TOOLS_DIR, then PATH. The operator's
+ * explicit value is authoritative even when it is missing (readiness reports
+ * that honestly); only when none is set does the bundled copy get a turn.
+ */
 export function resolveNucleiBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env[NUCLEI_ENV_BIN]?.trim();
-  if (explicit) return explicit;
-  return "nuclei";
+  return resolveExternalBinary("nuclei", { env }).path;
 }
 
 /** Run timeout in seconds — env override, sane default. */

@@ -1,14 +1,15 @@
 /**
- * Nuclei prerequisite probe (v0.21.0).
+ * Nuclei prerequisite probe (v0.21.0, toolchain-aware in v0.37.0).
  *
- * Whether the operator's nuclei binary is available — the honest,
- * mechanical reading behind the NEEDS_NUCLEI battery marker. Checked from
- * the environment (explicit REDTEAM_NUCLEI_BIN wins) with a cached PATH
- * probe fallback. Called at ledger build, never on a hot path.
+ * Whether the operator's nuclei binary is available -- the honest, mechanical
+ * reading behind the NEEDS_NUCLEI battery marker. The path is chosen through the
+ * shared toolchain resolver (explicit env -> bundled REDTEAM_TOOLS_DIR payload ->
+ * PATH). A resolved path is only evidence when it exists there; a bare command
+ * name still needs the OS lookup. Called at ledger build, never on a hot path,
+ * and cached because a probe per item would spawn a process per item.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { NUCLEI_ENV_BIN } from "./policy.js";
+import { resolveExternalBinary, type ResolvedBinary } from "../toolchain.js";
 
 let probeCache: boolean | undefined;
 
@@ -17,16 +18,27 @@ export function _resetNucleiProbeCache(): void {
   probeCache = undefined;
 }
 
+/** Where nuclei would come from and why -- no probe, no spawn. */
+export function resolveNucleiCommand(env: NodeJS.ProcessEnv = process.env): ResolvedBinary {
+  return resolveExternalBinary("nuclei", { env });
+}
+
 export function nucleiBinaryPresent(env: NodeJS.ProcessEnv = process.env): boolean {
   if (probeCache !== undefined) return probeCache;
-  const explicit = (env[NUCLEI_ENV_BIN] ?? "").trim();
-  if (explicit) {
-    // A set-but-nonexistent env path must not report "present" and then fail
-    // with a confusing ENOENT at spawn time. Also drop the shell: `sh -c
-    // "command -v nuclei"` always failed on Windows, where there is no sh.
-    probeCache = existsSync(explicit);
+  const resolved = resolveNucleiCommand(env);
+  // An explicit value or a bundled payload is present only when the file exists
+  // (a set-but-nonexistent env path must not report "present" and then fail with
+  // a confusing ENOENT at spawn time).
+  if (resolved.source !== "path") {
+    probeCache = resolved.exists;
     return probeCache;
   }
+  if (resolved.exists) {
+    probeCache = true;
+    return probeCache;
+  }
+  // Bare command name: drop the shell (`sh -c "command -v nuclei"` never worked
+  // on Windows, where there is no sh) and ask the OS directly.
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
     execFileSync(cmd, ["nuclei"], { stdio: "ignore", timeout: 5000 });

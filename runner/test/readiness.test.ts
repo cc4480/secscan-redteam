@@ -13,6 +13,9 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { buildXToolArgv, findProfile, findXTool } from "../src/xtool/registry.js";
 import { resolveWordlist, wordlistCandidates } from "../src/xtool/wordlist.js";
@@ -134,5 +137,51 @@ describe("readiness report", () => {
     const rpc = creds.items.find((i) => i.id === "msfrpcd");
     assert.equal(rpc?.state, "unreachable");
     assert.match(rpc?.fix ?? "", /msfrpcd/);
+  });
+
+  it("reports the resolved path AND source for the bridges, plus the tools directory", async () => {
+    _resetNmapProbeCache();
+    const root = mkdtempSync(join(tmpdir(), "rt-ready-"));
+    try {
+      const payload = join(root, "tools");
+      const ffufExe = process.platform === "win32" ? "ffuf.exe" : "ffuf";
+      const nmapExe = process.platform === "win32" ? "nmap.exe" : "nmap";
+      mkdirSync(join(payload, "ffuf"), { recursive: true });
+      mkdirSync(join(payload, "nmap"), { recursive: true });
+      writeFileSync(join(payload, "ffuf", ffufExe), "");
+      writeFileSync(join(payload, "nmap", nmapExe), "");
+
+      const report = await readinessReport({ REDTEAM_TOOLS_DIR: payload } as NodeJS.ProcessEnv);
+      const tools = report.items.find((i) => i.id === "tools_dir");
+      assert.equal(tools?.state, "ready");
+      assert.equal(tools?.required, false);
+      assert.equal(tools?.detail, payload);
+
+      const ffuf = report.items.find((i) => i.id === "ffuf");
+      assert.equal(ffuf?.state, "ready");
+      assert.match(ffuf?.detail ?? "", /bundled tools directory/);
+
+      // The dummy nmap is not runnable, so it must stay MISSING: resolving a
+      // path from the bundled tree is not evidence that the binary works.
+      const nmap = report.items.find((i) => i.id === "nmap");
+      assert.equal(nmap?.state, "missing");
+      assert.match(nmap?.detail ?? "", /bundled tools directory/);
+
+      // nuclei is now part of the report, and optional like the other bridges.
+      const nuclei = report.items.find((i) => i.id === "nuclei");
+      assert.ok(nuclei, "nuclei must be reported");
+      assert.equal(nuclei?.required, false);
+    } finally {
+      _resetNmapProbeCache();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports the tools directory as not configured without REDTEAM_TOOLS_DIR", async () => {
+    _resetNmapProbeCache();
+    const report = await readinessReport({ REDTEAM_NMAP_BIN: "/no/such/nmap" } as NodeJS.ProcessEnv);
+    const tools = report.items.find((i) => i.id === "tools_dir");
+    assert.equal(tools?.state, "not-configured");
+    assert.equal(tools?.required, false);
   });
 });
