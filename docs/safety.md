@@ -16,6 +16,7 @@ The agents are instructed to be careful. The runner doesn't trust them:
 | Protection | What it mechanically does |
 |---|---|
 | **Exact-hostname scope enforcement** | Every tool call's target must exactly match a host in the declared ROE scope — before any packet is sent. Out-of-scope = refused, logged. |
+| **Scope ownership verification** | Every domain in the declared scope must itself be ownership-verified on the server before the engagement starts. Listing a host in scope never substitutes for proving ownership. IP-literal scope entries are host targets authorized by the ROE; private/loopback entries require local sandbox mode, which is operator-only (CLI or env, never the launch request) and valid only for an entirely private scope. |
 | **Destructive-command denylist** | 20+ patterns (recursive deletes, formats, raw disk writes, shutdown/reboot, shadow-copy deletion, ransomware patterns…) refused fail-closed. Refusals are DENIED events the coordinator re-plans around. |
 | **DoS exclusion (always)** | ATT&CK T1499 excluded in every mode; DoS modules and destructive payloads refused by the Metasploit policy layer. No exceptions. |
 | **Canary-only payload policy** | Validated exploits execute a runner-built benign marker (`echo REDTEAM-MARKER-*`) — nothing else. The marker echoing back IS the validation. |

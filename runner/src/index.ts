@@ -58,7 +58,7 @@ export {
   lookupBatteryItem,
 } from "./battery.js";
 export type { BatteryCategory, BatteryItem } from "./battery.js";
-export { scopeHosts, urlInScope, inBlackout, inTestWindow, techniqueAllowed, checkAuthorization } from "./gate.js";
+export { scopeHosts, urlInScope, inBlackout, inTestWindow, techniqueAllowed, checkAuthorization, checkScopeAuthorization } from "./gate.js";
 export type { CheckAuthorizationOptions } from "./gate.js";
 export { isPrivateOrLoopbackHost, validateProbeTarget } from "./prober.js";
 export type { ValidateProbeTargetOptions } from "./prober.js";

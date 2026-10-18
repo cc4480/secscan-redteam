@@ -9,6 +9,7 @@
  *  5. Test window: the runner refuses to run outside the agreed window.
  */
 
+import { isIP } from "node:net";
 import { isServerVerified as authGateIsServerVerified } from "@secscan/redteam-auth-gate";
 import { extractDomain } from "@secscan/redteam-auth-gate";
 import { resolveExcludedTechniques } from "./attack.js";
@@ -155,6 +156,103 @@ export async function checkAuthorization(
         `require this proof — covert means covert vs the blue team, never vs ` +
         `the authorization gate.`,
     };
+  }
+  return { allowed: true };
+}
+
+export interface ScopeAuthorizationOptions {
+  /**
+   * LOCAL SANDBOX MODE ONLY. When true, the whole engagement is restricted to
+   * private/loopback hosts: every scope entry must be private too, because a
+   * sandbox bypass for the target says nothing about ownership of anything else.
+   */
+  allowLocalSandbox?: boolean;
+  /** The engagement target, already verified by {@link checkAuthorization}. */
+  verifiedTarget?: string;
+}
+
+/**
+ * Verify ownership for EVERY host the engagement may touch, not just its target.
+ *
+ * Members of the ROE scope list are checked for exact-hostname membership by the
+ * prober, but membership only proves the operator listed them — it does not prove
+ * the client owns them. Without this pass, an engagement against one verified
+ * domain could probe any number of other public hosts, which is precisely the
+ * authorization the product claims to enforce.
+ *
+ * Rules, all fail closed:
+ *  - empty scope: denied (there is nothing an engagement may legitimately probe);
+ *  - local sandbox: every host must be private/loopback, so a loopback target can
+ *    never be combined with a public host in scope;
+ *  - otherwise: the target needs no second call; an IP-literal scope entry is a
+ *    host-engagement target authorized by the ROE (domain verification cannot
+ *    apply to an address); every other host must be server-verified.
+ *
+ * `verify` is injectable so unit tests never touch the network.
+ */
+export async function checkScopeAuthorization(
+  hosts: readonly string[],
+  cfg: ServerGateConfig,
+  verify: (
+    domain: string,
+    cfg: { endpoint: string; token: string },
+  ) => Promise<boolean> = (d, c) => authGateIsServerVerified(d, c),
+  opts: ScopeAuthorizationOptions = {},
+): Promise<GateVerdict> {
+  const unique = [...new Set(hosts.map((h) => h.trim().toLowerCase()).filter((h) => h !== ""))];
+  if (unique.length === 0) {
+    return { allowed: false, reason: "engagement scope is empty: declare at least one in-scope host" };
+  }
+  let target = "";
+  if (opts.verifiedTarget !== undefined) {
+    try {
+      target = extractDomain(opts.verifiedTarget);
+    } catch {
+      target = "";
+    }
+  }
+  for (const host of unique) {
+    if (opts.allowLocalSandbox) {
+      if (!isPrivateOrLoopbackHost(host)) {
+        return {
+          allowed: false,
+          reason:
+            `LOCAL SANDBOX MODE cannot cover scope host ${host}: sandbox mode skips ownership ` +
+            `verification for a private/loopback target, so every host in scope must be private ` +
+            `too. Remove ${host} from scope, or verify it as a domain and run without local sandbox.`,
+        };
+      }
+      continue;
+    }
+    if (host === target) continue;
+    if (isPrivateOrLoopbackHost(host)) {
+      return {
+        allowed: false,
+        reason:
+          `scope host ${host} is private/loopback and cannot be ownership-verified. ` +
+          `Private and loopback targets are only reachable in local sandbox mode ` +
+          `(--local-sandbox or REDTEAM_LOCAL_SANDBOX=1), which is an operator decision ` +
+          `and is never implied by the engagement request.`,
+      };
+    }
+    // An IP-literal scope entry is a host-engagement target: the client authorizes it
+    // through the ROE and credentials, and domain verification cannot apply to an address.
+    if (isIP(host) !== 0) continue;
+    let verified = false;
+    try {
+      verified = await verify(host, { endpoint: cfg.mcpEndpoint, token: cfg.mcpToken });
+    } catch {
+      verified = false;
+    }
+    if (!verified) {
+      return {
+        allowed: false,
+        reason:
+          `scope host ${host} is not ownership-verified (server check). Every domain in scope ` +
+          `must be verified on its own: start_domain_verification for ${host}, publish the TXT ` +
+          `record, then re-run. Listing a host in scope never substitutes for proving it.`,
+      };
+    }
   }
   return { allowed: true };
 }

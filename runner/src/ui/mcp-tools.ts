@@ -135,7 +135,6 @@ export const TOOLS: ToolDef[] = [
         },
         excludedTechniques: { type: "array", items: { type: "string" } },
         dryRun: { type: "boolean", description: "Plan only; touch nothing" },
-        localSandbox: { type: "boolean" },
       },
       required: ["target", "mode", "objective", "scope"],
       additionalProperties: false,

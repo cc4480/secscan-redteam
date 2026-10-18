@@ -73,7 +73,6 @@ export async function handleLaunch(store: UiStore, _req: IncomingMessage, res: S
   }
   const launch = body as UiLaunchRequest;
   const dryRun = (body as UiLaunchRequest).dryRun === true;
-  const localSandbox = (body as UiLaunchRequest).localSandbox === true;
   const id = generateEngagementId();
   const dir = join(store.engagementsDir, id);
   store.register({ id, dir, status: "starting", startedAt: new Date().toISOString(), target: input.target, mode: input.mode });
@@ -84,7 +83,6 @@ export async function handleLaunch(store: UiStore, _req: IncomingMessage, res: S
     const p = runEngagement(input, {
       engagementId: id,
       dryRunAgents: dryRun,
-      localSandbox,
       // The action cap is a RunnerOption, not an EngagementInput field, so it
       // crosses over here rather than riding along in `input`. Passing it in
       // the input object typechecks nowhere - which is how this was caught -

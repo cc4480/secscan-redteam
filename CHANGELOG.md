@@ -3,7 +3,25 @@
 Notable changes to the secscan-redteam runner. This file starts at 0.35.0; no
 prior release history is reconstructed here.
 
+## [0.37.1] - 2026-10-17
+
+- **Security: every scope host is now ownership-verified, and local sandbox mode is
+  operator-only.** The authorization phase verified only the engagement target, while
+  every probe checked nothing but membership in the operator-supplied scope list - so a
+  verified target could be paired with unrelated public hosts, and local sandbox mode
+  (which skips verification for a loopback target) could be combined with a public host.
+  New `checkScopeAuthorization`: each DNS scope host must be server-verified, IP-literal
+  entries remain ROE-authorized host targets, private entries require local sandbox, and
+  a sandbox engagement must have an entirely private scope.
+- **The console launch request and the MCP `start_engagement` schema no longer accept
+  `localSandbox`.** It remains a CLI flag and `REDTEAM_LOCAL_SANDBOX=1`, matching the
+  gate's documented contract that it is never implied by a request.
+- **Private-host probing requires an all-private scope** in the web prober, mirroring
+  the rule the agent coordinator already applied.
+- Tests: 8 new scope-authorization cases (gate-scope.test.ts).
+
 ## [0.37.0] - 2026-10-17
+
 
 - **Zero-install toolchain: one resolver, bundled payload first.** New
   `src/toolchain.ts` resolves nmap, nuclei and every xtool in a single order -

@@ -23,7 +23,6 @@ export interface UiLaunchRequest {
   confirmTier2Production?: boolean;
   excludedTechniques?: string[];
   dryRun?: boolean;
-  localSandbox?: boolean;
 }
 
 /** One tracked engagement, live or historical. */
