@@ -1,3 +1,10 @@
+> [!NOTE]
+> **This repository is superseded.** The engagement runner (`runner/`, `auth-gate/`,
+> `llm-router/`, `harness-plugin/`) now lives in the single-repo desktop monorepo at
+> **https://github.com/cc4480/secscan-redteam-desktop** — the runner under
+> `apps/redteam-runner/` and its workspace deps under `packages/redteam/`.
+> Development, builds, tests and the installer all happen there. This repo is kept
+> only for history.
 # SecScan RedTeam
 
 > Working name: **secscan-redteam** (renameable — see "Naming" below).
