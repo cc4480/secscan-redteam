@@ -18,6 +18,7 @@ import { join } from "node:path";
 import {
   buildNegativeProof,
   buildPocBundle,
+  stampBundleIntegrity,
   bundleSummary,
   type PocBundle,
 } from "../src/proof/bundle.js";
@@ -219,7 +220,7 @@ describe("buildNegativeProof", () => {
 
 describe("reverifyBundle", () => {
   function bundleWithSteps(): PocBundle {
-    return {
+    return stampBundleIntegrity({
       version: 1,
       bundleId: "POC-eng-1-F-1",
       engagementId: "eng-1",
@@ -247,7 +248,7 @@ describe("reverifyBundle", () => {
       proves: "marker echoed",
       doesNotProve: "no impact overclaim",
       reverifyCommand: "redteam-runner reverify --bundle poc/F-1.json",
-    };
+    });
   }
 
   it("reproduced: fresh marker echoes on every replayable step", async () => {
@@ -279,8 +280,10 @@ describe("reverifyBundle", () => {
   });
 
   it("inconclusive when no steps are replayable", async () => {
-    const b = bundleWithSteps();
-    b.steps = b.steps.map((s) => ({ ...s, replay: null }));
+    // A runner-recorded bundle carries the digest of exactly the steps it recorded,
+    // so the fixture is re-stamped after changing which steps are replayable.
+    const recorded = bundleWithSteps();
+    const b = stampBundleIntegrity({ ...recorded, steps: recorded.steps.map((s) => ({ ...s, replay: null })) });
     const runner: StepRunner = async () => ({ ok: true, output: "x" });
     const report = await reverifyBundle(b, runner);
     assert.equal(report.verdict, "not-reproduced");

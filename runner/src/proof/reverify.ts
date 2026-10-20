@@ -23,7 +23,7 @@
  * never replayed (its echo would prove nothing about the present).
  */
 
-import type { PocBundle, PocStep } from "./bundle.js";
+import { verifyBundleIntegrity, type PocBundle, type PocStep } from "./bundle.js";
 import { HostExecutor } from "../host-exec/executor.js";
 import { MsfExecutor } from "../msf/executor.js";
 import { validateHostTarget } from "../host-exec/common.js";
@@ -94,6 +94,29 @@ export async function reverifyBundle(
   runner: StepRunner,
   opts: { perStepTimeoutMs?: number } = {},
 ): Promise<ReverifyReport> {
+  // Provenance gate: a bundle the runner did not record — or one edited after it
+  // was recorded — must never reach a step runner. Verification happens before the
+  // marker or any replay state exists, so a refusal fires zero steps.
+  const integrityError = verifyBundleIntegrity(bundle);
+  if (integrityError) {
+    return {
+      bundleId: bundle.bundleId,
+      findingId: bundle.findingId,
+      engagementId: bundle.engagementId,
+      reverifiedAt: new Date().toISOString(),
+      verdict: "not-reproduced",
+      steps: bundle.steps.map((step) => ({
+        seq: step.seq,
+        tool: step.tool,
+        replayed: false,
+        ok: false,
+        validationObserved: false,
+        note: "refused: bundle provenance check failed",
+      })),
+      summary: `refused before firing: bundle provenance check failed: ${integrityError}`,
+      registryNote: "REFUSED (bundle provenance check failed) — do NOT close the finding; provenance could not be established",
+    };
+  }
   const marker = freshMarker();
   const perStep = opts.perStepTimeoutMs ?? 60_000;
   const steps: ReverifyStepReport[] = [];

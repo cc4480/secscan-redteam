@@ -15,7 +15,19 @@ import {
   stepValidation,
 } from "./steps.js";
 import type { PocStep } from "./steps.js";
+import { stampBundleIntegrity, type BundleIntegrity } from "./integrity.js";
 
+/**
+ * The on-disk file name for a finding's bundle. Finding ids are
+ * reporter-influenced (parsed model JSON, never runner-validated):
+ * anything outside `[A-Za-z0-9._-]` becomes `_` and leading dot segments
+ * are stripped, so an id like "../../registry" can never name a path
+ * outside the caller's `poc/` directory.
+ */
+export function bundleFileName(findingId: string): string {
+  const stem = findingId.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+/, "");
+  return `${stem || "bundle"}.json`;
+}
 export type ValidationTier = "execution" | "observation";
 
 export interface PocBundle {
@@ -25,6 +37,12 @@ export interface PocBundle {
   findingId: string;
   batteryItemId?: string;
   attackIds: string[];
+  /**
+   * Runner-recorded provenance (see ./integrity.js): sha256 over the canonical
+   * bundle. Reverify refuses to execute a bundle whose digest is missing or does
+   * not match, so a hand-edited poc file cannot smuggle commands in.
+   */
+  integrity?: BundleIntegrity;
   cve?: string;
   severity: string;
   title: string;
@@ -150,7 +168,7 @@ export function buildPocBundle(input: BundleBuildInput): BundleBuildResult {
       "observation; any deviation means the target changed.",
     reverifyCommand: `redteam-runner reverify --bundle poc/${finding.id}.json --scope ${engagement.target} --execute`,
   };
-  return { bundle };
+  return { bundle: stampBundleIntegrity(bundle) };
 }
 
 /** A killed hypothesis with its decisive audit evidence attached (negative proof). */

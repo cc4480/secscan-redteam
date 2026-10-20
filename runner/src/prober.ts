@@ -4,16 +4,27 @@
  * Every probe is a single HTTP(S) request against an in-scope host. Guardrails
  * are mechanical, not advisory:
  *  - only http/https URLs, only exact in-scope hostnames
- *  - literal private IPs / localhost are rejected (the runner must never be
- *    usable as an SSRF pivot against internal infrastructure)
+ *  - literal private IPs rejected; every hostname is DNS-resolved with EVERY
+ *    address classified pre-connect, and the connection is pinned to the
+ *    validated set (prober-net.ts) — no SSRF pivot via attacker DNS
+ *  - redirect (Location) targets get the same resolved-address validation
  *  - request bodies capped at 64KB; 20s timeout; global rate limit
- *  - detection signals (WAF block, 429, CAPTCHA markers) are surfaced as
- *    OPSEC events so black mode can back off
- *
- * Non-destructive by construction: the prober sends single requests, never
- * floods, and the payload discipline lives in the exploiter prompt (no data
- * writes/deletes, no resource exhaustion).
+ *  - detection signals (WAF block, 429, CAPTCHA markers) surfaced as OPSEC
+ *    events so black mode can back off
+ * Non-destructive by construction: single requests, never floods; payload
+ * discipline lives in the exploiter prompt (no writes/deletes, no exhaustion).
  */
+
+import { allHostsPrivateOrLoopback, isPrivateOrLoopbackHost } from "./prober-address.js";
+import {
+  pinnedHttpRequest,
+  resolveCheckedAddresses,
+  type DnsResolver,
+} from "./prober-net.js";
+
+// Re-exported for callers (gate, sandbox) that import the address policy from this
+// module: moving the implementation must not change their import path.
+export { allHostsPrivateOrLoopback, isPrivateOrLoopbackHost };
 
 export interface ProbeRequest {
   method: string;
@@ -59,24 +70,6 @@ export interface ProbeBurstResult {
 const BURST_SIZE = 8;
 
 const MAX_BODY_BYTES = 64 * 1024;
-const PRIVATE_HOST =
-  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0|\[::1\]|::1$)/i;
-
-/** True when `host` is a literal private-range or loopback address/name. */
-/**
- * True when every host is private/loopback (and there is at least one).
- *
- * Local sandbox mode skips ownership verification for a private target, so it may only
- * widen the prober to private hosts when the WHOLE scope is private: a loopback target
- * combined with a public scope host must not inherit the sandbox bypass.
- */
-export function allHostsPrivateOrLoopback(hosts: readonly string[]): boolean {
-  return hosts.length > 0 && hosts.every((h) => isPrivateOrLoopbackHost(h));
-}
-
-export function isPrivateOrLoopbackHost(host: string): boolean {
-  return PRIVATE_HOST.test(host.toLowerCase());
-}
 
 export interface ValidateProbeTargetOptions {
   /**
@@ -106,6 +99,11 @@ export function validateProbeTarget(
     return { ok: false, reason: `scheme not allowed: ${u.protocol}` };
   }
   const host = u.hostname.toLowerCase();
+  // Link-local literals (cloud metadata 169.254.169.254, fe80::/10) are
+  // refused unconditionally — allowPrivateHosts must never open metadata.
+  if (/^169\.254\.|^\[?fe[89ab][0-9a-f]:/i.test(host)) {
+    return { ok: false, reason: `link-local host rejected (never allowed, incl. sandbox): ${host}` };
+  }
   if (isPrivateOrLoopbackHost(host) && !opts.allowPrivateHosts) {
     return { ok: false, reason: `private/loopback host rejected: ${host}` };
   }
@@ -135,6 +133,8 @@ export interface ProberOptions {
   minDelayMs?: number;
   /** LOCAL SANDBOX MODE ONLY — see ValidateProbeTargetOptions. Default false. */
   allowPrivateHosts?: boolean;
+  /** Injectable DNS resolver (test seam); production uses the system resolver. */
+  resolver?: DnsResolver;
 }
 
 /** Structural interface so tests can inject a fake prober (no network). */
@@ -149,6 +149,7 @@ export class WebProber implements ProberLike {
   private readonly timeoutMs: number;
   private readonly minDelayMs: number;
   private readonly allowPrivateHosts: boolean;
+  private readonly resolver?: DnsResolver;
   private lastProbeAt = 0;
 
   constructor(opts: ProberOptions) {
@@ -156,6 +157,46 @@ export class WebProber implements ProberLike {
     this.timeoutMs = opts.timeoutMs ?? 20_000;
     this.minDelayMs = opts.minDelayMs ?? 800;
     this.allowPrivateHosts = opts.allowPrivateHosts ?? false;
+    this.resolver = opts.resolver;
+  }
+
+  /**
+   * Resolve the URL's hostname, validate every address (prober-net.ts), and
+   * return the set the connection is pinned to. Throws `[prober] refused:`
+   * before any socket opens when any address is out of policy.
+   */
+  private async resolveFor(url: string) {
+    const host = new URL(url).hostname;
+    const checked = await resolveCheckedAddresses(host, {
+      allowPrivateHosts: this.allowPrivateHosts,
+      resolver: this.resolver,
+    });
+    if (!checked.ok) throw new Error(`[prober] refused: ${checked.reason}`);
+    return checked.addresses;
+  }
+
+  /**
+   * Hops are never auto-followed, but the Location target gets the same
+   * resolved-address validation: a 3xx into forbidden space refuses the
+   * probe rather than handing out the hop. If the caller later probes that
+   * URL itself, probe() re-resolves/re-validates/pins then — a check here
+   * can never bless a stale answer.
+   */
+  private async assertRedirectTargetAllowed(location: string, baseUrl: string): Promise<void> {
+    let target: URL;
+    try {
+      target = new URL(location, baseUrl);
+    } catch {
+      return; // Unparseable Location — never followed by anyone; nothing to vet.
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new Error(`[prober] refused: redirect to non-http(s) scheme ${target.protocol}`);
+    }
+    const checked = await resolveCheckedAddresses(target.hostname, {
+      allowPrivateHosts: this.allowPrivateHosts,
+      resolver: this.resolver,
+    });
+    if (!checked.ok) throw new Error(`[prober] refused: redirect target ${target.hostname} rejected: ${checked.reason}`);
   }
 
   async probe(req: ProbeRequest): Promise<ProbeResult> {
@@ -173,32 +214,29 @@ export class WebProber implements ProberLike {
     const wait = this.minDelayMs - (Date.now() - this.lastProbeAt);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
+    // Resolve + validate + pin (audit 2026-10-09 security #5): the socket
+    // only ever connects to addresses that passed classification.
+    const addresses = await this.resolveFor(req.url);
+
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
     const started = Date.now();
     try {
-      const res = await fetch(req.url, {
+      const res = await pinnedHttpRequest(req.url, {
         method,
-        headers: { "user-agent": "secscan-redteam-runner/0.4.0", ...(req.headers ?? {}) },
+        headers: { "user-agent": "secscan-redteam-runner/0.4.0", "accept-encoding": "gzip, deflate, br", ...(req.headers ?? {}) },
         body: req.body === undefined ? undefined : req.body,
-        redirect: "manual",
+        addresses,
         signal: ctrl.signal,
-      });
-      const text = await res.text().catch(() => "");
-      const headers: Record<string, string> = {};
-      res.headers.forEach((val, key) => {
-        headers[key.toLowerCase()] = val;
+        maxBodyBytes: MAX_BODY_BYTES,
       });
       const ms = Date.now() - started;
       this.lastProbeAt = Date.now();
-      const bodySnippet = text.slice(0, 4096);
-      return {
-        status: res.status,
-        headers,
-        bodySnippet,
-        ms,
-        opsecSignal: detectOpsecSignal(res.status, headers, bodySnippet),
-      };
+      if (res.status >= 300 && res.status < 400 && res.headers["location"]) {
+        await this.assertRedirectTargetAllowed(res.headers["location"], req.url);
+      }
+      const bodySnippet = res.text.slice(0, 4096);
+      return { status: res.status, headers: res.headers, bodySnippet, ms, opsecSignal: detectOpsecSignal(res.status, res.headers, bodySnippet) };
     } finally {
       clearTimeout(timer);
     }
@@ -206,10 +244,8 @@ export class WebProber implements ProberLike {
 
   /**
    * One-shot resilience probe: fires a FIXED-size batch of concurrent
-   * GET/HEAD requests to observe whether rate-limiting exists. Never a
-   * flood primitive — BURST_SIZE is constant, not caller-controlled, and
-   * the global rate-limit cooldown applies afterward exactly as it would
-   * after a single probe() call.
+   * GET/HEAD requests to observe whether rate-limiting exists. Never a flood
+   * primitive — BURST_SIZE is constant, and the global cooldown applies after.
    */
   async probeBurst(req: ProbeBurstRequest): Promise<ProbeBurstResult> {
     const method = (req.method || "GET").toUpperCase();
@@ -222,21 +258,26 @@ export class WebProber implements ProberLike {
     const wait = this.minDelayMs - (Date.now() - this.lastProbeAt);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
+    // Same resolve/validate/pin discipline as probe() — one validation for
+    // the whole batch; a refusal here happens before any packet is sent.
+    const addresses = await this.resolveFor(req.url);
+
     const started = Date.now();
     const results = await Promise.all(
       Array.from({ length: BURST_SIZE }, async () => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
         try {
-          const res = await fetch(req.url, {
+          const res = await pinnedHttpRequest(req.url, {
             method,
             headers: { "user-agent": "secscan-redteam-runner/0.5.0" },
-            redirect: "manual",
+            addresses,
             signal: ctrl.signal,
+            readBody: false,
           });
-          return { status: res.status, ms: Date.now() - started };
+          return { status: res.status, ms: Date.now() - started, location: res.headers["location"] };
         } catch {
-          return { status: 0, ms: Date.now() - started };
+          return { status: 0, ms: Date.now() - started, location: undefined };
         } finally {
           clearTimeout(timer);
         }
@@ -244,18 +285,15 @@ export class WebProber implements ProberLike {
     );
     this.lastProbeAt = Date.now();
 
+    const redirect = results.find((r) => r.status >= 300 && r.status < 400 && r.location);
+    if (redirect?.location) await this.assertRedirectTargetAllowed(redirect.location, req.url);
+
     const statuses = results.map((r) => r.status);
     const rateLimited = statuses.includes(429);
     const distinct = [...new Set(statuses)].join(", ");
-    return {
-      count: BURST_SIZE,
-      statuses,
-      rateLimited,
-      minMs: Math.min(...results.map((r) => r.ms)),
-      maxMs: Math.max(...results.map((r) => r.ms)),
-      note: rateLimited
-        ? `${BURST_SIZE} concurrent requests: rate limiting IS present (429 observed in the batch).`
-        : `${BURST_SIZE} concurrent requests: no rate limiting observed — status(es): ${distinct}.`,
-    };
+    const note = rateLimited
+      ? `${BURST_SIZE} concurrent requests: rate limiting IS present (429 observed in the batch).`
+      : `${BURST_SIZE} concurrent requests: no rate limiting observed — status(es): ${distinct}.`;
+    return { count: BURST_SIZE, statuses, rateLimited, minMs: Math.min(...results.map((r) => r.ms)), maxMs: Math.max(...results.map((r) => r.ms)), note };
   }
 }

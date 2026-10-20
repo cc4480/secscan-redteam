@@ -9,7 +9,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { readEvents } from "../events.js";
-import { PocBundle, buildNegativeProof, buildPocBundle, bundleSummary } from "../proof/index.js";
+import { PocBundle, buildNegativeProof, buildPocBundle, bundleFileName, bundleSummary } from "../proof/index.js";
 import { type Finding } from "../types.js";
 import { TARGET_PROFILES, activeTargets, type TargetId } from "../targets.js";
 import { type Ctx } from "../context.js";
@@ -71,7 +71,7 @@ export function buildProofSection(ctx: Ctx, findings: Finding[], pocBundleMap: M
         secrets: proofSecrets,
       });
       if (bundle) {
-        writeFileSync(join(pocDir, `${f.id}.json`), JSON.stringify(bundle, null, 2));
+        writeFileSync(join(pocDir, bundleFileName(f.id)), JSON.stringify(bundle, null, 2));
         pocBundleMap.set(f.id, bundle);
         bundleLines.push(`- ${bundleSummary(bundle)}`);
       } else {

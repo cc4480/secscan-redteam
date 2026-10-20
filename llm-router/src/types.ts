@@ -43,6 +43,15 @@ export interface ChatResult {
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   provider: string;
   model: string;
+  /**
+   * The exact request body the provider serialized onto the wire (never
+   * contains credentials — auth travels in headers). Providers that can report
+   * it enable byte-exact trajectory logging in the adapter layer; providers that
+   * cannot leave it undefined and the adapter falls back to the given options.
+   */
+  requestBody?: Record<string, unknown>;
+  /** The provider's response payload as received, before normalization. */
+  rawResponse?: unknown;
 }
 
 export interface JsonSchemaTool {
@@ -50,6 +59,16 @@ export interface JsonSchemaTool {
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
 }
+
+/**
+ * Structured-output constraint for one call. Selection order when several
+ * constraints coexist mirrors the recipe discipline: tool calls >
+ * json_schema > regex > json_object.
+ */
+export type ResponseFormat =
+  | { type: "json_schema"; name: string; schema: Record<string, unknown>; strict?: boolean }
+  | { type: "regex"; pattern: string }
+  | { type: "json_object" };
 
 export interface CompleteOptions {
   model: string;
@@ -60,6 +79,13 @@ export interface CompleteOptions {
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
+  topP?: number;
+  /** Structured-output constraint; validated client-side by the adapter before send. */
+  responseFormat?: ResponseFormat;
+  /** Calling role, for trajectory attribution. Set by completeForRole. */
+  role?: AgentRole;
+  /** Run this call belongs to, for trajectory grouping. */
+  runId?: string;
 }
 
 export interface LlmProvider {
