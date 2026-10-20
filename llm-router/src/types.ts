@@ -42,6 +42,16 @@ export interface ChatResult {
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   provider: string;
   model: string;
+  /**
+   * The exact request body object the provider serialized onto the wire
+   * (never contains credentials — auth travels in headers). Providers that
+   * can report it enable byte-exact trajectory logging and replay in the
+   * adapter layer; providers that can't leave it undefined and the adapter
+   * falls back to logging the options it was given.
+   */
+  requestBody?: Record<string, unknown>;
+  /** The provider's response payload as received, before normalization. */
+  rawResponse?: unknown;
 }
 
 export interface JsonSchemaTool {
@@ -50,15 +60,33 @@ export interface JsonSchemaTool {
   parameters: Record<string, unknown>; // JSON Schema
 }
 
+/**
+ * Structured-output constraint for a call (DeepInfer/recipe discipline:
+ * schema-shaped output is the default, free text the exception).
+ * Selection order when several constraints coexist (mirrors deepseek-recipe's
+ * OutputConstraint selection): tool calls > json_schema > regex > json_object.
+ */
+export type ResponseFormat =
+  | { type: "json_schema"; name: string; schema: Record<string, unknown>; strict?: boolean }
+  | { type: "regex"; pattern: string }
+  | { type: "json_object" };
+
 export interface CompleteOptions {
   model: string;
   messages: ChatMessage[];
   tools?: JsonSchemaTool[];
-  /** Hint only; providers may ignore it. */
+  /** Per-role policy sets this; providers MUST transmit it (adapter-verified). */
   reasoningEffort?: "low" | "medium" | "high";
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
+  topP?: number;
+  /** Structured-output constraint; validated client-side by the adapter before send. */
+  responseFormat?: ResponseFormat;
+  /** Calling role, for trajectory attribution. Set by completeForRole. */
+  role?: AgentRole;
+  /** Run this call belongs to, for trajectory grouping. Set by the harness. */
+  runId?: string;
 }
 
 export interface LlmProvider {

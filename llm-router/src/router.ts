@@ -20,8 +20,10 @@ import type {
   CompleteOptions,
   JsonSchemaTool,
   LlmProvider,
+  ResponseFormat,
 } from "./types.js";
 import { ROLE_MODEL_POLICY } from "./policy.js";
+import { AdapterProvider } from "./adapter.js";
 import { DeepSeekProvider } from "./providers/deepseek.js";
 import { QwenProvider } from "./providers/qwen.js";
 
@@ -83,6 +85,9 @@ export async function completeForRole(
     signal?: AbortSignal;
     maxTokens?: number;
     temperature?: number;
+    topP?: number;
+    responseFormat?: ResponseFormat;
+    runId?: string;
   } = {},
 ): Promise<ChatResult> {
   const route = ROLE_MODEL_POLICY[role];
@@ -94,11 +99,20 @@ export async function completeForRole(
     signal: opts.signal,
     maxTokens: opts.maxTokens,
     temperature: opts.temperature,
+    topP: opts.topP,
+    responseFormat: opts.responseFormat,
+    role,
+    runId: opts.runId,
   });
 }
 
 // Providers. To add the next one (Kimi was the runner-up): implement
 // LlmProvider in src/providers/<id>.ts (see providers/README.md) and
 // register it here — no changes to the router core or the harness.
-registerProvider(new DeepSeekProvider());
-registerProvider(new QwenProvider());
+//
+// Every provider is registered THROUGH the adapter: pinned sampling,
+// client-side schema validation, byte-exact trajectory logging, and
+// replay-safe retries apply to all calls by construction. There is no
+// unwrapped path.
+registerProvider(new AdapterProvider(new DeepSeekProvider()));
+registerProvider(new AdapterProvider(new QwenProvider()));

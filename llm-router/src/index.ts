@@ -5,10 +5,20 @@ export type {
   CompleteOptions,
   JsonSchemaTool,
   LlmProvider,
+  ResponseFormat,
   RoleRoute,
   ToolCallRequest,
 } from "./types.js";
 export { complete, completeForRole, listProviders, registerProvider } from "./router.js";
+export {
+  AdapterProvider,
+  ADAPTER_PINNED,
+  canonicalJson,
+  selectConstraint,
+  validateJsonSchema,
+  validateResponseFormat,
+  type AdapterConfig,
+} from "./adapter.js";
 export { ROLE_MODEL_POLICY, ROLE_ORDER } from "./policy.js";
 export {
   DeepSeekProvider,
