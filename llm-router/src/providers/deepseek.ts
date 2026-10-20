@@ -23,6 +23,7 @@ import type {
   CompleteOptions,
   JsonSchemaTool,
   LlmProvider,
+  ResponseFormat,
   ToolCallRequest,
 } from "../types.js";
 
@@ -71,8 +72,7 @@ function toWireTools(tools?: JsonSchemaTool[]): Array<Record<string, unknown>> |
   }));
 }
 
-function fromWireToolCalls(choice: Record<string, unknown>): ToolCallRequest[] {
-  const calls = (choice["tool_calls"] as Array<Record<string, unknown>> | undefined) ?? [];
+function fromWireToolCalls(choice: Record<string, unknown>): ToolCallRequest[] {  const calls = (choice["tool_calls"] as Array<Record<string, unknown>> | undefined) ?? [];
   return calls.map((c, i) => {
     const fn = (c["function"] as Record<string, unknown>) ?? {};
     let args: Record<string, unknown> = {};
@@ -87,6 +87,33 @@ function fromWireToolCalls(choice: Record<string, unknown>): ToolCallRequest[] {
       arguments: args,
     };
   });
+}
+
+/**
+ * Map the router's ResponseFormat to the DeepSeek wire form. Field shapes
+ * follow DeepSeek's own protocol library (deepseek-recipe): Chat Completions
+ * `response_format` accepts `json_schema` and `regex` in addition to the
+ * OpenAI-standard `json_object`.
+ */
+function toWireResponseFormat(
+  format?: ResponseFormat,
+): Record<string, unknown> | undefined {
+  if (!format) return undefined;
+  switch (format.type) {
+    case "json_schema":
+      return {
+        type: "json_schema",
+        json_schema: {
+          name: format.name,
+          schema: format.schema,
+          strict: format.strict ?? true,
+        },
+      };
+    case "regex":
+      return { type: "regex", regex: format.pattern };
+    case "json_object":
+      return { type: "json_object" };
+  }
 }
 
 export class DeepSeekProvider implements LlmProvider {
@@ -120,7 +147,14 @@ export class DeepSeekProvider implements LlmProvider {
       messages: toWireMessages(options.messages),
       temperature: options.temperature ?? 0.2,
     };
+    if (options.topP !== undefined) body["top_p"] = options.topP;
     if (options.maxTokens) body["max_tokens"] = options.maxTokens;
+    // Policy declares reasoning effort per role; it MUST reach the wire.
+    // (Pre-adapter, this was silently dropped and every role ran on the
+    // server default regardless of policy.)
+    if (options.reasoningEffort) body["reasoning_effort"] = options.reasoningEffort;
+    const wireFormat = toWireResponseFormat(options.responseFormat);
+    if (wireFormat) body["response_format"] = wireFormat;
     const wireTools = toWireTools(options.tools);
     if (wireTools) body["tools"] = wireTools;
 
@@ -165,6 +199,11 @@ export class DeepSeekProvider implements LlmProvider {
         : undefined,
       provider: this.id,
       model: options.model,
+      // Byte-exact trajectory material for the adapter layer: the body as
+      // serialized above (auth is a header, never in the body) and the
+      // response payload as received.
+      requestBody: body,
+      rawResponse: data,
     };
   }
 }
