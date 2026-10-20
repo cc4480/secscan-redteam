@@ -29,3 +29,7 @@ runner/coverage/
 
 # Runner runtime state (re-seeds / re-creates on first run)
 runner/engagements/
+
+# Python
+__pycache__/
+*.pyc
